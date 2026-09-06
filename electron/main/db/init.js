@@ -1,0 +1,209 @@
+/**
+ * @file init.js
+ * @module electron/main/db/init
+ * @description SQLite 数据库初始化模块。使用 sql.js（纯 JavaScript/WASM 实现，无需编译原生模块）来管理数据库。
+ *              负责数据库的加载/创建、表结构定义、默认设置写入、封面目录创建，以及脏标记定时持久化机制。
+ *              注意：initSqlJs() 是异步 Promise，因为需要加载 WASM 文件。
+ * @dependencies fs, path, sql.js
+ * @keyAPI initSqlJs(), db.run(), db.exec(), db.export(), saveDbToDisk()
+ */
+
+const fs = require('fs')
+const path = require('path')
+
+// sql.js 实例缓存，避免重复初始化
+let SQL = null
+
+/**
+ * 查找 sql.js 的 WASM 文件路径。
+ * WASM 文件是 sql.js 运行所需的核心二进制模块。
+ * @param {string} cwdBase - 查找的基准目录（默认为当前工作目录）
+ * @returns {string} WASM 文件路径，找不到返回空字符串
+ */
+function findWasm(cwdBase) {
+  const candidates = [
+    path.join(cwdBase || process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+  ]
+  for (const c of candidates) if (fs.existsSync(c)) return c
+  return ''
+}
+
+/**
+ * 异步获取 sql.js 实例（带缓存）。
+ * 首次调用会加载 WASM 文件并初始化 SQL 模块，后续调用直接返回缓存实例。
+ * @returns {Promise<Object>} sql.js 的 SQL 构造器
+ */
+async function getSQL() {
+  if (SQL) return SQL  // 返回缓存实例
+  const initSqlJs = require('sql.js')
+  const wasm = findWasm()
+  const options = {}
+  // 配置 WASM 文件定位器：当加载 .wasm 文件时使用指定路径
+  if (wasm) options.locateFile = (f) => f.endsWith('.wasm') ? wasm : f
+  SQL = await initSqlJs(options)
+  return SQL
+}
+
+/**
+ * 将内存中的数据库导出并写入磁盘文件。
+ * sql.js 的数据库存在于内存中，需要手动调用 export() 导出二进制数据并写入文件。
+ * 采用先写入临时文件再重命名的方式，确保写入的原子性（避免写入中途崩溃导致数据损坏）。
+ * @param {Object} db - sql.js 数据库实例
+ * @param {string} dbPath - 数据库文件路径
+ */
+function saveDbToDisk(db, dbPath) {
+  try {
+    const data = db.export()          // 导出数据库为 Uint8Array
+    const buf = Buffer.from(data)     // 转为 Node.js Buffer
+    const tmp = dbPath + '.tmp'       // 临时文件路径
+    fs.writeFileSync(tmp, buf)        // 先写入临时文件
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)  // 删除旧文件
+    fs.renameSync(tmp, dbPath)        // 重命名临时文件为正式文件名
+  } catch (e) { console.error('[db] save failed:', e) }
+}
+
+/**
+ * 初始化数据库。
+ * 加载或创建 SQLite 数据库，创建所有表结构，写入默认设置，并设置自动持久化机制。
+ * @param {string} dataDir - 数据目录路径
+ * @returns {Promise<Object>} 数据库实例（带有自定义属性 _dbPath, _dataDir, _forceSave）
+ */
+async function initDb(dataDir) {
+  const Sqlite = await getSQL()
+  const dbPath = path.join(dataDir, 'app.db')
+  let db
+
+  // 尝试加载已有数据库文件
+  if (fs.existsSync(dbPath)) {
+    try {
+      const buf = fs.readFileSync(dbPath)
+      db = new Sqlite.Database(buf)  // 从文件数据创建数据库实例
+    } catch (e) {
+      console.warn('[db] load failed, creating new DB:', e.message)
+      db = new Sqlite.Database()  // 加载失败则创建空数据库
+    }
+  } else {
+    db = new Sqlite.Database()  // 文件不存在则创建新的空数据库
+  }
+
+  // === 创建表结构 ===
+
+  // 影片表：存储每部影片的完整元数据
+  db.run(`CREATE TABLE IF NOT EXISTS movies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 自增主键
+    ph TEXT,               -- 番号（如 ABC-123）
+    pm TEXT,               -- 片名
+    cover TEXT,            -- 封面图片路径
+    yid TEXT,              -- 演员ID/名称（多演员用中文逗号分隔）
+    yy TEXT,               -- 演员名称（冗余字段，用于显示）
+    fxrq TEXT,             -- 发行日期
+    fl TEXT DEFAULT '全部', -- 分类（有码/无码/欧美/全部）
+    zz TEXT DEFAULT 'n',    -- 是否已整理 (y/n)
+    lc TEXT DEFAULT 'n',    -- 是否已清理 (y/n)
+    pj TEXT DEFAULT 'n',    -- 是否已评级 (y/n)
+    dt TEXT DEFAULT 'n',    -- 是否有字幕 (y/n)
+    dm TEXT DEFAULT 'n',    -- 是否有代码 (y/n)
+    vr TEXT DEFAULT 'n',    -- 是否为 VR 影片 (y/n)
+    sd TEXT DEFAULT 'n',    -- 是否已删除原文件 (y/n)
+    hj TEXT DEFAULT 'n',    -- 是否已合集 (y/n)
+    pfs REAL DEFAULT 0,     -- 评分（满分制）
+    yz REAL DEFAULT 0,      -- 硬度值
+    zb TEXT DEFAULT 'A',    -- 资源质量等级 (A/B/C/D)
+    tix TEXT DEFAULT '正常', -- 体型标记
+    bq TEXT,                -- 标签（多个用中文逗号分隔）
+    jt TEXT,                -- 截图路径
+    py TEXT,                -- 拼音首字母
+    cl TEXT DEFAULT 'n',    -- 是否收藏 (y/n)
+    tjrq TEXT,              -- 添加日期（时间戳）
+    dx INTEGER DEFAULT 0,  -- 文件大小（字节）
+    dy TEXT,                -- 导演
+    sc TEXT,                -- 时长（秒）
+    ps TEXT,                -- 制作商
+    fx TEXT,                -- 发行商
+    xl TEXT                 -- 系列
+  )`)
+
+  // 女优表：存储演员的基本信息和身体数据
+  db.run(`CREATE TABLE IF NOT EXISTS actress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 自增主键
+    name TEXT UNIQUE,      -- 女优名称（唯一约束）
+    img TEXT,              -- 女优头像路径
+    height INTEGER,        -- 身高（cm）
+    bust INTEGER,           -- 胸围（cm）
+    waist INTEGER,          -- 腰围（cm）
+    hip INTEGER,            -- 臀围（cm）
+    zb TEXT,                -- 罩杯（如 A/B/C/D）
+    birthday TEXT,          -- 生日
+    debut TEXT,             -- 出道日期
+    remark TEXT             -- 备注
+  )`)
+
+  // 网址表：存储相关网站收藏
+  db.run(`CREATE TABLE IF NOT EXISTS websites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 自增主键
+    name TEXT,             -- 网站名称
+    url TEXT,              -- 网站地址
+    grp TEXT,              -- 分组
+    img TEXT               -- 网站图标
+  )`)
+
+  // 设置表：键值对形式存储应用设置
+  db.run(`CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,  -- 设置项键名（主键）
+    value TEXT             -- 设置项值
+  )`)
+
+  // 兼容旧库：添加 play_time 列（播放时间记录）
+  // 如果列已存在，ALTER TABLE 会报错，用 try-catch 忽略
+  try { db.run('ALTER TABLE movies ADD COLUMN play_time TEXT') } catch {}
+
+  // 写入默认设置项（仅在不存在时插入）
+  const defaults = [
+    ['player_path',''],      // 自定义播放器路径
+    ['page_size','20'],      // 每页显示数量
+    ['theme','light'],       // 主题
+    ['video_paths','[]'],    // 视频文件路径列表（JSON 数组）
+    ['cover_dir','covers'],  // 封面目录名
+    ['click_action','detail'] // 点击影片时的行为（详情/播放）
+  ]
+  for (const [k, v] of defaults) {
+    // INSERT OR IGNORE：如果 key 已存在则跳过，不报错
+    db.run(`INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)`, [k, v])
+  }
+
+  // 创建封面图片存放目录
+  const coversDir = path.join(dataDir, 'covers')
+  try { if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true }) } catch {}
+
+  // === 脏标记 + 定时持久化机制 ===
+  // sql.js 的数据库在内存中操作，需要定期写盘。
+  // 通过拦截 db.run() 方法，任何写操作都会标记 dirty=true。
+  let dirty = false
+  const origRun = db.run.bind(db)  // 保存原始 run 方法
+  // 重写 run 方法：每次执行写操作时设置脏标记
+  db.run = function(sql, params) {
+    dirty = true
+    return origRun(sql, params)
+  }
+
+  // sql.js 的 exec/prepare/run 不返回修改记录（没有 ROWID hooks via run API）
+  // 保守策略：任何 run() 触发 dirty，10 秒后写盘。
+  // 每 10 秒检查一次，如果有脏数据则写入磁盘
+  setInterval(() => {
+    if (dirty) { saveDbToDisk(db, dbPath); dirty = false }
+  }, 10000)
+
+  // 手动强制保存函数：立即将数据库写入磁盘
+  const force = () => { saveDbToDisk(db, dbPath); dirty = false }
+  // 进程退出时强制保存
+  process.on('exit', force)
+
+  // 在数据库实例上附加自定义属性，供其他模块使用
+  db._dbPath = dbPath       // 数据库文件路径
+  db._dataDir = dataDir     // 数据目录路径
+  db._forceSave = force     // 强制保存方法
+
+  return db
+}
+
+module.exports = { initDb }
