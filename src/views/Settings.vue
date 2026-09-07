@@ -282,13 +282,17 @@ onMounted(async () => { await load(); await loadCats() })
 }
 /* 关于页布局 */
 .about-box { padding: 10px 0; }
-/* 关于页图标徽章 */
+/* 关于页图标徽章：LOGO 为宽幅（图标+文字），用 contain 完整显示，不被裁剪 */
 .about-badge {
-  width: 64px; height: 64px;
-  border-radius: 18px;
-  overflow: hidden;
+  display: inline-flex;
+  height: 48px;
+  padding: 0 16px;
+  align-items: center;
+  border-radius: var(--r-md);
   box-shadow: var(--sh-2);
   margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
-.about-badge img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.about-badge img { height: 34px; width: auto; object-fit: contain; display: block; }
 </style>

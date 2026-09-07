@@ -1,35 +1,23 @@
 <!--
   文件名：AddMovieDialog.vue
   所属模块：公共组件 / 添加影片对话框
-  功能描述：添加影片的对话框容器组件，使用 el-tabs 提供五种添加方式：
-           在线刮削、手动添加、扫描目录、选择单个视频、导入 NFO。
+  功能描述：添加影片的对话框容器组件，使用 el-tabs 提供两种添加方式：
+           扫描目录（批量导入本地视频）、导入 NFO（Kodi/Jellyfin/Emby 格式解析）。
            各子表单通过 emit 将数据传回本组件，由本组件统一调用后端 API 创建影片记录。
            支持 v-model 双向绑定控制对话框的显示/隐藏。
 -->
 <template>
   <!-- 添加影片对话框主体 -->
   <el-dialog v-model="show" title="添加影片" width="820px" @close="onClose" destroy-on-close>
-    <!-- 选项卡区域：五种添加方式 -->
+    <!-- 选项卡区域：两种添加方式 -->
     <el-tabs v-model="tab">
-      <!-- 在线刮削选项卡：输入番号自动从网站获取元数据 -->
-      <el-tab-pane label="在线刮削" name="scrape">
-        <ScrapeForm @selected="onSelected" @create="onScrapeCreate" />
-      </el-tab-pane>
-      <!-- 手动添加选项卡：手动填写影片元数据表单 -->
-      <el-tab-pane label="手动添加" name="manual">
-        <ManualForm :initial="current" @submit="onCreate" />
-      </el-tab-pane>
       <!-- 扫描目录选项卡：扫描本地文件夹批量导入 -->
       <el-tab-pane label="扫描目录" name="dir">
-        <ScanDirForm @selected="onSelected" />
-      </el-tab-pane>
-      <!-- 选择单个视频选项卡：选择单个视频文件导入 -->
-      <el-tab-pane label="选择单个视频" name="single">
-        <SingleForm @selected="onSelected" />
+        <ScanDirForm @selected="onScanned" />
       </el-tab-pane>
       <!-- 导入 NFO 选项卡：从 NFO/XML 文件解析元数据 -->
       <el-tab-pane label="导入 NFO" name="nfo">
-        <NfoForm @selected="onSelected" />
+        <NfoForm @selected="onNfoSelected" />
       </el-tab-pane>
     </el-tabs>
   </el-dialog>
@@ -40,12 +28,9 @@
 import { ref, computed } from 'vue'
 // 引入 Element Plus 的消息提示组件
 import { ElMessage } from 'element-plus'
-// 引入各添加方式的子表单组件
-import ManualForm from './AddMovieDialog/ManualForm.vue'
+// 引入保留的添加方式子表单组件
 import ScanDirForm from './AddMovieDialog/ScanDirForm.vue'
-import SingleForm from './AddMovieDialog/SingleForm.vue'
 import NfoForm from './AddMovieDialog/NfoForm.vue'
-import ScrapeForm from './AddMovieDialog/ScrapeForm.vue'
 
 // 组件 props 定义
 // - modelValue: 控制对话框显示/隐藏（支持 v-model）
@@ -62,30 +47,31 @@ const show = computed({
   set(v) { emit('update:modelValue', v) }
 })
 
-// 当前激活的选项卡名称，默认为"在线刮削"
-const tab = ref('scrape')
-// 当前传递给手动表单的初始数据（来自其他表单的选择结果）
-const current = ref({})
+// 当前激活的选项卡名称，默认为"扫描目录"
+const tab = ref('dir')
 
-// 子表单选择数据后的回调：将数据填入手动表单并切换到手动添加选项卡
-// 参数 data: 子表单返回的影片元数据对象
-// 触发时机：ScrapeForm/ScanDirForm/SingleForm/NfoForm 的 selected 事件
-function onSelected(data) {
-  current.value = data
-  tab.value = 'manual'
+// 扫描目录导入完成后的回调
+// ScanDirForm 在导入完成后 emit 空对象仅作通知，此处直接关闭对话框并通知父组件刷新
+function onScanned() {
+  emit('created')
+  show.value = false
+}
+
+// NFO 解析结果选中后的回调
+// NfoForm 在用户点击"使用第一个结果"时 emit 元数据对象，此处直接调用后端创建影片
+function onNfoSelected(data) {
+  onCreate(data)
 }
 
 // 对话框关闭回调：重置状态并通知父组件关闭
 // 触发时机：用户关闭对话框时
 function onClose() {
-  current.value = {}
-  tab.value = 'scrape'
+  tab.value = 'dir'
   emit('update:modelValue', false)
 }
 
 // 创建影片的回调：调用后端 API 创建影片记录
 // 参数 data: 影片元数据对象
-// 触发时机：ManualForm 的 submit 事件
 async function onCreate(data) {
   if (!window.api) return
   // 调用后端 API 创建影片
@@ -98,13 +84,5 @@ async function onCreate(data) {
   } else {
     ElMessage.error('添加失败：' + r.error)
   }
-}
-
-// 在线刮削直接保存成功的回调
-// 参数 id: 新创建的影片 ID
-// 触发时机：ScrapeForm 的 create 事件（用户点击"直接保存"）
-function onScrapeCreate(id) {
-  emit('created', id)
-  show.value = false
 }
 </script>
