@@ -12,6 +12,18 @@
   <head>
     <!-- 字符编码设为 UTF-8，支持多语言字符 -->
     <meta charset="UTF-8" />
+    <!-- 内容安全策略：消除 Electron 的 Insecure Content-Security-Policy 警告。
+         仅允许加载本应用自身资源；封面为本地文件/https 图片；
+         开发模式需保留 ws/wss 与 localhost 以支撑 Vite 热更新。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+               font-src 'self' data: https://fonts.gstatic.com;
+               img-src 'self' data: file: blob: http: https:;
+               connect-src 'self' ws: wss: http: https:;"
+    />
     <!-- 视口设置：适配不同设备宽度，初始缩放为 1.0 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- 页面标题，显示在窗口标题栏 -->

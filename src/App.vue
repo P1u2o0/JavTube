@@ -15,11 +15,14 @@
     <!-- 主内容区域 -->
     <div class="main-content">
       <!-- 路由出口：渲染当前匹配的路由组件 -->
-      <router-view v-slot="{ Component }">
-        <!-- 路由切换时的淡入淡出过渡动画 -->
-        <transition name="fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
+      <!-- 说明：这里刻意不使用 <transition mode="out-in">。
+           out-in 模式必须等待旧页面的离场动画帧回调完成后才会挂载新页面，
+           而 Electron 在 --disable-gpu 等环境下帧回调可能被节流/暂停，
+           一旦过渡未结束，新页面将永远不挂载，表现为「点击导航后一片空白」。
+           改为纯 CSS 入场动画（见 global.css .route-anim），动画不参与渲染流程，
+           因此不存在死锁风险。 -->
+      <router-view v-slot="{ Component, route }">
+        <component :is="Component" :key="route.path" class="route-anim" />
       </router-view>
     </div>
   </div>
@@ -56,17 +59,16 @@ onMounted(async () => {
 })
 </script>
 
-<!-- 组件样式：路由切换的淡入淡出 + 轻微位移过渡动画 -->
+<!-- 路由入场动画：纯 CSS animation，挂载即播放，不阻塞渲染 -->
 <style>
-/* 过渡进入和离开时的过渡效果 */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+.route-anim {
+  animation: route-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-/* 过渡开始和结束时的透明度与位移 */
-.fade-enter-from { opacity: 0; transform: translateY(6px); }
-.fade-leave-to { opacity: 0; }
+@keyframes route-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .fade-enter-active, .fade-leave-active { transition: none; }
-  .fade-enter-from { transform: none; }
+  .route-anim { animation: none; }
 }
 </style>

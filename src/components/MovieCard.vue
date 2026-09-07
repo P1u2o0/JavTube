@@ -38,9 +38,8 @@
       <button class="more-btn" @click.stop="toggleMenu" aria-label="更多操作">
         <AppIcon name="more" :size="16" />
       </button>
-      <!-- 更多操作菜单（带淡入淡出过渡动画） -->
-      <transition name="menu-fade">
-        <div v-if="menuOpen" class="ctx-menu" @click.stop>
+      <!-- 更多操作菜单（纯 CSS 入场动画，避免帧回调阻塞导致菜单无法消失） -->
+      <div v-if="menuOpen" class="ctx-menu menu-anim" @click.stop>
           <button class="ctx-item" @click="onEdit">
             <AppIcon name="edit" :size="15" />
             <span>编辑</span>
@@ -53,8 +52,7 @@
             <AppIcon name="trash" :size="15" />
             <span>删除</span>
           </button>
-        </div>
-      </transition>
+      </div>
     </div>
     <!-- 影片信息区域：番号 + 标题 -->
     <div class="info">
@@ -264,11 +262,12 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 .ctx-del { color: var(--danger); }
 .ctx-del .app-icon { opacity: 1; }
 .ctx-del:hover { background: var(--danger-soft); color: var(--danger); }
-/* 菜单淡入淡出过渡动画 */
-.menu-fade-enter-active, .menu-fade-leave-active {
-  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
+/* 菜单入场动画：纯 CSS animation，不依赖帧回调，避免在低帧率环境下菜单卡住无法消失 */
+.menu-anim { animation: menu-in 0.14s var(--ease-out) both; }
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
 }
-.menu-fade-enter-from, .menu-fade-leave-to { opacity: 0; transform: translateY(4px); }
 /* 信息区域 */
 .info { padding: 10px 12px 12px; }
 /* 番号：拉丁展示字 + 等宽数字，工具软件的"仪表盘感" */
