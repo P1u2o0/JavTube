@@ -51,32 +51,57 @@ import { ref } from 'vue'
 export const dataDirRef = ref('')
 
 /**
- * 获取封面图解析为实际文件路径
+ * 获取封面图解析为 <img> 可加载的 URL
  * 功能：根据封面字段值，将其转换为浏览器可显示的 URL
- * 支持的输入格式：HTTP/HTTPS URL、file:// URL、Windows 绝对路径、
- *                  Unix 绝对路径、相对路径（基于 dataDir）
+ * 支持的输入格式：HTTP/HTTPS URL、javtube-cover:// 自定义协议、file:// URL、
+ *                  Windows 绝对路径、Unix 绝对路径、相对路径（基于 dataDir）
+ *
+ * 设计说明：本地磁盘的封面图原本用 file:// URL，但 Electron 在严格 CSP + Privileged 上下文下
+ *           会拒绝 img 加载 file:// 资源（控制台报 "Not allowed to load local resource"）。
+ *           我们在主进程注册了 javtube-cover:// privileged scheme，主进程会把路径白名单校验
+ *           后转为 net.fetch(file://) 返回，因此这里统一改用 javtube-cover://，对调用方透明。
  * @param {string} cover - 封面路径字段值
  * @returns {string} 可用于 img src 的 URL
  */
 export function resolveCover(cover) {
   if (!cover) return ''
-  // HTTP/HTTPS URL 直接返回
+  // HTTP/HTTPS URL 直接返回（远程封面图无需走自定义协议）
   if (/^https?:\/\//i.test(cover)) return cover
-  // Already a file:// URL 直接返回
-  if (/^file:\/\//i.test(cover)) return cover
-  // Windows absolute path (C:\...) 转为 file:// URL
-  if (/^[A-Z]:[\\/]/i.test(cover)) {
-    return 'file:///' + cover.replace(/\\/g, '/')
-  }
-  // Unix absolute path 转为 file:// URL
-  if (/^\//.test(cover)) return 'file://' + cover
-  // Relative path => file:// + dataDir/cover 拼接数据目录
+  // 已经是 javtube-cover:// URL 直接返回（避免重复编码）
+  if (/^javtube-cover:\/\//i.test(cover)) return cover
+  // 其他任意本地路径（含 file://、Windows 绝对路径、Unix 路径、相对路径）
+  // 都统一编码为 javtube-cover:///<base64url(absolutePath)>
   const dataDir = dataDirRef.value || window.__dataDir || ''
-  if (dataDir) {
-    const p = (dataDir + '/' + cover).replace(/\\/g, '/')
-    return 'file:///' + p.replace(/\/+/g, '/').replace(/^\//, '')
+  let abs = ''
+  if (/^file:\/\//i.test(cover)) {
+    // file:///C:/... 或 file:///home/... → 真实路径
+    try {
+      const u = new URL(cover)
+      abs = decodeURIComponent(u.pathname.replace(/^\//, ''))
+      // Windows: '/C:/foo' → 'C:/foo'（去掉前导 /）
+      if (/^\/[A-Za-z]:/.test(abs)) abs = abs.slice(1)
+    } catch { abs = cover.replace(/^file:\/\/\//i, '') }
+  } else if (/^[A-Z]:[\\/]/i.test(cover)) {
+    // Windows 绝对路径
+    abs = cover
+  } else if (/^\//.test(cover)) {
+    // Unix 绝对路径
+    abs = cover.slice(1)
+  } else if (dataDir) {
+    // 相对路径：拼到 dataDir
+    abs = (dataDir + '/' + cover).replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '')
+  } else {
+    // 兜底：未知格式，原样返回（让浏览器尝试加载）
+    return cover
   }
-  return cover
+  // base64url 编码（A-Z a-z 0-9 - _），不需要再 URL 编码，安全无 #/空格/中文问题
+  const enc = btoa(unescape(encodeURIComponent(abs)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  // 用固定占位 host = "0"，避免 base64url 串（合法 host 字符）被 Chromium 当成 host 段解析，
+  // 否则 pathname 会只剩 "/" 拿不到编码内容。CRITICAL：0 是占位，主进程按 pathname.slice(1) 取。
+  return `javtube-cover://0/${enc}`
 }
 
 /**

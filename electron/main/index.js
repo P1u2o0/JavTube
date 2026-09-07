@@ -8,7 +8,7 @@
  */
 
 // 引入 Electron 核心模块
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -34,6 +34,26 @@ if (process.env.JAVTUBE_DISABLE_GPU === '1') {
   app.disableHardwareAcceleration()
   app.commandLine.appendSwitch('disable-gpu')
 }
+
+// ====== 注册 javtube-cover 自定义协议 ======
+// 用途：让渲染进程的 <img> 能加载本地磁盘封面图。
+// 不能直接用 file:// 的原因：在 Electron 默认 CSP 下，<img src="file://..."> 会报
+// "Not allowed to load local resource"。注册成自定义协议后，CSP 只需放行 javtube-cover:，
+// 主进程按规则解析图片字节流返回即可，跨平台/跨目录/带空格路径都安全。
+// 设计：先调用 protocol.registerSchemesAsPrivileged 注册为 privileged+standard+bypassCSP，
+//      这样 fetch/img 加载不需要再用 unsafe-inline 之类放宽。
+// 然后在 app.whenReady 里调用 protocol.handle() 把路径解析交给 net.fetch 读磁盘。
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'javtube-cover',
+    privileges: {
+      standard: true,     // 走标准 URL 解析（host 段、pathToFileURL 等都正常）
+      secure: true,        // 允许当 https 一样看待（web security 不挡）
+      supportFetchAPI: true,
+      stream: true         // 大图流式输出，避免一次性读进内存
+    }
+  }
+])
 
 // 全局变量：主窗口实例
 let mainWindow = null
@@ -120,6 +140,68 @@ function getDataDir() {
 
   console.log('[main] dataDir =', dir)
   return dir
+}
+
+/**
+ * 注册 javtube-cover 自定义协议，把本地图片文件暴露给渲染进程的 <img>。
+ *
+ * 协议格式：javtube-cover:///<base64url 编码后的绝对路径>
+ * - 用 base64url 是为了兼容任意字符（包括空格、中文、Windows 反斜杠等），避免 URL 解析问题。
+ * - 仅放行白名单扩展名（图片），且必须解析为绝对路径，防止被恶意页面利用读任意文件。
+ * - 不存在的文件直接返回 404，避免无谓的系统开销。
+ *
+ * @param {string} dataDir - 应用数据目录（用于路径校验，限定在数据目录或系统临时目录内）
+ */
+function registerCoverProtocol(dataDir) {
+  // 白名单扩展名：仅图片可走该协议，避免被滥用来加载本地视频或文档
+  const IMG_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp'])
+  const isImg = (p) => IMG_EXTS.has(path.extname(p).toLowerCase())
+
+  // 路径白名单：必须在这些目录之一，才允许读取
+  //   1. 数据目录（封面、上传图等都存在这里）
+  //   2. 系统临时目录（兼容旧版刮削缓存）
+  //   3. EXE 同级目录（兼容用户把数据放在 exe 旁的场景）
+  const allowedRoots = [
+    path.resolve(dataDir),
+    path.resolve(process.cwd()),
+    path.resolve(path.dirname(app.getPath('exe'))),
+    path.resolve(require('os').tmpdir())
+  ]
+
+  protocol.handle('javtube-cover', async (request) => {
+    try {
+      const u = new URL(request.url)
+      // 占位 host = "0"，编码段在 pathname 的第一段（如 javtube-cover://0/QzxhelBh...）
+      // 解码前缀 /，去掉可能的尾部 /（浏览器偶尔会加）
+      const segs = u.pathname.split('/').filter(s => s.length > 0)
+      const enc = segs[0] || ''
+      if (!enc) return new Response('bad request', { status: 400 })
+      // base64url 解码为文件绝对路径
+      const abs = Buffer.from(enc, 'base64').toString('utf-8')
+      // 解析为标准绝对路径
+      const resolved = path.resolve(abs)
+      // 白名单校验：必须落在允许的根目录之一
+      const ok = allowedRoots.some(root => {
+        const rel = path.relative(root, resolved)
+        return rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+      })
+      if (!ok) return new Response('forbidden', { status: 403 })
+      // 必须是图片扩展名
+      if (!isImg(resolved)) return new Response('not an image', { status: 415 })
+      // 文件必须存在且是文件
+      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+        return new Response('not found', { status: 404 })
+      }
+      // 用 net.fetch 走本地文件协议交给 Electron 处理，返回标准 Response
+      // URL 用 pathToFileURL 来正确编码（处理中文、空格、# 等字符）
+      const fileUrl = require('url').pathToFileURL(resolved).href
+      return await net.fetch(fileUrl)
+    } catch (e) {
+      console.warn('[cover-protocol] err:', e.message)
+      return new Response('error: ' + e.message, { status: 500 })
+    }
+  })
+  console.log('[main] javtube-cover protocol registered')
 }
 
 /**
@@ -327,6 +409,8 @@ app.whenReady().then(async () => {
     db = await initDb(dataDir)
     console.log(`[main] initDb DONE in ${Date.now()-t0}ms path=${db?._dbPath}`)
     dbPathForGlobal = db?._dbPath || ''
+    // 注册 javtube-cover 自定义协议（必须在创建窗口之前，依赖 scheme 在文件顶部已注册为 privileged）
+    registerCoverProtocol(dataDir)
   } catch (e) {
     console.error('[main] DB init FAILED:', e?.stack || e)
   }
