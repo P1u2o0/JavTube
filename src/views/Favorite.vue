@@ -132,7 +132,10 @@ async function onBatchFav(f) {
  */
 onMounted(async () => {
   await store.initIfNeeded()
-  await store.loadAllDbTags()
-  await store.loadMovies({ onlyFavorite: true })
+  // 标签库与收藏列表互不依赖，并行拉取，避免串行等待造成的切换卡顿
+  await Promise.all([
+    store.loadAllDbTags(),
+    store.loadMovies({ onlyFavorite: true })
+  ])
 })
 </script>

@@ -258,7 +258,8 @@ async function applyRouteFilter(q) {
  */
 onMounted(async () => {
   await store.initIfNeeded()
-  await store.loadAllDbTags()
+  // 标签库与影片列表互不依赖，并行拉取，减少切换页面时的等待
+  const tagsP = store.loadAllDbTags()
   // 优先处理从详情页跳转来的筛选 query
   if (!await applyRouteFilter(route.query)) {
     // 无筛选条件时，仅在数据为空或有变动标记时才加载
@@ -268,6 +269,7 @@ onMounted(async () => {
       await store.loadMovies({ append: false })
     }
   }
+  await tagsP
 })
 
 // 监听 store.sort.random 改变，触发刷新（随机排序切换）

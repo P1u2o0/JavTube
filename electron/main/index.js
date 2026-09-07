@@ -21,9 +21,19 @@ const { registerSettingsIpc } = require('./db/settings')
 // 引入刮削模块
 const { scrapeMovie } = require('./scraper')
 
-// Windows 上禁用 GPU 硬件加速以避免窗口不可见问题
-// 某些 Windows 显卡驱动在 Electron 中会导致窗口白屏或不可见，禁用后改用软件渲染
-app.disableHardwareAcceleration()
+// ====== 渲染性能相关 ======
+// 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
+// 进而触发 "GPU process isn't usable. Goodbye." 的致命退出，应用根本打不开。
+app.commandLine.appendSwitch('no-sandbox')
+
+// 默认启用硬件加速：动画、滚动、图片缩放交由 GPU 合成，切换页面才顺滑。
+// 若你的机器 GPU 驱动异常，设置环境变量 JAVTUBE_DISABLE_GPU=1 即可降级为软件渲染。
+// 注意：降级时也不追加 disable-software-rasterizer，否则会禁掉 SwiftShader 软件 GL，
+// 使大窗口渲染退化成纯 CPU 光栅，反而更卡。
+if (process.env.JAVTUBE_DISABLE_GPU === '1') {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+}
 
 // 全局变量：主窗口实例
 let mainWindow = null
