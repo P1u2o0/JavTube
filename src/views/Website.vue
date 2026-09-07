@@ -63,7 +63,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWebStore } from '@/store/settings'
 import AppIcon from '@/components/AppIcon.vue'
 

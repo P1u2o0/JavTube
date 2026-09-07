@@ -68,11 +68,6 @@ const route = useRoute()
 async function onRefresh() { store.page = 1; await store.loadMovies({ append: false }) }
 
 /**
- * 重置筛选并刷新
- */
-function onReset() { onRefresh() }
-
-/**
  * 翻页处理
  * @param {number} p - 目标页码
  */
@@ -236,47 +231,11 @@ async function onBatchScrape() {
 }
 
 /**
- * 组件挂载时：初始化 store、加载标签、处理路由参数过滤
- * 支持从详情页通过 query 跳转：tag（标签）、actress（女优）、studio（厂商）、series（系列）
+ * 根据路由 query 应用筛选并刷新片库
+ * 从详情页通过 query 跳转过滤（标签/女优/厂商/系列）
  */
-onMounted(async () => {
-  await store.initIfNeeded()
-  await store.loadAllDbTags()
-  const tag = route.query.tag
-  const actress = route.query.actress
-  const studio = route.query.studio
-  const series = route.query.series
-  if (tag || actress || studio || series) {
-    // 如果有 tag 参数，在 9 个类别中查找并选中
-    if (tag) {
-      for (let ci = 0; ci < 9; ci++) {
-        if (store.categories[ci]?.tags?.includes(tag)) {
-          store.tagSelected[ci] = [tag]
-          break
-        }
-      }
-    }
-    store.page = 1
-    // 构建附加筛选条件
-    const extra = {}
-    if (actress) extra.actress = actress
-    if (studio) extra.studio = studio
-    if (series) extra.series = series
-    await store.loadMovies({ append: false, extraFilter: extra })
-  } else if (store.dirty || store.movies.length === 0) {
-    // 数据有变动或列表为空时自动加载
-    store.page = 1
-    store.dirty = false
-    await store.loadMovies({ append: false })
-  }
-})
-
-// 监听 store.sort.random 改变，触发刷新（随机排序切换）
-watch(() => store.sort.random, () => onRefresh())
-
-// 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库时自动过滤）
-watch(() => route.query, (q) => {
-  if (!q.tag && !q.actress && !q.studio && !q.series) return
+async function applyRouteFilter(q) {
+  if (!q.tag && !q.actress && !q.studio && !q.series) return false
   if (q.tag) {
     for (let ci = 0; ci < 9; ci++) {
       if (store.categories[ci]?.tags?.includes(q.tag)) {
@@ -290,6 +249,30 @@ watch(() => route.query, (q) => {
   if (q.actress) extra.actress = q.actress
   if (q.studio) extra.studio = q.studio
   if (q.series) extra.series = q.series
-  store.loadMovies({ append: false, extraFilter: extra })
-}, { deep: true })
+  await store.loadMovies({ append: false, extraFilter: extra })
+  return true
+}
+
+/**
+ * 组件挂载时：初始化 store、加载标签、处理路由参数过滤
+ */
+onMounted(async () => {
+  await store.initIfNeeded()
+  await store.loadAllDbTags()
+  // 优先处理从详情页跳转来的筛选 query
+  if (!await applyRouteFilter(route.query)) {
+    // 无筛选条件时，仅在数据为空或有变动标记时才加载
+    if (store.dirty || store.movies.length === 0) {
+      store.page = 1
+      store.dirty = false
+      await store.loadMovies({ append: false })
+    }
+  }
+})
+
+// 监听 store.sort.random 改变，触发刷新（随机排序切换）
+watch(() => store.sort.random, () => onRefresh())
+
+// 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库时自动过滤）
+watch(() => route.query, (q) => { applyRouteFilter(q) }, { deep: true })
 </script>

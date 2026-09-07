@@ -59,11 +59,6 @@ const router = useRouter()
 async function onRefresh() { store.page = 1; await store.loadMovies({ onlyFavorite: true }) }
 
 /**
- * 重置筛选条件并刷新（与 onRefresh 相同）
- */
-function onReset() { onRefresh() }
-
-/**
  * 翻页处理
  * @param {number} p - 目标页码
  */

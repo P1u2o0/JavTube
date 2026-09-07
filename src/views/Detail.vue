@@ -101,7 +101,7 @@ import { useMoviesStore } from '@/store/movies'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, DELIM } from '@/utils/global'
+import { resolveCover } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()

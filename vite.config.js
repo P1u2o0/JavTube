@@ -57,7 +57,8 @@ function startElectron(viteDevUrl) {
   // 设置环境变量，将开发服务器 URL 传递给 Electron 主进程
   const env = { ...process.env, VITE_DEV_SERVER_URL: viteDevUrl }
   // 启动 Electron 进程，继承标准输入输出
-  electronProc = spawn(exe, [mainEntry], { env, stdio: 'inherit' })
+  // 附加 --disable-gpu / --no-sandbox 等参数，规避 sandbox 环境下的 GPU 进程崩溃问题
+  electronProc = spawn(exe, [mainEntry, '--disable-gpu', '--disable-software-rasterizer', '--no-sandbox'], { env, stdio: 'inherit' })
   // 监听 Electron 进程退出事件
   electronProc.on('exit', (code) => {
     console.log(`[launch] electron exited code=${code}`)

@@ -33,7 +33,7 @@
               <el-slider v-model="colsPerRowN" :min="3" :max="8" :step="1" :marks="{3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'}" style="max-width: 300px;" />
               <span class="slider-value">{{ colsPerRowN }}</span>
             </div>
-            <span style="margin-left:10px;color:#909399;font-size:12px;">控制首页海报墙每行显示的影片数</span>
+            <div style="margin-top:6px;color:var(--muted);font-size:12px;">控制首页海报墙每行显示的影片数</div>
           </el-form-item>
           <!-- 点击卡片默认动作 -->
           <el-form-item label="点击卡片动作">
