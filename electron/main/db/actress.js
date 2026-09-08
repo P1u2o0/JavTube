@@ -11,6 +11,8 @@
 
 // db 层通用工具（查询结果转换 / 落盘收口）
 const { rows, firstRow, firstScalar, persist } = require('./util')
+// IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
+const IPC = require('../../common/ipc-channels')
 
 /**
  * 注册女优相关的 IPC 处理器。
@@ -21,14 +23,14 @@ function registerActressIpc(ipcMain, db) {
 
   // IPC: actress:list — 渲染进程 → 主进程
   // 获取所有女优列表（按名称排序）
-  ipcMain.handle('actress:list', () => {
+  ipcMain.handle(IPC.ACTRESS_LIST, () => {
     try { return { ok: true, data: rows(db.exec('SELECT * FROM actress ORDER BY name ASC')[0]) } }
     catch (e) { return { ok: false, error: e.message, data: [] } }
   })
 
   // IPC: actress:get — 渲染进程 → 主进程
   // 获取女优详情，并附带该女优参演的影片列表
-  ipcMain.handle('actress:get', (_e, id) => {
+  ipcMain.handle(IPC.ACTRESS_GET, (_e, id) => {
     try {
       // 查询女优基本信息
       const m = firstRow(db.exec('SELECT * FROM actress WHERE id=?', [Number(id)])[0])
@@ -52,7 +54,7 @@ function registerActressIpc(ipcMain, db) {
 
   // IPC: actress:create — 渲染进程 → 主进程
   // 创建女优记录
-  ipcMain.handle('actress:create', (_e, data) => {
+  ipcMain.handle(IPC.ACTRESS_CREATE, (_e, data) => {
     try {
       const d = data || {}
       db.run(`INSERT INTO actress (name,img,height,bust,waist,hip,zb,birthday,debut,remark)
@@ -68,7 +70,7 @@ function registerActressIpc(ipcMain, db) {
 
   // IPC: actress:update — 渲染进程 → 主进程
   // 更新女优信息
-  ipcMain.handle('actress:update', (_e, { id, data }) => {
+  ipcMain.handle(IPC.ACTRESS_UPDATE, (_e, { id, data }) => {
     try {
       const d = data || {}
       db.run(`UPDATE actress SET name=?,img=?,height=?,bust=?,waist=?,hip=?,zb=?,birthday=?,debut=?,remark=? WHERE id=?`, [
@@ -82,7 +84,7 @@ function registerActressIpc(ipcMain, db) {
 
   // IPC: actress:delete — 渲染进程 → 主进程
   // 删除女优
-  ipcMain.handle('actress:delete', (_e, id) => {
+  ipcMain.handle(IPC.ACTRESS_DELETE, (_e, id) => {
     try { db.run('DELETE FROM actress WHERE id=?', [Number(id)])
       persist(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }

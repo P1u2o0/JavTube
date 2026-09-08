@@ -12,6 +12,8 @@ const fs = require('fs')
 const path = require('path')
 // db 层通用工具（落盘收口）
 const { persist } = require('./util')
+// IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
+const IPC = require('../../common/ipc-channels')
 
 /**
  * 从 JSON 文件加载标签分类数据。
@@ -51,7 +53,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:get — 渲染进程 → 主进程
   // 获取所有设置项（键值对形式）
-  ipcMain.handle('settings:get', () => {
+  ipcMain.handle(IPC.SETTINGS_GET, () => {
     try {
       // 查询 settings 表中的所有记录
       const r = db.exec('SELECT key, value FROM settings')[0]
@@ -64,7 +66,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:update — 渲染进程 → 主进程
   // 更新单个设置项（不存在则插入，存在则更新）
-  ipcMain.handle('settings:update', (_e, { key, value }) => {
+  ipcMain.handle(IPC.SETTINGS_UPDATE, (_e, { key, value }) => {
     try {
       // 使用 INSERT ... ON CONFLICT 实现 upsert 语义
       // 如果 key 不存在则插入，已存在则更新 value
@@ -77,13 +79,13 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:getTagCats — 渲染进程 → 主进程
   // 获取标签分类列表（从 JSON 文件读取）
-  ipcMain.handle('settings:getTagCats', () => {
+  ipcMain.handle(IPC.SETTINGS_GET_TAG_CATS, () => {
     return { ok: true, data: loadCats(dataDir) }
   })
 
   // IPC: settings:saveTagCats — 渲染进程 → 主进程
   // 保存标签分类列表（写入 JSON 文件）
-  ipcMain.handle('settings:saveTagCats', (_e, cats) => {
+  ipcMain.handle(IPC.SETTINGS_SAVE_TAG_CATS, (_e, cats) => {
     try {
       saveCats(dataDir, Array.isArray(cats) ? cats : [])
       return { ok: true }
@@ -92,7 +94,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:backup — 渲染进程 → 主进程
   // 备份数据库到指定路径
-  ipcMain.handle('settings:backup', (_e, targetPath) => {
+  ipcMain.handle(IPC.SETTINGS_BACKUP, (_e, targetPath) => {
     try {
       if (!targetPath || !db._dbPath) return { ok: false, error: 'invalid path' }
       // 先强制保存内存数据库到磁盘，确保数据最新
@@ -105,7 +107,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:restore — 渲染进程 → 主进程
   // 从备份文件恢复数据库
-  ipcMain.handle('settings:restore', (_e, sourcePath) => {
+  ipcMain.handle(IPC.SETTINGS_RESTORE, (_e, sourcePath) => {
     try {
       if (!sourcePath || !db._dbPath) return { ok: false, error: 'invalid path' }
       if (!fs.existsSync(sourcePath)) return { ok: false, error: 'source not found' }
@@ -120,7 +122,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:clear — 渲染进程 → 主进程
   // 清空所有数据（删除影片、女优、网址记录，保留设置）
-  ipcMain.handle('settings:clear', () => {
+  ipcMain.handle(IPC.SETTINGS_CLEAR, () => {
     try {
       db.run('DELETE FROM movies')   // 清空影片表
       db.run('DELETE FROM actress')  // 清空女优表
@@ -132,7 +134,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: misc:dataDir — 渲染进程 → 主进程
   // 获取应用数据目录路径（渲染进程用于封面图等资源的路径解析）
-  ipcMain.handle('misc:dataDir', () => dataDir)
+  ipcMain.handle(IPC.MISC_DATA_DIR, () => dataDir)
 }
 
 module.exports = { registerSettingsIpc }

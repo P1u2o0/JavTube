@@ -24,6 +24,8 @@ const { registerSettingsIpc } = require('./db/settings')
 const { scrapeMovie } = require('./scraper')
 // 引入跨文件共享常量（视频扩展名 / 封面目录名等）
 const { VIDEO_EXTS, COVER_DIR } = require('./constants')
+// IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
+const IPC = require('./common/ipc-channels')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -299,7 +301,7 @@ function createWindow() {
 function registerUtilsIpc() {
   // === 播放视频 ===
   // 渲染进程 → 主进程：根据设置中的自定义播放器路径播放视频，否则用系统默认程序打开
-  ipcMain.handle('utils:playVideo', async (_e, filePath) => {
+  ipcMain.handle(IPC.UTILS_PLAY_VIDEO, async (_e, filePath) => {
     try {
       // 查找自定义播放器路径（从数据库 settings 表读取）
       let custom = ''
@@ -323,7 +325,7 @@ function registerUtilsIpc() {
 
   // === 扫描目录中的视频文件 ===
   // 渲染进程 → 主进程：递归扫描指定目录，返回所有视频文件信息
-  ipcMain.handle('utils:scanDir', async (_e, dirPath) => {
+  ipcMain.handle(IPC.UTILS_SCAN_DIR, async (_e, dirPath) => {
     try {
       // 支持的视频文件扩展名列表（定义于 constants.js）
       const results = []
@@ -353,7 +355,7 @@ function registerUtilsIpc() {
 
   // === 读取文本文件 ===
   // 渲染进程 → 主进程：以 UTF-8 编码读取文件文本内容
-  ipcMain.handle('utils:readFileText', (_e, filePath) => {
+  ipcMain.handle(IPC.UTILS_READ_FILE_TEXT, (_e, filePath) => {
     try {
       const txt = fs.readFileSync(filePath, 'utf-8')
       return { ok: true, data: txt }
@@ -362,7 +364,7 @@ function registerUtilsIpc() {
 
   // === 读取文件并返回 Base64 ===
   // 渲染进程 → 主进程：读取文件二进制数据并转为 Base64 字符串（用于图片预览等）
-  ipcMain.handle('utils:readFileBase64', (_e, filePath) => {
+  ipcMain.handle(IPC.UTILS_READ_FILE_BASE64, (_e, filePath) => {
     try {
       const buf = fs.readFileSync(filePath)
       return { ok: true, data: buf.toString('base64') }
@@ -373,24 +375,24 @@ function registerUtilsIpc() {
   // 通用打开对话框函数：封装 dialog.showOpenDialog，返回选中路径
   const doOpen = (props, multi = false) => dialog.showOpenDialog(mainWindow, props).then(r => r.canceled ? null : (multi ? r.filePaths : r.filePaths[0]))
   // 打开目录选择对话框
-  ipcMain.handle('dialog:openDir', () => doOpen({ properties: ['openDirectory'] }))
+  ipcMain.handle(IPC.DIALOG_OPEN_DIR, () => doOpen({ properties: ['openDirectory'] }))
   // 打开视频文件选择对话框
-  ipcMain.handle('dialog:openVideo', () => doOpen({ properties: ['openFile'], filters: [{ name: '视频文件', extensions: ['mp4','avi','mkv','mov','flv','wmv','rmvb','m4v','mpg','mpeg','ts','webm','*'] }] }))
+  ipcMain.handle(IPC.DIALOG_OPEN_VIDEO, () => doOpen({ properties: ['openFile'], filters: [{ name: '视频文件', extensions: ['mp4','avi','mkv','mov','flv','wmv','rmvb','m4v','mpg','mpeg','ts','webm','*'] }] }))
   // 打开图片文件选择对话框
-  ipcMain.handle('dialog:openImage', () => doOpen({ properties: ['openFile'], filters: [{ name: '图片文件', extensions: ['jpg','jpeg','png','gif','webp','bmp'] }] }))
+  ipcMain.handle(IPC.DIALOG_OPEN_IMAGE, () => doOpen({ properties: ['openFile'], filters: [{ name: '图片文件', extensions: ['jpg','jpeg','png','gif','webp','bmp'] }] }))
   // 打开可执行文件选择对话框
-  ipcMain.handle('dialog:openFile', () => doOpen({ properties: ['openFile'], filters: [{ name: '可执行文件', extensions: ['exe','bat','cmd'] }, { name: '所有文件', extensions: ['*'] }] }))
+  ipcMain.handle(IPC.DIALOG_OPEN_FILE, () => doOpen({ properties: ['openFile'], filters: [{ name: '可执行文件', extensions: ['exe','bat','cmd'] }, { name: '所有文件', extensions: ['*'] }] }))
   // 打开 NFO 文件选择对话框（支持多选）
-  ipcMain.handle('dialog:openNfo', () => dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'NFO', extensions: ['nfo','xml'] }] }).then(r => r.canceled ? null : r.filePaths))
+  ipcMain.handle(IPC.DIALOG_OPEN_NFO, () => dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'NFO', extensions: ['nfo','xml'] }] }).then(r => r.canceled ? null : r.filePaths))
   // 保存数据库备份文件对话框
-  ipcMain.handle('dialog:saveDb', () => dialog.showSaveDialog(mainWindow, { defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }).then(r => r.canceled ? null : r.filePath))
+  ipcMain.handle(IPC.DIALOG_SAVE_DB, () => dialog.showSaveDialog(mainWindow, { defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }).then(r => r.canceled ? null : r.filePath))
   // 打开数据库文件选择对话框
-  ipcMain.handle('dialog:openDb', () => doOpen({ properties: ['openFile'], filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }))
+  ipcMain.handle(IPC.DIALOG_OPEN_DB, () => doOpen({ properties: ['openFile'], filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }))
 
   // === 刮削功能 ===
   // 渲染进程 → 主进程：根据番号从网络刮削影片信息
   // 参数：ph（番号）、source（刮削来源）、coverDir（封面保存目录名）
-  ipcMain.handle('scraper:scrape', async (_e, { ph, source, coverDir }) => {
+  ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir }) => {
     try {
       const r = await scrapeMovie(ph, { source: source || 'auto', coverDir: coverDir || COVER_DIR, dataDir: dataDirForGlobal })
       return r

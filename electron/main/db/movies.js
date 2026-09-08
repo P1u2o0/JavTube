@@ -15,6 +15,8 @@
 const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
 // db 层通用工具（查询结果转换 / 时间格式 / 落盘收口）
 const { rows, firstRow, firstScalar, nowIso, persist } = require('./util')
+// IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
+const IPC = require('../../common/ipc-channels')
 
 // === 影片表字段元数据 ===
 /**
@@ -85,7 +87,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:get — 渲染进程 → 主进程
   // 分页查询影片列表，支持过滤、排序、分页、只看收藏等
-  ipcMain.handle('movies:get', (_e, params) => {
+  ipcMain.handle(IPC.MOVIES_GET, (_e, params) => {
     try {
       params = params || {}
       // 解构参数：过滤条件、排序、分页、是否只看收藏
@@ -159,7 +161,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:getOne — 渲染进程 → 主进程
   // 根据 ID 查询单条影片详情
-  ipcMain.handle('movies:getOne', (_e, id) => {
+  ipcMain.handle(IPC.MOVIES_GET_ONE, (_e, id) => {
     try {
       const r = db.exec('SELECT * FROM movies WHERE id=?', [Number(id)])
       const m = firstRow(r[0])
@@ -169,7 +171,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:create — 渲染进程 → 主进程
   // 创建新影片记录，番号重复时跳过
-  ipcMain.handle('movies:create', (_e, data) => {
+  ipcMain.handle(IPC.MOVIES_CREATE, (_e, data) => {
     try {
       const d = data || {}
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
@@ -193,7 +195,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:update — 渲染进程 → 主进程
   // 更新指定 ID 的影片记录（先读取现有数据，再合并更新）
-  ipcMain.handle('movies:update', (_e, { id, data }) => {
+  ipcMain.handle(IPC.MOVIES_UPDATE, (_e, { id, data }) => {
     try {
       // 先查询当前记录
       const r0 = db.exec('SELECT * FROM movies WHERE id=?', [Number(id)])
@@ -212,14 +214,14 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:delete — 渲染进程 → 主进程
   // 删除单条影片
-  ipcMain.handle('movies:delete', (_e, id) => {
+  ipcMain.handle(IPC.MOVIES_DELETE, (_e, id) => {
     try { db.run('DELETE FROM movies WHERE id=?', [Number(id)]); persist(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 
   // IPC: movies:deleteMany — 渲染进程 → 主进程
   // 批量删除影片
-  ipcMain.handle('movies:deleteMany', (_e, ids) => {
+  ipcMain.handle(IPC.MOVIES_DELETE_MANY, (_e, ids) => {
     try {
       for (const id of (ids||[])) db.run('DELETE FROM movies WHERE id=?', [Number(id)])
       persist(db); return { ok: true }
@@ -228,7 +230,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:batchFav — 渲染进程 → 主进程
   // 批量设置收藏状态
-  ipcMain.handle('movies:batchFav', (_e, { ids, isFav }) => {
+  ipcMain.handle(IPC.MOVIES_BATCH_FAV, (_e, { ids, isFav }) => {
     try {
       const val = isFav ? FAV_Y : FAV_N
       for (const id of (ids||[])) db.run('UPDATE movies SET cl=? WHERE id=?', [val, Number(id)])
@@ -238,7 +240,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:batchTags — 渲染进程 → 主进程
   // 批量追加标签（不覆盖原有标签，在原有基础上追加）
-  ipcMain.handle('movies:batchTags', (_e, { ids, tags }) => {
+  ipcMain.handle(IPC.MOVIES_BATCH_TAGS, (_e, { ids, tags }) => {
     try {
       const list = Array.isArray(tags) ? tags : []
       if (!list.length) return { ok: true }
@@ -260,7 +262,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:getAllTags — 渲染进程 → 主进程
   // 获取所有影片中使用过的标签列表（按使用频率降序排列）
-  ipcMain.handle('movies:getAllTags', () => {
+  ipcMain.handle(IPC.MOVIES_GET_ALL_TAGS, () => {
     try {
       // 查询所有非空的标签字段
       const r = db.exec("SELECT bq FROM movies WHERE bq IS NOT NULL AND bq != ''")[0]
@@ -280,7 +282,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:recordPlay — 渲染进程 → 主进程
   // 记录影片播放时间（更新 play_time 字段）
-  ipcMain.handle('movies:recordPlay', (_e, id) => {
+  ipcMain.handle(IPC.MOVIES_RECORD_PLAY, (_e, id) => {
     try {
       const now = new Date().toISOString()
       db.run('UPDATE movies SET play_time = ? WHERE id = ?', [now, Number(id)])
@@ -291,7 +293,7 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:search — 渲染进程 → 主进程
   // 全局搜索：支持在影片、女优、网址三个范围内搜索
-  ipcMain.handle('movies:search', (_e, { scope, q }) => {
+  ipcMain.handle(IPC.MOVIES_SEARCH, (_e, { scope, q }) => {
     try {
       q = (q || '').trim()
       if (!q) return { ok: true, scope, data: [] }

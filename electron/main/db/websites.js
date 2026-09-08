@@ -10,6 +10,8 @@
 
 // db 层通用工具（查询结果转换 / 落盘收口）
 const { rows, firstScalar, persist } = require('./util')
+// IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
+const IPC = require('../../common/ipc-channels')
 
 /**
  * 注册网址相关的 IPC 处理器。
@@ -20,14 +22,14 @@ function registerWebsitesIpc(ipcMain, db) {
 
   // IPC: websites:list — 渲染进程 → 主进程
   // 获取所有网址列表（按分组和 ID 排序）
-  ipcMain.handle('websites:list', () => {
+  ipcMain.handle(IPC.WEBSITES_LIST, () => {
     try { return { ok: true, data: rows(db.exec('SELECT * FROM websites ORDER BY grp ASC, id ASC')[0]) } }
     catch (e) { return { ok: false, error: e.message, data: [] } }
   })
 
   // IPC: websites:create — 渲染进程 → 主进程
   // 创建网址记录
-  ipcMain.handle('websites:create', (_e, d) => {
+  ipcMain.handle(IPC.WEBSITES_CREATE, (_e, d) => {
     try {
       d = d || {}
       db.run(`INSERT INTO websites (name,url,grp,img) VALUES (?,?,?,?)`, [d.name||'', d.url||'', d.grp||'', d.img||''])
@@ -38,7 +40,7 @@ function registerWebsitesIpc(ipcMain, db) {
 
   // IPC: websites:update — 渲染进程 → 主进程
   // 更新网址信息
-  ipcMain.handle('websites:update', (_e, { id, data }) => {
+  ipcMain.handle(IPC.WEBSITES_UPDATE, (_e, { id, data }) => {
     try {
       const d = data || {}
       db.run(`UPDATE websites SET name=?,url=?,grp=?,img=? WHERE id=?`,
@@ -49,7 +51,7 @@ function registerWebsitesIpc(ipcMain, db) {
 
   // IPC: websites:delete — 渲染进程 → 主进程
   // 删除网址
-  ipcMain.handle('websites:delete', (_e, id) => {
+  ipcMain.handle(IPC.WEBSITES_DELETE, (_e, id) => {
     try { db.run('DELETE FROM websites WHERE id=?', [Number(id)])
       persist(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
