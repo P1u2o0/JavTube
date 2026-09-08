@@ -108,10 +108,10 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       if (!sourcePath || !db._dbPath) return { ok: false, error: 'invalid path' }
       if (!fs.existsSync(sourcePath)) return { ok: false, error: 'source not found' }
       // 将备份文件复制到当前数据库路径
+      // 注意：这里不能调用 db._forceSave()！那会把内存中的旧数据库导出并覆盖刚恢复的备份文件，
+      // 导致恢复操作失效（复制进去的新数据被旧内存数据覆盖回去）。
       fs.copyFileSync(sourcePath, db._dbPath)
-      if (db._forceSave) db._forceSave()
-      // 注意：restore 实际需要重连数据库，但这是简单重启生效
-      // 因为 sql.js 数据库实例在内存中，替换文件后需要重启应用才能加载新数据
+      // sql.js 数据库实例在内存中，替换磁盘文件后需要重启应用才能加载新数据
       return { ok: true, info: 'Please restart app to load restored DB' }
     } catch (e) { return { ok: false, error: e.message } }
   })

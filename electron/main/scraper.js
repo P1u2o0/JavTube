@@ -364,9 +364,13 @@ function getMovieType(ph) {
  * @returns {number[]} 来源 ID 数组，按优先级排序
  */
 function autoSelectSources(type) {
-  if (type === 'FC2') return [3]    // FC2 类型优先使用 FC2PPVDB
-  if (type === '欧美') return [1]    // 欧美类型优先使用 JAVDB
-  return [2, 1]                     // 有码类型优先 JAVBUS，其次 JAVDB
+  // 注意：WEB_SOURCES 里声明了 FC2PPVDB(3) 和 AVSOX(4)，但 scrapeMovie 中
+  // 目前只实现了 JAVDB(1) 和 JAVBUS(2) 两个来源的刮削逻辑。
+  // FC2 番号在 JAVBUS / JAVDB 上同样可查，因此这里让 FC2 走 JAVBUS + JAVDB，
+  // 避免走未实现的 FC2PPVDB 导致 FC2 影片永远刮削失败。
+  if (type === 'FC2') return [2, 1]       // FC2 类型：JAVBUS 优先，JAVDB 兜底
+  if (type === '欧美') return [1]          // 欧美类型优先使用 JAVDB
+  return [2, 1]                            // 有码类型优先 JAVBUS，其次 JAVDB
 }
 
 /**

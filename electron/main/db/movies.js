@@ -87,12 +87,12 @@ function registerMovieIpc(ipcMain, db) {
       // 只看有播放记录的
       if (filter.historyOnly) { where.push('play_time IS NOT NULL') }
 
-      // 标签筛选：支持多组标签的 AND 逻辑
+      // 标签筛选：支持多组标签，所有选中的标签均按 AND 叠加过滤（精准定位目标影片）
       const sel = filter.tagSelected || []
       for (let ci = 0; ci < sel.length; ci++) {
         const tags = sel[ci]
         if (Array.isArray(tags) && tags.length) {
-          // 同组内的标签用 OR 连接（任一匹配即可），不同组之间用 AND 连接
+          // 同组内、不同组间的标签都使用 AND 连接（必须全部同时匹配）
           const ors = tags.map(() => 'bq LIKE ?')
           for (const t of tags) args.push(`%${t}%`)
           where.push('(' + ors.join(' AND ') + ')')
@@ -253,8 +253,8 @@ function registerMovieIpc(ipcMain, db) {
         const existing = new Set(cur.split(/[，,]/).map(s => s.trim()).filter(Boolean))
         // 追加新标签
         for (const t of list) existing.add(t)
-        // 拼接为字符串并更新
-        const newBq = Array.from(existing).join(DELIM) + (existing.size ? DELIM : '')
+        // 拼接为字符串并更新（不要额外追加尾部分隔符，避免 bq 字段尾部残留逗号）
+        const newBq = Array.from(existing).join(DELIM)
         db.run('UPDATE movies SET bq=? WHERE id=?', [newBq, Number(id)])
       }
       if(db._forceSave) db._forceSave(); return { ok: true }
@@ -349,8 +349,7 @@ function registerActressIpc(ipcMain, db) {
         `%，${nm}`,     // 名字在结尾
         nm              // 名字独占（唯一演员）
       ]
-      const like = (pat) => ({pat})
-      let q = `SELECT id,ph,pm,cover,fxrq,cl FROM movies WHERE
+      const q = `SELECT id,ph,pm,cover,fxrq,cl FROM movies WHERE
         yid LIKE ? OR yid LIKE ? OR yid LIKE ? OR yid=? ORDER BY fxrq DESC LIMIT 50`
       m.movies = rows(db.exec(q, patterns)[0])
       return { ok: true, data: m }

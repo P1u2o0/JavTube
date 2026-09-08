@@ -66,8 +66,8 @@
 </template>
 
 <script setup>
-// 引入 Vue 的响应式 API 和生命周期钩子
-import { ref, onMounted } from 'vue'
+// 引入 Vue 的响应式 API
+import { ref } from 'vue'
 // 引入 Vue Router 的路由实例和当前路由信息
 import { useRouter, useRoute } from 'vue-router'
 // 引入 Element Plus 的消息提示组件
@@ -90,8 +90,6 @@ const store = useMoviesStore()
 
 // 搜索关键字，双向绑定到搜索输入框
 const q = ref('')
-// 收藏数量角标（当前未在模板中使用，预留扩展）
-const favCount = ref(0)
 // 控制添加影片对话框的显示/隐藏状态
 const showAdd = ref(false)
 
@@ -127,21 +125,6 @@ function onSearch() {
     else ElMessage.success(`找到 ${data.length} 条结果`)
   })
 }
-
-// 组件挂载时获取收藏数量
-onMounted(async () => {
-  // 显示收藏角标数量
-  if (window.api) {
-    try {
-      // 调用后端 API 获取收藏影片总数
-      const r = await window.api.getMovies({
-        filter: {}, sort: { by: 'tjrq', order: 'DESC' },
-        page: 1, pageSize: 1, onlyFavorite: true
-      })
-      if (r.ok) favCount.value = r.total
-    } catch {}
-  }
-})
 </script>
 
 <style scoped>

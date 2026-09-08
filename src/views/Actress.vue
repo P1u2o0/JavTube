@@ -24,7 +24,7 @@
       <div v-for="a in list" :key="a.id" class="card" @click="showDetail(a)">
         <!-- 头像：有图显示图片，无图显示首字母 -->
         <div class="avatar">
-          <img v-if="a.img" :src="a.img" />
+          <img v-if="a.img" :src="resolveCover(a.img)" />
           <span v-else>{{ a.name?.slice(0,1) || '?' }}</span>
         </div>
         <!-- 名字 -->
@@ -79,7 +79,7 @@
     <el-drawer v-model="detailShow" :title="detail?.name" size="420px">
       <div v-if="detail" class="det">
         <!-- 详情头像大图 -->
-        <img :src="detail.img" v-if="detail.img" style="width:100%; max-height:260px; object-fit:cover; border-radius: var(--r-sm);" />
+        <img :src="resolveCover(detail.img)" v-if="detail.img" style="width:100%; max-height:260px; object-fit:cover; border-radius: var(--r-sm);" />
         <!-- 基本信息区 -->
         <h4 style="margin: 16px 0 8px;">基本信息</h4>
         <p v-if="detail.zb">罩杯：{{ detail.zb }}</p>
@@ -108,6 +108,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useActressStore } from '@/store/settings'
 import AppIcon from '@/components/AppIcon.vue'
+import { resolveCover } from '@/utils/global'
 
 // 女优 store 实例
 const s = useActressStore()
