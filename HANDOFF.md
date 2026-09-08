@@ -21,7 +21,6 @@
 | 大小 | 600M（含 595M `node_modules`） |
 | 源文件数 | 36 个（`electron/` + `src/` 下 js/vue/css） |
 | git 分支 | `main`（9 个 commit） |
-| 远端 | `https://github.com/P1u2o0/JavTube.git`（项目元数据，**用户已决定不再 push**） |
 | dev 服务 | 后台 task `uoTIaA`，Vite 5173 + Electron 窗口开 |
 | 数据目录 | `node_modules\electron\dist\data\`（开发模式默认位置） |
 | 用户数据库 | `…\data\app.db`（含 `SSNI-888` 影片 1 条） |
@@ -36,7 +35,7 @@ e6482f9 fix: 封面图片加载——注册 javtube-cover privileged scheme   �
 3837053 feat: 添加影片仅保留两种方式 + 修复关于页图标裁剪
 13854fe fix: 修复路由切换后页面空白（过渡动画死锁）
 07a8c1c refactor: 代码梳理与冗余清理
-5cd25d1 docs: 新增 GitHub README
+5cd25d1 docs: 新增 README
 639e669 feat: UI 全面重绘——统一设计令牌、图标体系与配色
 ```
 
@@ -112,7 +111,7 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 
 ### 文档
 - `PROJECT_BRIEF.md` — 项目档案（必读，第 10 节是更新日志）
-- `README.md` — GitHub README
+- `README.md` — 项目说明（对外展示用）
 - `开发文档.md` / `快速开始.md` / `项目说明.md` — 历史文档，与代码偶有出入（比如 better-sqlite3 vs sql.js 实际是 sql.js）
 - `replace_icon.py` + `rcedit.exe` — 给打包后的 exe 替换图标（用 pefile 改 PE 资源）
 
@@ -184,7 +183,6 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 - **设计敏感**：改 UI 时必须保留原始字体（Outfit 拉丁 + Noto Sans SC 中文）、配色（暖纸白 + 墨黑 + 朱柿红 #d2401e）、版面（卡片错峰入场、4 级圆角 8/12/16/pill）
 - **喜欢 SVG 矢量透明背景导出**（用于设计资产跨软件集成）
 - **要求设计+工程一体化**：交付物要工程可用，不是纯展示稿
-- **GitHub 用户名**：`P1u2o0`，仓库 `https://github.com/P1u2o0/JavTube`
 - **常在 WorkBuddy 中工作**，习惯把"项目档案" `PROJECT_BRIEF.md` 放在项目根
 
 ---
