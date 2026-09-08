@@ -18,12 +18,12 @@
       <el-button size="small" @click="selectAll">全选</el-button>
       <!-- 反选当前页面影片的选中状态 -->
       <el-button size="small" @click="invert">反选</el-button>
-      <!-- 批量删除：无选中项时禁用 -->
-      <el-button size="small" type="danger" :disabled="!store.selectedIds.length" @click="$emit('batchDelete')">
+      <!-- 批量删除：无选中项时禁用（中性描边，hover 显现危险色） -->
+      <el-button size="small" class="batch-btn batch-danger" :disabled="!store.selectedIds.length" @click="$emit('batchDelete')">
         <AppIcon name="trash" :size="14" style="margin-right:4px" />批量删除
       </el-button>
-      <!-- 批量刮削：无选中项时禁用 -->
-      <el-button size="small" type="success" :disabled="!store.selectedIds.length" @click="$emit('batchScrape')">
+      <!-- 批量刮削：无选中项时禁用（中性描边，hover 显现朱柿红强调色） -->
+      <el-button size="small" class="batch-btn batch-scrape" :disabled="!store.selectedIds.length" @click="$emit('batchScrape')">
         <AppIcon name="globe" :size="14" style="margin-right:4px" />批量刮削
       </el-button>
       <!-- 批量收藏：无选中项时禁用 -->
@@ -118,11 +118,25 @@ function invert() {
   font-size: 15px;
   margin: 0 3px;
 }
-/* 批量操作区域 */
+/* 批量操作区域：margin-left:auto 推到右侧，与「选择」开关相邻 */
 .batch { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-right: 12px; flex-wrap: wrap; }
 /* 已选中数量提示 */
 .sel-count { color: var(--muted); font-size: 12px; margin-right: 2px; }
-/* 右侧多选开关区域 */
-.right { display: flex; align-items: center; margin-left: auto; flex-shrink: 0; }
+/* 右侧多选开关区域（不再用 margin-left:auto，让批量按钮组贴右） */
+.right { display: flex; align-items: center; flex-shrink: 0; }
 .right-label { margin-right: 8px; color: var(--text-2); }
+/* 批量删除/刮削按钮：默认中性描边与全选/反选一致，hover/focus 时才显现语义色，
+   替换原实心红/绿（EP 默认冷色调与暖纸白+墨黑+朱柿红配色冲突） */
+.batch-btn.batch-danger:hover,
+.batch-btn.batch-danger:focus {
+  background: var(--danger-soft) !important;
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+.batch-btn.batch-scrape:hover,
+.batch-btn.batch-scrape:focus {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
 </style>

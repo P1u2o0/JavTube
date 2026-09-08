@@ -170,6 +170,21 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 .el-drawer { border-radius: var(--r-lg) 0 0 var(--r-lg) !important; }
 .el-select__wrapper { border-radius: var(--r-pill) !important; }
 .el-input-number .el-input__wrapper { border-radius: var(--r-pill) !important; }
+/* 数字输入框加减按钮：EP 默认冷灰蓝底与暖色主题冲突，统一为透明底 + 暖灰图标，
+   hover 时暖灰高亮，与整体 pill 风格一致 */
+.el-input-number .el-input-number__decrease,
+.el-input-number .el-input-number__increase {
+  background: transparent !important;
+  border: none !important;
+  color: var(--muted) !important;
+  border-radius: var(--r-pill) !important;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.el-input-number .el-input-number__decrease:hover,
+.el-input-number .el-input-number__increase:hover {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
 .el-popper.is-light { border-radius: var(--r-sm) !important; }
 .el-picker__popper.el-popper { border-radius: var(--r-md) !important; }
 
