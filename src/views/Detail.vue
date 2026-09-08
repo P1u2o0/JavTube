@@ -101,7 +101,7 @@ import { useMoviesStore } from '@/store/movies'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -231,19 +231,8 @@ async function onScrape() {
   try {
     const r = await window.api.scrapeMovie(m.value.ph, 'auto')
     if (r.ok && r.data) {
-      const d = r.data
-      // 逐字段更新，仅写入有值的字段
-      const update = {}
-      if (d.pm) update.pm = d.pm
-      if (d.fl) update.fl = d.fl
-      if (d.fxrq) update.fxrq = d.fxrq
-      if (d.yy) update.yid = d.yy
-      if (d.dy) update.dy = d.dy
-      if (d.ps) update.ps = d.ps
-      if (d.fx) update.fx = d.fx
-      if (d.xl) update.xl = d.xl
-      if (d.bq) update.bq = d.bq
-      if (d.cover) update.cover = d.cover
+      // 刮削结果 → 更新字段映射（公共函数，与 Library.vue 共用）
+      const update = buildScrapeUpdate(r.data)
       const ur = await window.api.updateMovie(m.value.id, update)
       if (ur.ok) {
         ElMessage.success(`刮削成功（来源: ${r.data.source}）`)

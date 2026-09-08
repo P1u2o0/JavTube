@@ -49,6 +49,7 @@ import { onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
+import { buildScrapeUpdate } from '@/utils/global'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
@@ -202,19 +203,8 @@ async function onBatchScrape() {
     try {
       const r = await window.api.scrapeMovie(m.ph, 'auto')
       if (r.ok && r.data) {
-        const d = r.data
-        // 按字段逐个更新，仅写入有值的字段
-        const update = {}
-        if (d.pm) update.pm = d.pm           // 影片名称
-        if (d.fl) update.fl = d.fl           // 分辨率/格式
-        if (d.fxrq) update.fxrq = d.fxrq    // 发行日期
-        if (d.yy) update.yid = d.yy          // 女优名
-        if (d.dy) update.dy = d.dy           // 导演
-        if (d.ps) update.ps = d.ps           // 厂商
-        if (d.fx) update.fx = d.fx           // 发行商
-        if (d.xl) update.xl = d.xl           // 系列
-        if (d.bq) update.bq = d.bq           // 标签
-        if (d.cover) update.cover = d.cover  // 封面
+        // 刮削结果 → 更新字段映射（公共函数，与 Detail.vue 共用）
+        const update = buildScrapeUpdate(r.data)
         const saveR = await window.api.updateMovie(m.id, update)
         if (saveR.ok) {
           const idx = store.movies.findIndex(x => x.id === m.id)

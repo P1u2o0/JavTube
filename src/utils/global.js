@@ -118,5 +118,29 @@ export function extractCode(name) {
   return ''
 }
 
+/**
+ * 将刮削结果对象转换为影片更新字段对象（仅保留有值的字段）。
+ * 原 Library.vue（onBatchScrape）与 Detail.vue（onScrape）各有一份相同的
+ * 10 字段映射，提取为公共函数消除重复。映射关系与原实现逐字段一致：
+ * 刮削返回字段 yy → 更新字段 yid（演员），其余字段同名透传，空值跳过。
+ * @param {Object} d - 刮削结果对象（scraper:scrape 返回的 data）
+ * @returns {Object} 可直接传给 window.api.updateMovie 的字段对象
+ */
+export function buildScrapeUpdate(d) {
+  const update = {}
+  if (!d) return update
+  if (d.pm) update.pm = d.pm        // 片名
+  if (d.fl) update.fl = d.fl        // 分类（有码/无码/欧美）
+  if (d.fxrq) update.fxrq = d.fxrq  // 发行日期
+  if (d.yy) update.yid = d.yy       // 演员
+  if (d.dy) update.dy = d.dy        // 导演
+  if (d.ps) update.ps = d.ps        // 制作商
+  if (d.fx) update.fx = d.fx        // 发行商
+  if (d.xl) update.xl = d.xl        // 系列
+  if (d.bq) update.bq = d.bq        // 标签
+  if (d.cover) update.cover = d.cover // 封面
+  return update
+}
+
 // 全局分隔符常量（中文逗号）
 export const DELIM = '，'
