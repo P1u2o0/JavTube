@@ -3,10 +3,11 @@
  * @module electron/main/db/util
  * @description sql.js 数据库层的通用小工具。
  *              rows / firstRow / firstScalar 负责查询结果到 JS 对象的转换；
- *              nowIso 生成项目统一的本地时间格式（YYYY-MM-DD HH:mm:ss）；
+ *              nowLocal 生成项目统一的本地时间格式（YYYY-MM-DD HH:mm:ss，
+ *              与 movies.tjrq 字段既有数据格式一致）；
  *              persist 封装「写库后立即落盘」的重复模式（原以
  *              if (db._forceSave) db._forceSave() 形式散落在各 IPC handler 中）。
- * @keyAPI rows(), firstRow(), firstScalar(), nowIso(), persist()
+ * @keyAPI rows(), firstRow(), firstScalar(), nowLocal(), persist()
  */
 
 /**
@@ -42,7 +43,7 @@ function firstScalar(r) { return r?.values?.[0]?.[0] }
  * 格式：YYYY-MM-DD HH:mm:ss（与 movies.tjrq 字段既有数据格式一致）
  * @returns {string} 格式化的时间字符串
  */
-function nowIso() {
+function nowLocal() {
   const d = new Date()
   const p = n => String(n).padStart(2, '0')  // 补零函数
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
@@ -59,4 +60,4 @@ function persist(db) {
   if (db._forceSave) db._forceSave()
 }
 
-module.exports = { rows, firstRow, firstScalar, nowIso, persist }
+module.exports = { rows, firstRow, firstScalar, nowLocal, persist }

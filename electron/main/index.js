@@ -1,31 +1,30 @@
 /**
  * @file index.js
  * @module electron/main
- * @description Electron 主进程入口文件。负责创建应用窗口、初始化数据库、注册所有 IPC 通信处理器，
- *              以及管理应用生命周期（启动、激活、关闭）。是整个 JavTube 应用的核心启动入口。
- * @dependencies electron (app, BrowserWindow, ipcMain, dialog, shell), path, fs, ./db/init, ./db/movies, ./db/settings, ./scraper
- * @keyAPI app.whenReady(), BrowserWindow, ipcMain.handle(), app.getPath(), app.disableHardwareAcceleration()
+ * @description Electron 主进程入口文件。负责应用启动时序编排：性能开关、数据目录定位与迁移、
+ *              数据库初始化、各 IPC 模块注册、窗口创建与生命周期管理。
+ *              具体职责已拆分：封面协议 → cover-protocol.js；工具/对话框/刮削 IPC → ipc-utils.js；
+ *              影片/女优/网址/设置 IPC → db/ 下各模块。
+ * @dependencies electron (app, BrowserWindow, ipcMain), path, fs, ./db/init, ./db/movies, ./db/actress, ./db/websites, ./db/settings, ./ipc-utils, ./cover-protocol
+ * @keyAPI app.whenReady(), BrowserWindow, ipcMain.handle(), app.getPath()
  */
 
 // 引入 Electron 核心模块
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
 // 引入数据库初始化模块
 const { initDb } = require('./db/init')
-// 引入影片和女优的 IPC 处理器注册函数（女优/网址自轮次 3 起各自独立模块）
+// 影片 / 女优 / 网址 / 设置 的 IPC 处理器注册函数（各领域独立模块）
 const { registerMovieIpc } = require('./db/movies')
 const { registerActressIpc } = require('./db/actress')
 const { registerWebsitesIpc } = require('./db/websites')
-// 引入设置相关的 IPC 处理器注册函数
 const { registerSettingsIpc } = require('./db/settings')
-// 引入刮削模块
-const { scrapeMovie } = require('./scraper')
-// 引入跨文件共享常量（视频扩展名 / 封面目录名等）
-const { VIDEO_EXTS, COVER_DIR } = require('./constants')
-// IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
-const IPC = require('../common/ipc-channels')
+// 工具类 / 对话框 / 刮削 IPC（自本文件拆出）
+const { registerUtilsIpc } = require('./ipc-utils')
+// javtube-cover 封面协议（自本文件拆出）
+const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -41,32 +40,13 @@ if (process.env.JAVTUBE_DISABLE_GPU === '1') {
   app.commandLine.appendSwitch('disable-gpu')
 }
 
-// ====== 注册 javtube-cover 自定义协议 ======
-// 用途：让渲染进程的 <img> 能加载本地磁盘封面图。
-// 不能直接用 file:// 的原因：在 Electron 默认 CSP 下，<img src="file://..."> 会报
-// "Not allowed to load local resource"。注册成自定义协议后，CSP 只需放行 javtube-cover:，
-// 主进程按规则解析图片字节流返回即可，跨平台/跨目录/带空格路径都安全。
-// 设计：先调用 protocol.registerSchemesAsPrivileged 注册为 privileged+standard+bypassCSP，
-//      这样 fetch/img 加载不需要再用 unsafe-inline 之类放宽。
-// 然后在 app.whenReady 里调用 protocol.handle() 把路径解析交给 net.fetch 读磁盘。
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'javtube-cover',
-    privileges: {
-      standard: true,     // 走标准 URL 解析（host 段、pathToFileURL 等都正常）
-      secure: true,        // 允许当 https 一样看待（web security 不挡）
-      supportFetchAPI: true,
-      stream: true         // 大图流式输出，避免一次性读进内存
-    }
-  }
-])
+// 必须在 app ready 之前注册 privileged scheme（Electron 硬性要求）
+registerCoverScheme()
 
 // 全局变量：主窗口实例
 let mainWindow = null
 // 全局变量：数据库实例
 let db = null
-// 全局变量：数据库文件路径，供其他模块使用
-let dbPathForGlobal = ''
 // 全局变量：数据目录路径，供刮削等模块使用
 let dataDirForGlobal = ''
 
@@ -146,68 +126,6 @@ function getDataDir() {
 
   console.log('[main] dataDir =', dir)
   return dir
-}
-
-/**
- * 注册 javtube-cover 自定义协议，把本地图片文件暴露给渲染进程的 <img>。
- *
- * 协议格式：javtube-cover:///<base64url 编码后的绝对路径>
- * - 用 base64url 是为了兼容任意字符（包括空格、中文、Windows 反斜杠等），避免 URL 解析问题。
- * - 仅放行白名单扩展名（图片），且必须解析为绝对路径，防止被恶意页面利用读任意文件。
- * - 不存在的文件直接返回 404，避免无谓的系统开销。
- *
- * @param {string} dataDir - 应用数据目录（用于路径校验，限定在数据目录或系统临时目录内）
- */
-function registerCoverProtocol(dataDir) {
-  // 白名单扩展名：仅图片可走该协议，避免被滥用来加载本地视频或文档
-  const IMG_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp'])
-  const isImg = (p) => IMG_EXTS.has(path.extname(p).toLowerCase())
-
-  // 路径白名单：必须在这些目录之一，才允许读取
-  //   1. 数据目录（封面、上传图等都存在这里）
-  //   2. 系统临时目录（兼容旧版刮削缓存）
-  //   3. EXE 同级目录（兼容用户把数据放在 exe 旁的场景）
-  const allowedRoots = [
-    path.resolve(dataDir),
-    path.resolve(process.cwd()),
-    path.resolve(path.dirname(app.getPath('exe'))),
-    path.resolve(require('os').tmpdir())
-  ]
-
-  protocol.handle('javtube-cover', async (request) => {
-    try {
-      const u = new URL(request.url)
-      // 占位 host = "0"，编码段在 pathname 的第一段（如 javtube-cover://0/QzxhelBh...）
-      // 解码前缀 /，去掉可能的尾部 /（浏览器偶尔会加）
-      const segs = u.pathname.split('/').filter(s => s.length > 0)
-      const enc = segs[0] || ''
-      if (!enc) return new Response('bad request', { status: 400 })
-      // base64url 解码为文件绝对路径
-      const abs = Buffer.from(enc, 'base64').toString('utf-8')
-      // 解析为标准绝对路径
-      const resolved = path.resolve(abs)
-      // 白名单校验：必须落在允许的根目录之一
-      const ok = allowedRoots.some(root => {
-        const rel = path.relative(root, resolved)
-        return rel && !rel.startsWith('..') && !path.isAbsolute(rel)
-      })
-      if (!ok) return new Response('forbidden', { status: 403 })
-      // 必须是图片扩展名
-      if (!isImg(resolved)) return new Response('not an image', { status: 415 })
-      // 文件必须存在且是文件
-      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-        return new Response('not found', { status: 404 })
-      }
-      // 用 net.fetch 走本地文件协议交给 Electron 处理，返回标准 Response
-      // URL 用 pathToFileURL 来正确编码（处理中文、空格、# 等字符）
-      const fileUrl = require('url').pathToFileURL(resolved).href
-      return await net.fetch(fileUrl)
-    } catch (e) {
-      console.warn('[cover-protocol] err:', e.message)
-      return new Response('error: ' + e.message, { status: 500 })
-    }
-  })
-  console.log('[main] javtube-cover protocol registered')
 }
 
 /**
@@ -293,102 +211,6 @@ function createWindow() {
   }
 }
 
-/**
- * 注册工具类 IPC 处理器。
- * 包括视频播放、目录扫描、文件读取、系统对话框（打开目录/文件/图片等）和刮削功能。
- * 这些 IPC 通道均为：渲染进程 → 主进程（ipcMain.handle）。
- */
-function registerUtilsIpc() {
-  // === 播放视频 ===
-  // 渲染进程 → 主进程：根据设置中的自定义播放器路径播放视频，否则用系统默认程序打开
-  ipcMain.handle(IPC.UTILS_PLAY_VIDEO, async (_e, filePath) => {
-    try {
-      // 查找自定义播放器路径（从数据库 settings 表读取）
-      let custom = ''
-      try {
-        const r = db.exec('SELECT value FROM settings WHERE key = ?', ['player_path'])[0]
-        custom = r?.values?.[0]?.[0] || ''
-      } catch {}
-      if (custom && fs.existsSync(custom)) {
-        // 使用自定义播放器播放
-        const { execFile } = require('child_process')
-        execFile(custom, [filePath], (err) => {
-          if (err) { console.warn('custom player err:', err.message); shell.openPath(filePath) }
-        })
-      } else {
-        // 无自定义播放器，使用系统默认程序打开
-        await shell.openPath(filePath)
-      }
-      return { ok: true }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-
-  // === 扫描目录中的视频文件 ===
-  // 渲染进程 → 主进程：递归扫描指定目录，返回所有视频文件信息
-  ipcMain.handle(IPC.UTILS_SCAN_DIR, async (_e, dirPath) => {
-    try {
-      // 支持的视频文件扩展名列表（定义于 constants.js）
-      const results = []
-      // 递归遍历目录
-      function walk(dir) {
-        let files
-        try { files = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-        for (const f of files) {
-          const full = path.join(dir, f.name)
-          if (f.isDirectory()) walk(full)  // 递归进入子目录
-          else if (f.isFile()) {
-            const ext = path.extname(f.name).toLowerCase()
-            // 检查是否为视频文件
-            if (VIDEO_EXTS.includes(ext)) {
-              let sz = 0
-              try { sz = fs.statSync(full).size } catch {}
-              // 返回文件路径、文件名、扩展名（不含点）和文件大小
-              results.push({ path: full, name: f.name, ext: ext.slice(1), size: sz })
-            }
-          }
-        }
-      }
-      walk(dirPath)
-      return { ok: true, data: results }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-
-  // === 读取文件并返回 Base64 ===
-  // 渲染进程 → 主进程：读取文件二进制数据并转为 Base64 字符串（用于图片预览等）
-  ipcMain.handle(IPC.UTILS_READ_FILE_BASE64, (_e, filePath) => {
-    try {
-      const buf = fs.readFileSync(filePath)
-      return { ok: true, data: buf.toString('base64') }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-
-  // === 系统对话框封装 ===
-  // 通用打开对话框函数：封装 dialog.showOpenDialog，返回选中路径
-  const doOpen = (props, multi = false) => dialog.showOpenDialog(mainWindow, props).then(r => r.canceled ? null : (multi ? r.filePaths : r.filePaths[0]))
-  // 打开目录选择对话框
-  ipcMain.handle(IPC.DIALOG_OPEN_DIR, () => doOpen({ properties: ['openDirectory'] }))
-  // 打开视频文件选择对话框
-  ipcMain.handle(IPC.DIALOG_OPEN_VIDEO, () => doOpen({ properties: ['openFile'], filters: [{ name: '视频文件', extensions: ['mp4','avi','mkv','mov','flv','wmv','rmvb','m4v','mpg','mpeg','ts','webm','*'] }] }))
-  // 打开图片文件选择对话框
-  ipcMain.handle(IPC.DIALOG_OPEN_IMAGE, () => doOpen({ properties: ['openFile'], filters: [{ name: '图片文件', extensions: ['jpg','jpeg','png','gif','webp','bmp'] }] }))
-  // 打开可执行文件选择对话框
-  ipcMain.handle(IPC.DIALOG_OPEN_FILE, () => doOpen({ properties: ['openFile'], filters: [{ name: '可执行文件', extensions: ['exe','bat','cmd'] }, { name: '所有文件', extensions: ['*'] }] }))
-  // 保存数据库备份文件对话框
-  ipcMain.handle(IPC.DIALOG_SAVE_DB, () => dialog.showSaveDialog(mainWindow, { defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }).then(r => r.canceled ? null : r.filePath))
-  // 打开数据库文件选择对话框
-  ipcMain.handle(IPC.DIALOG_OPEN_DB, () => doOpen({ properties: ['openFile'], filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }))
-
-  // === 刮削功能 ===
-  // 渲染进程 → 主进程：根据番号从网络刮削影片信息
-  // 参数：ph（番号）、source（刮削来源）、coverDir（封面保存目录名）
-  ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir }) => {
-    try {
-      const r = await scrapeMovie(ph, { source: source || 'auto', coverDir: coverDir || COVER_DIR, dataDir: dataDirForGlobal })
-      return r
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-}
-
 // === 应用生命周期 ===
 // app.whenReady() 在 Electron 完成初始化后触发，是应用启动的正式入口
 app.whenReady().then(async () => {
@@ -402,9 +224,8 @@ app.whenReady().then(async () => {
     // 初始化数据库（异步加载 sql.js WASM）
     db = await initDb(dataDir)
     console.log(`[main] initDb DONE in ${Date.now()-t0}ms path=${db?._dbPath}`)
-    dbPathForGlobal = db?._dbPath || ''
-    // 注册 javtube-cover 自定义协议（必须在创建窗口之前，依赖 scheme 在文件顶部已注册为 privileged）
-    registerCoverProtocol(dataDir)
+    // 注册 javtube-cover 协议处理器（scheme 已在文件顶部注册为 privileged）
+    setupCoverProtocol(dataDir)
   } catch (e) {
     console.error('[main] DB init FAILED:', e?.stack || e)
   }
@@ -412,7 +233,11 @@ app.whenReady().then(async () => {
   console.log('[main] registering IPC...')
   try {
     // 注册所有 IPC 通道处理器
-    registerUtilsIpc()                                              // 工具类 IPC
+    registerUtilsIpc(ipcMain, {
+      db,
+      getMainWindow: () => mainWindow,   // 运行时读取当前窗口，与原闭包语义一致
+      dataDir: dataDirForGlobal
+    })                                                              // 工具类 IPC
     registerMovieIpc(ipcMain, db)                                   // 影片数据 IPC
     registerActressIpc(ipcMain, db)                                 // 女优数据 IPC
     registerWebsitesIpc(ipcMain, db)                                // 网址数据 IPC

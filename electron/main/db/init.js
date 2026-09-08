@@ -49,7 +49,11 @@ async function getSQL() {
 /**
  * 将内存中的数据库导出并写入磁盘文件。
  * sql.js 的数据库存在于内存中，需要手动调用 export() 导出二进制数据并写入文件。
- * 采用先写入临时文件再重命名的方式，确保写入的原子性（避免写入中途崩溃导致数据损坏）。
+ * 采用「双 rename」策略确保任意时刻崩溃都不丢数据：
+ *   1. 写入临时文件 .tmp（不触碰现有数据库）
+ *   2. 旧库 rename 为 .bak（原子操作，旧数据完整保留）
+ *   3. .tmp rename 为正式文件（原子操作）
+ * 任意一步中途崩溃，磁盘上至少存在一份完整的旧数据库（.bak 或原文件）。
  * @param {Object} db - sql.js 数据库实例
  * @param {string} dbPath - 数据库文件路径
  */
@@ -58,9 +62,13 @@ function saveDbToDisk(db, dbPath) {
     const data = db.export()          // 导出数据库为 Uint8Array
     const buf = Buffer.from(data)     // 转为 Node.js Buffer
     const tmp = dbPath + '.tmp'       // 临时文件路径
+    const bak = dbPath + '.bak'       // 旧库备份路径
     fs.writeFileSync(tmp, buf)        // 先写入临时文件
-    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath)  // 删除旧文件
-    fs.renameSync(tmp, dbPath)        // 重命名临时文件为正式文件名
+    if (fs.existsSync(dbPath)) {
+      if (fs.existsSync(bak)) fs.unlinkSync(bak)
+      fs.renameSync(dbPath, bak)      // 旧库改名保留（原子，不经过"无文件"状态）
+    }
+    fs.renameSync(tmp, dbPath)        // 新库就位（原子操作）
   } catch (e) { console.error('[db] save failed:', e) }
 }
 

@@ -14,7 +14,7 @@
 // 标签分隔符、收藏标记等共享常量（集中定义于 constants.js）
 const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
 // db 层通用工具（查询结果转换 / 时间格式 / 落盘收口）
-const { rows, firstRow, firstScalar, nowIso, persist } = require('./util')
+const { rows, firstRow, firstScalar, nowLocal, persist } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -55,7 +55,7 @@ const MOVIE_COLUMNS = [
   ['jt',    S('jt')],
   ['py',    S('py')],
   ['cl',    S('cl', 'n')],
-  ['tjrq',  d => d.tjrq || nowIso()],
+  ['tjrq',  d => d.tjrq || nowLocal()],
   ['dx',    N('dx')],
   ['dy',    S('dy')],
   ['sc',    S('sc')],
@@ -282,10 +282,11 @@ function registerMovieIpc(ipcMain, db) {
 
   // IPC: movies:recordPlay — 渲染进程 → 主进程
   // 记录影片播放时间（更新 play_time 字段）
+  // 时间格式说明：与 tjrq 统一为本地格式 YYYY-MM-DD HH:mm:ss（原先混用 UTC ISO 格式，
+  // 两种格式字符串排序规则不同，混排会导致观看记录排序偏差）
   ipcMain.handle(IPC.MOVIES_RECORD_PLAY, (_e, id) => {
     try {
-      const now = new Date().toISOString()
-      db.run('UPDATE movies SET play_time = ? WHERE id = ?', [now, Number(id)])
+      db.run('UPDATE movies SET play_time = ? WHERE id = ?', [nowLocal(), Number(id)])
       persist(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
