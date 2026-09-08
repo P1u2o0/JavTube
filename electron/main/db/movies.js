@@ -1,56 +1,77 @@
 /**
  * @file movies.js
  * @module electron/main/db/movies
- * @description 影片和女优数据的 IPC 处理器注册模块。使用 sql.js 风格 API 操作数据库。
- *              包含影片的增删改查、批量操作（收藏/标签）、搜索，以及女优和网址的 CRUD 操作。
+ * @description 影片数据的 IPC 处理器注册模块。使用 sql.js 风格 API 操作数据库。
+ *              包含影片的增删改查、批量操作（收藏/标签）、搜索。
  *              所有 IPC 通道均为：渲染进程 → 主进程（ipcMain.handle）。
  *
- * @dependencies electron (ipcMain)
+ * @dependencies electron (ipcMain), ../constants, ./util
  * @keyAPI db.exec(sql, params) => [{columns, values}] 查询；db.run(sql, params) 执行写操作
  *         db.exec('SELECT last_insert_rowid() id')[0].values[0][0] 获取最后插入的 ID
  */
 
 // 标签分隔符、收藏标记等共享常量（集中定义于 constants.js）
 const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
+// db 层通用工具（查询结果转换 / 时间格式 / 落盘收口）
+const { rows, firstRow, firstScalar, nowIso, persist } = require('./util')
 
+// === 影片表字段元数据 ===
 /**
- * 将 sql.js 查询结果（{columns, values} 格式）转换为对象数组。
- * @param {Object} r - sql.js exec 返回的结果对象，包含 columns 和 values
- * @returns {Object[]} 对象数组，每个对象的键为列名，值为对应数据
+ * movies 表可写列元数据（按 INSERT 列顺序排列）。
+ * 用于统一生成 INSERT 与 UPDATE 语句及其参数（见下方 INSERT_MOVIE_SQL 等），
+ * 替代原先两份手工维护的字段清单——新增字段只需在此追加一行。
+ * 取值器语义与原实现逐字段一致：
+ *   S(k, def)  字符串字段，空值回退默认（等价于原来的 d[k] || def）
+ *   N(k)       数字字段（等价于原来的 Number(d[k] || 0)）
+ * 注意：tjrq（添加日期）仅在 INSERT 时写入，UPDATE 生成时会过滤此列，
+ *       保持原「更新不改动添加日期」的业务行为。
  */
-function rows(r) {
-  if (!r || !r.values || !r.values.length) return []
-  return r.values.map(row => {
-    const o = {}
-    for (let i = 0; i < r.columns.length; i++) o[r.columns[i]] = row[i]
-    return o
-  })
-}
+const S = (k, def = '') => d => d[k] || def
+const N = (k) => d => Number(d[k] || 0)
+const MOVIE_COLUMNS = [
+  ['ph',    S('ph')],
+  ['pm',    S('pm')],
+  ['cover', S('cover')],
+  ['yid',   S('yid')],
+  ['yy',    S('yy')],
+  ['fxrq',  S('fxrq')],
+  ['fl',    S('fl', '全部')],
+  ['zz',    S('zz', 'n')],
+  ['lc',    S('lc', 'n')],
+  ['pj',    S('pj', 'n')],
+  ['dt',    S('dt', 'n')],
+  ['dm',    S('dm', 'n')],
+  ['vr',    S('vr', 'n')],
+  ['sd',    S('sd', 'n')],
+  ['hj',    S('hj', 'n')],
+  ['pfs',   N('pfs')],
+  ['yz',    N('yz')],
+  ['zb',    S('zb', 'A')],
+  ['tix',   S('tix', '正常')],
+  ['bq',    S('bq')],
+  ['jt',    S('jt')],
+  ['py',    S('py')],
+  ['cl',    S('cl', 'n')],
+  ['tjrq',  d => d.tjrq || nowIso()],
+  ['dx',    N('dx')],
+  ['dy',    S('dy')],
+  ['sc',    S('sc')],
+  ['ps',    S('ps')],
+  ['fx',    S('fx')],
+  ['xl',    S('xl')]
+]
 
-/**
- * 获取查询结果的第一行（转换为对象）。
- * @param {Object} r - sql.js 查询结果
- * @returns {Object|undefined} 第一行数据对象，无结果时返回 undefined
- */
-function firstRow(r) { return rows(r)[0] }
+// INSERT 语句与参数构造器（全部 30 列）
+const INSERT_MOVIE_SQL =
+  `INSERT INTO movies (${MOVIE_COLUMNS.map(([c]) => c).join(',')}) ` +
+  `VALUES (${MOVIE_COLUMNS.map(() => '?').join(',')})`
+const buildMovieInsertParams = (d) => MOVIE_COLUMNS.map(([, get]) => get(d))
 
-/**
- * 获取查询结果的第一个标量值（第一行第一列）。
- * @param {Object} r - sql.js 查询结果
- * @returns {*} 第一个值，无结果时返回 undefined
- */
-function firstScalar(r) { return r?.values?.[0]?.[0] }
-
-/**
- * 生成当前时间的 ISO 格式字符串（本地时间，精确到秒）。
- * 格式：YYYY-MM-DD HH:mm:ss
- * @returns {string} 格式化的时间字符串
- */
-function nowIso() {
-  const d = new Date()
-  const p = n => String(n).padStart(2, '0')  // 补零函数
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
+// UPDATE 语句与参数构造器（过滤 tjrq：更新不改动添加日期）
+const UPDATE_COLS = MOVIE_COLUMNS.filter(([c]) => c !== 'tjrq')
+const UPDATE_MOVIE_SQL =
+  `UPDATE movies SET ${UPDATE_COLS.map(([c]) => `${c}=?`).join(',')} WHERE id=?`
+const buildMovieUpdateParams = (d, id) => [...UPDATE_COLS.map(([, get]) => get(d)), Number(id)]
 
 // === 影片 IPC 处理器注册 ===
 /**
@@ -150,8 +171,6 @@ function registerMovieIpc(ipcMain, db) {
   ipcMain.handle('movies:create', (_e, data) => {
     try {
       const d = data || {}
-      // 设置添加日期，默认为当前时间
-      const tjrq = d.tjrq || nowIso()
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
       // 番号去重：已存在则跳过，返回已有 ID
@@ -162,22 +181,11 @@ function registerMovieIpc(ipcMain, db) {
           return { ok: true, id: Number(existId), skipped: true }
         }
       }
-      // 插入新记录
-      const sql = `INSERT INTO movies
-        (ph,pm,cover,yid,yy,fxrq,fl,zz,lc,pj,dt,dm,vr,sd,hj,pfs,yz,zb,tix,bq,jt,py,cl,tjrq,dx,dy,sc,ps,fx,xl)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-      const vals = [
-        d.ph||'', d.pm||'', d.cover||'', d.yid||'', d.yy||'', d.fxrq||'',
-        d.fl||'全部', d.zz||'n', d.lc||'n', d.pj||'n',
-        d.dt||'n', d.dm||'n', d.vr||'n', d.sd||'n', d.hj||'n',
-        Number(d.pfs||0), Number(d.yz||0), d.zb||'A', d.tix||'正常',
-        d.bq||'', d.jt||'', d.py||'', d.cl||'n', tjrq,
-        Number(d.dx||0), d.dy||'', d.sc||'', d.ps||'', d.fx||'', d.xl||''
-      ]
-      db.run(sql, vals)
+      // 插入新记录（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 缺省时由取值器写入当前时间）
+      db.run(INSERT_MOVIE_SQL, buildMovieInsertParams(d))
       // 获取自增主键 ID
       const id = firstScalar(db.exec('SELECT last_insert_rowid()')[0])
-      if (db._forceSave) db._forceSave()  // 立即持久化
+      persist(db)  // 立即持久化
       return { ok: true, id: Number(id) }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -194,18 +202,9 @@ function registerMovieIpc(ipcMain, db) {
       const d = { ...cur, ...(data||{}) }
       // 标签标准化
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
-      // 执行更新
-      db.run(`UPDATE movies SET
-        ph=?,pm=?,cover=?,yid=?,yy=?,fxrq=?,fl=?,zz=?,lc=?,pj=?,dt=?,dm=?,vr=?,sd=?,hj=?,
-        pfs=?,yz=?,zb=?,tix=?,bq=?,jt=?,py=?,cl=?,dx=?,dy=?,sc=?,ps=?,fx=?,xl=? WHERE id=?`, [
-        d.ph||'', d.pm||'', d.cover||'', d.yid||'', d.yy||'', d.fxrq||'',
-        d.fl||'全部', d.zz||'n', d.lc||'n', d.pj||'n',
-        d.dt||'n', d.dm||'n', d.vr||'n', d.sd||'n', d.hj||'n',
-        Number(d.pfs||0), Number(d.yz||0), d.zb||'A', d.tix||'正常',
-        d.bq||'', d.jt||'', d.py||'', d.cl||'n',
-        Number(d.dx||0), d.dy||'', d.sc||'', d.ps||'', d.fx||'', d.xl||'', Number(id)
-      ])
-      if (db._forceSave) db._forceSave()  // 立即持久化
+      // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
+      db.run(UPDATE_MOVIE_SQL, buildMovieUpdateParams(d, id))
+      persist(db)  // 立即持久化
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -213,7 +212,7 @@ function registerMovieIpc(ipcMain, db) {
   // IPC: movies:delete — 渲染进程 → 主进程
   // 删除单条影片
   ipcMain.handle('movies:delete', (_e, id) => {
-    try { db.run('DELETE FROM movies WHERE id=?', [Number(id)]); if(db._forceSave) db._forceSave(); return { ok: true } }
+    try { db.run('DELETE FROM movies WHERE id=?', [Number(id)]); persist(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -222,7 +221,7 @@ function registerMovieIpc(ipcMain, db) {
   ipcMain.handle('movies:deleteMany', (_e, ids) => {
     try {
       for (const id of (ids||[])) db.run('DELETE FROM movies WHERE id=?', [Number(id)])
-      if(db._forceSave) db._forceSave(); return { ok: true }
+      persist(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -232,7 +231,7 @@ function registerMovieIpc(ipcMain, db) {
     try {
       const val = isFav ? FAV_Y : FAV_N
       for (const id of (ids||[])) db.run('UPDATE movies SET cl=? WHERE id=?', [val, Number(id)])
-      if(db._forceSave) db._forceSave(); return { ok: true }
+      persist(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -254,7 +253,7 @@ function registerMovieIpc(ipcMain, db) {
         const newBq = Array.from(existing).join(TAG_DELIM)
         db.run('UPDATE movies SET bq=? WHERE id=?', [newBq, Number(id)])
       }
-      if(db._forceSave) db._forceSave(); return { ok: true }
+      persist(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -284,7 +283,7 @@ function registerMovieIpc(ipcMain, db) {
     try {
       const now = new Date().toISOString()
       db.run('UPDATE movies SET play_time = ? WHERE id = ?', [now, Number(id)])
-      if (db._forceSave) db._forceSave()
+      persist(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -365,7 +364,7 @@ function registerActressIpc(ipcMain, db) {
         d.zb||'', d.birthday||'', d.debut||'', d.remark||''
       ])
       const id = Number(firstScalar(db.exec('SELECT last_insert_rowid()')[0]))
-      if(db._forceSave) db._forceSave(); return { ok: true, id }
+      persist(db); return { ok: true, id }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -379,7 +378,7 @@ function registerActressIpc(ipcMain, db) {
         Number(d.height||0), Number(d.bust||0), Number(d.waist||0), Number(d.hip||0),
         d.zb||'', d.birthday||'', d.debut||'', d.remark||'', Number(id)
       ])
-      if(db._forceSave) db._forceSave(); return { ok: true }
+      persist(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -387,7 +386,7 @@ function registerActressIpc(ipcMain, db) {
   // 删除女优
   ipcMain.handle('actress:delete', (_e, id) => {
     try { db.run('DELETE FROM actress WHERE id=?', [Number(id)])
-      if(db._forceSave) db._forceSave(); return { ok: true } }
+      persist(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -407,7 +406,7 @@ function registerActressIpc(ipcMain, db) {
       d = d || {}
       db.run(`INSERT INTO websites (name,url,grp,img) VALUES (?,?,?,?)`, [d.name||'', d.url||'', d.grp||'', d.img||''])
       const id = Number(firstScalar(db.exec('SELECT last_insert_rowid()')[0]))
-      if(db._forceSave) db._forceSave(); return { ok: true, id }
+      persist(db); return { ok: true, id }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -418,7 +417,7 @@ function registerActressIpc(ipcMain, db) {
       const d = data || {}
       db.run(`UPDATE websites SET name=?,url=?,grp=?,img=? WHERE id=?`,
         [d.name||'', d.url||'', d.grp||'', d.img||'', Number(id)])
-      if(db._forceSave) db._forceSave(); return { ok: true }
+      persist(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -426,7 +425,7 @@ function registerActressIpc(ipcMain, db) {
   // 删除网址
   ipcMain.handle('websites:delete', (_e, id) => {
     try { db.run('DELETE FROM websites WHERE id=?', [Number(id)])
-      if(db._forceSave) db._forceSave(); return { ok: true } }
+      persist(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 }

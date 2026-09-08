@@ -10,6 +10,8 @@
 
 const fs = require('fs')
 const path = require('path')
+// db 层通用工具（落盘收口）
+const { persist } = require('./util')
 
 /**
  * 从 JSON 文件加载标签分类数据。
@@ -68,7 +70,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       // 如果 key 不存在则插入，已存在则更新 value
       db.run(`INSERT INTO settings(key,value) VALUES (?,?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
-      if (db._forceSave) db._forceSave()  // 立即持久化
+      persist(db)  // 立即持久化
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -94,7 +96,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
     try {
       if (!targetPath || !db._dbPath) return { ok: false, error: 'invalid path' }
       // 先强制保存内存数据库到磁盘，确保数据最新
-      if (db._forceSave) db._forceSave()
+      persist(db)
       // 复制数据库文件到目标路径
       fs.copyFileSync(db._dbPath, targetPath)
       return { ok: true }
@@ -123,7 +125,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       db.run('DELETE FROM movies')   // 清空影片表
       db.run('DELETE FROM actress')  // 清空女优表
       db.run('DELETE FROM websites') // 清空网址表
-      if (db._forceSave) db._forceSave()  // 立即持久化
+      persist(db)  // 立即持久化
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
