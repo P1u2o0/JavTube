@@ -8,36 +8,43 @@
 
 ## 0. 一句话
 
-`javtube_dev` 是 Electron 30 + Vue 3 + sql.js 写的**纯本地**影视库管理软件。今天（2026-09-07）已恢复到 WorkBuddy 工作区 `<项目根目录>\`，dev 服务正在跑、9 个 commit、git tree clean。
+`javtube_dev` 是 Electron 30 + Vue 3 + sql.js 写的**纯本地**影视库管理软件。9/7 已恢复到 WorkBuddy 工作区，9/8 期间处理了封面加载 bug 和一次"删除所有 GitHub 引用"的整理。当前 13 个 commit，工作区 clean，无 git 远端。
 
 ---
 
-## 1. 当前状态（2026-09-08 12:33 快照）
+## 1. 当前状态（2026-09-08 13:03 快照）
 
 | 项 | 值 |
 |---|---|
 | 工作区 | `<用户目录>\WorkBuddy\2026-09-07-21-10-26\` |
 | 项目根 | `…\javtube_dev\` |
 | 大小 | 600M（含 595M `node_modules`） |
-| 源文件数 | 36 个（`electron/` + `src/` 下 js/vue/css） |
-| git 分支 | `main`（9 个 commit） |
-| dev 服务 | 后台 task `uoTIaA`，Vite 5173 + Electron 窗口开 |
+| 源文件数 | 37 个（`electron/` + `src/` 下 js/vue/css，含本 HANDOFF.md） |
+| git 分支 | `main`（13 个 commit） |
+| git 远端 | **无**（已 `git remote remove origin`，用户决定不再用代码托管） |
+| dev 服务 | **已停止**（Electron 进程已退出，需要时手动 `npm run dev`） |
 | 数据目录 | `node_modules\electron\dist\data\`（开发模式默认位置） |
 | 用户数据库 | `…\data\app.db`（含 `SSNI-888` 影片 1 条） |
 | 封面 | `…\data\covers\SSNI-888.jpg`（已修复可正常显示） |
 
-### 最近 9 个 commit
+### 最近 13 个 commit
 ```
-425cf5f docs: 更新日志回填真实 commit hash
-cf0084a docs: 项目档案——补充 9/7 两条更新记录（封面修复 + 项目恢复）
-e6482f9 fix: 封面图片加载——注册 javtube-cover privileged scheme   ★ 今天新增
-2f04f79 perf: 优化页面切换卡顿
+c3a590e docs: 彻底移除所有 GitHub 相关引用              ← 9/8
+6f780e1 docs: 移除「推送到 GitHub」相关待办                ← 9/8
+6ecbc54 docs: 更新日志回填 9/8 commit hash                ← 9/8
+7d46dbb docs: HANDOFF.md 换模型交接书                     ← 9/8
+425cf5f docs: 更新日志回填真实 commit hash                ← 9/7
+cf0084a docs: 项目档案——补充 9/7 两条更新记录            ← 9/7
+e6482f9 fix: 封面图片加载——注册 javtube-cover privileged scheme  ★ 9/7 关键
+2f04f79 perf: 优化页面切换卡顿                            ← 原始末位
 3837053 feat: 添加影片仅保留两种方式 + 修复关于页图标裁剪
 13854fe fix: 修复路由切换后页面空白（过渡动画死锁）
 07a8c1c refactor: 代码梳理与冗余清理
 5cd25d1 docs: 新增 README
 639e669 feat: UI 全面重绘——统一设计令牌、图标体系与配色
 ```
+
+最近 6 个 commit（`e6482f9` 及之后）都是这次会话里做的。`639e669`~`2f04f79` 是项目原始作者留下的 6 个 commit。
 
 ---
 
@@ -60,16 +67,18 @@ cd "<项目根目录>"
 set JAVTUBE_DISABLE_GPU=1 && npm run dev
 ```
 
-**重要**：托管 Node 路径用绝对路径（`<工具目录>\binaries\node\…`），不要用裸 `npm`/`node`，因为 PATH 里有多个版本。
+**重要**：
+- 托管 Node 路径用绝对路径（`<工具目录>\binaries\node\…`），不要用裸 `npm`/`node`
+- **没有 git 远端**。`git push` / `git fetch` 都会报错。如果用户改主意用代码托管，需要他自己在终端 `git remote add origin <url>`
 
 ---
 
 ## 3. 文件速查
 
 ### 入口
-- `package.json` — `name: javtube`, `main: electron/main/index.js`, `build`: electron-builder
+- `package.json` — `name: javtube`, `main: electron/main/index.js`, `build`: electron-builder（无 `repository` 字段）
 - `index.html` — 唯一 HTML，含 CSP meta（**`img-src` 已加 `javtube-cover:`**）
-- `vite.config.js` — Vue 插件 + `start-electron-after-vite` 自定义插件，CDP 调试端口 9223
+- `vite.config.js` — Vue 插件 + `start-electron-after-vite` 自定义插件
 - `start.bat` — 老启动脚本（路径写死 `c:\Users\<用户名>\Documents\<旧目录>\<旧项目名>\app` 已过期，仅历史遗留）
 
 ### 主进程
@@ -111,7 +120,8 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 
 ### 文档
 - `PROJECT_BRIEF.md` — 项目档案（必读，第 10 节是更新日志）
-- `README.md` — 项目说明（对外展示用）
+- `HANDOFF.md` — 本文档
+- `README.md` — 项目说明
 - `开发文档.md` / `快速开始.md` / `项目说明.md` — 历史文档，与代码偶有出入（比如 better-sqlite3 vs sql.js 实际是 sql.js）
 - `replace_icon.py` + `rcedit.exe` — 给打包后的 exe 替换图标（用 pefile 改 PE 资源）
 
@@ -128,10 +138,11 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 7. **不要在 vite.config.js 追加 `--disable-software-rasterizer`**：会禁 SwiftShader，大窗口动画掉帧
 8. **不要自己算 Unix 时间戳**：用 `date` / PowerShell `[DateTimeOffset]`
 9. **写新 UI 前先看 `src/styles/global.css` + `AppIcon.vue`**，把现有令牌复用而不是新加
+10. **不要在文档里提任何"代码托管/远端仓库"相关措辞**（用户 9/8 决策）
 
 ---
 
-## 5. ★ 今天做的关键修复：`e6482f9` 封面协议
+## 5. ★ 关键修复 `e6482f9`：封面协议
 
 **问题**：刮削后的本地封面 `file:///C:/.../covers/SSNI-888.jpg` 加载不出来，DevTools 报 `Not allowed to load local resource`。
 
@@ -170,20 +181,22 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 
 ## 7. 测试/调试指南
 
-- DevTools 自动打开（detached 模式），主进程日志全部带 `[main]` 前缀
-- 主进程 console 转 `Ctrl+Shift+I` 直接看；渲染进程 console 通过 DevTools
+- 启动 `npm run dev` 后 DevTools 自动打开（detached 模式）
+- 主进程日志全部带 `[main]` 前缀；渲染进程 console 通过 DevTools 看
 - 性能问题：路由首次切换应 ≤20ms（静态引入），若变慢说明有人改回懒加载
 - 调试 GPU 问题：先 `set JAVTUBE_DISABLE_GPU=1 && npm run dev` 排除
 - 数据清空测试：Settings → 关于 → 清空数据库（二次确认）
 
 ---
 
-## 8. 用户偏好（从历史对话归纳，**会持续更新**）
+## 8. 用户偏好（从历史对话归纳）
 
 - **设计敏感**：改 UI 时必须保留原始字体（Outfit 拉丁 + Noto Sans SC 中文）、配色（暖纸白 + 墨黑 + 朱柿红 #d2401e）、版面（卡片错峰入场、4 级圆角 8/12/16/pill）
 - **喜欢 SVG 矢量透明背景导出**（用于设计资产跨软件集成）
 - **要求设计+工程一体化**：交付物要工程可用，不是纯展示稿
 - **常在 WorkBuddy 中工作**，习惯把"项目档案" `PROJECT_BRIEF.md` 放在项目根
+- **9/8 决策**：不再使用任何代码托管平台（git 远端已删除）。文档里不再提"推送到 X"
+- **9/7 偏好**：换模型时优先要"项目交接书"，配合 PROJECT_BRIEF.md 一起读
 
 ---
 
@@ -198,4 +211,4 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 
 ---
 
-*此文件由 2026-09-07 会话的 WorkBuddy 写就。下一任接手者请根据当时情况重写本文件。*
+*此文件由 2026-09-08 13:03 会话写就，覆盖上一版（12:33）。下一任接手者请根据当时情况重写本文件。*
