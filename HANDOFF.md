@@ -12,7 +12,7 @@
 
 ---
 
-## 1. 当前状态（2026-09-08 13:03 快照）
+## 1. 当前状态（2026-09-08 18:05 快照）
 
 | 项 | 值 |
 |---|---|
@@ -20,14 +20,35 @@
 | 项目根 | `…\javtube_dev\` |
 | 大小 | 600M（含 595M `node_modules`） |
 | 源文件数 | 37 个（`electron/` + `src/` 下 js/vue/css，含本 HANDOFF.md） |
-| git 分支 | `main`（13 个 commit） |
+| git 分支 | `main`（16 个 commit，8 轮工程重构已完成） |
 | git 远端 | **无**（已 `git remote remove origin`，用户决定不再用代码托管） |
 | dev 服务 | **已停止**（Electron 进程已退出，需要时手动 `npm run dev`） |
 | 数据目录 | `node_modules\electron\dist\data\`（开发模式默认位置） |
 | 用户数据库 | `…\data\app.db`（含 `SSNI-888` 影片 1 条） |
 | 封面 | `…\data\covers\SSNI-888.jpg`（已修复可正常显示） |
 
-### 最近 13 个 commit
+### 工程 refactor 批次（9/8，自旧向新）
+
+```
+16ddd75 refactor(8): 渲染层公共逻辑收敛 + 配置与杂项清理
+3a0d8de refactor(7): index.js 拆分 + 写盘原子性加固 + 播放时间格式统一
+3ba65c6 refactor(6): 删减 NFO 导入功能 + 清理死文件 + 修 B2（收藏页播放记历史）
+5c8b687 refactor(5/5): 渲染层刮削映射提取为公共函数
+37d5364 refactor(4/5): IPC 通道名常量化（preload 与 main 共享唯一来源）
+a6ac842 refactor(3/3): db/movies.js 按领域拆分为三个模块
+65d4c9c refactor(2/3): db 工具提取 + INSERT/UPDATE 字段清单去重
+976d2c9 refactor(1/3): 修正表注释 + 新建 constants.js 收拢共享常量
+```
+**重要**：轮次 4 曾引入 require 路径错误（'./common/...' 应为 '../common/...'），
+node --check 与 vite build 均查不出，靠 dev 冒烟才发现并已在轮次 6 修复。
+**凡涉及模块加载的改动，必须跑一次 `npm run dev` 冒烟验证。**
+
+回滚备份：git tag `backup-20260908-pre-round6`（重构前）/
+`backup-20260908-post-round8`（重构后）；
+工作区根有 `javtube_backup_20260908.bundle`（完整 git 仓）与
+`javtube_src_backup_20260908.tar.gz`（源码快照）。
+
+### 更早的 13 个 commit
 ```
 c3a590e docs: 彻底移除所有 GitHub 相关引用              ← 9/8
 6f780e1 docs: 移除「推送到 GitHub」相关待办                ← 9/8
