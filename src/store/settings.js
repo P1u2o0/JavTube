@@ -38,6 +38,14 @@ export const useActressStore = defineStore('actress', {
     async create(d) { if(window.api){const r=await window.api.createActress(JSON.parse(JSON.stringify(d))); if(r.ok) await this.load(); return r} },
 
     /**
+     * 更新女优信息（此前 Actress.vue 绕过 store 直调 window.api，收敛至此）
+     * @param {number} id - 女优 ID
+     * @param {Object} d - 女优数据对象
+     * @returns {Promise<Object>} 更新结果
+     */
+    async update(id, d) { if(window.api){const r=await window.api.updateActress(id, JSON.parse(JSON.stringify(d))); if(r.ok) await this.load(); return r} },
+
+    /**
      * 删除女优
      * @param {number} id - 女优 ID
      * @returns {Promise<Object>} 删除结果
@@ -73,6 +81,14 @@ export const useWebStore = defineStore('website', {
      * @returns {Promise<Object>} 创建结果
      */
     async create(d) { if(window.api){const r=await window.api.createWebsite(JSON.parse(JSON.stringify(d))); if(r.ok) await this.load(); return r} },
+
+    /**
+     * 更新网址（与 actress store 对齐补齐，当前 UI 未使用，供后续扩展）
+     * @param {number} id - 网址 ID
+     * @param {Object} d - 网址数据对象
+     * @returns {Promise<Object>} 更新结果
+     */
+    async update(id, d) { if(window.api){const r=await window.api.updateWebsite(id, JSON.parse(JSON.stringify(d))); if(r.ok) await this.load(); return r} },
 
     /**
      * 删除网址

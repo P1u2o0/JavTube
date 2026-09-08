@@ -27,7 +27,8 @@ export const useMoviesStore = defineStore('movies', {
     movies: [],           // 当前页影片列表
     total: 0,             // 影片总数（含筛选条件）
     page: 1,              // 当前页码
-    pageSize: 100,        // 每页显示数量
+    pageSize: 20,         // 每页显示数量（与 settings 表默认值 page_size='20' 一致；
+                          //  initIfNeeded 加载设置后会被用户配置覆盖）
     colsPerRow: 5,        // 每行显示的影片卡片数
     loading: false,       // 加载中标志
     dirty: false,         // 数据脏标志（标记数据有变动，需重新加载）

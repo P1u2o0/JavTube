@@ -39,17 +39,20 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
+import { safeCall } from '@/utils/global'
+import { useMovieList } from '@/composables/useMovieList'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
 
 // Pinia store 实例，管理影片数据与状态
 const store = useMoviesStore()
-// 路由实例，用于页面跳转
-const router = useRouter()
+// 公共列表交互：批量选中切换 / 翻页（收藏页固定加载 onlyFavorite）
+const { onToggle, onPageChange } = useMovieList(store, {
+  buildLoadArgs: () => ({ onlyFavorite: true })
+})
 
 /**
  * 刷新收藏列表
@@ -58,23 +61,13 @@ const router = useRouter()
 async function onRefresh() { store.page = 1; await store.loadMovies({ onlyFavorite: true }) }
 
 /**
- * 翻页处理
- * @param {number} p - 目标页码
- */
-async function onPageChange(p) {
-  store.page = p
-  await store.loadMovies({ onlyFavorite: true })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-/**
  * 播放影片并记录播放（B2 修复：与其他页面行为对齐，收藏页播放同样记入观看历史）
  * @param {Object} m - 影片对象，需包含 py（视频路径）和 id
  */
 function onPlay(m) {
   if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  window.api.playVideo(m.py)
-  window.api.recordPlay(m.id)
+  safeCall(window.api.playVideo(m.py))
+  safeCall(window.api.recordPlay(m.id))
 }
 
 /**
@@ -93,17 +86,6 @@ async function onDelete(m) {
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
-
-/**
- * 切换单个影片的选中状态（批量模式下使用）
- * @param {Object} m - 影片对象
- */
-function onToggle(m) {
-  const ids = store.selectedIds
-  const i = ids.indexOf(m.id)
-  if (i >= 0) ids.splice(i, 1)
-  else ids.push(m.id)
-}
 
 /**
  * 批量删除选中影片

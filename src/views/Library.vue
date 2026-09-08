@@ -45,10 +45,11 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { buildScrapeUpdate } from '@/utils/global'
+import { buildScrapeUpdate, safeCall } from '@/utils/global'
+import { useMovieList } from '@/composables/useMovieList'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
@@ -56,26 +57,16 @@ import EditMovieDialog from '@/components/EditMovieDialog.vue'
 
 // Pinia store 实例，管理影片数据、筛选、排序等状态
 const store = useMoviesStore()
-// 路由实例，用于编程式跳转
-const router = useRouter()
 // 当前路由信息，用于读取 query 参数
 const route = useRoute()
+// 公共列表交互：批量选中切换 / 翻页 / 详情跳转（自 composable 提供）
+const { onToggle, onPageChange, onDetail } = useMovieList(store)
 
 /**
  * 刷新影片列表
  * 功能：重置页码为 1，重新加载影片数据
  */
 async function onRefresh() { store.page = 1; await store.loadMovies({ append: false }) }
-
-/**
- * 翻页处理
- * @param {number} p - 目标页码
- */
-async function onPageChange(p) {
-  store.page = p
-  await store.loadMovies({ append: false })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
 
 // 编辑对话框控制
 const showEdit = ref(false)    // 对话框显示状态
@@ -108,20 +99,15 @@ async function onEditSaved() {
  */
 function onPlay(m) {
   if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  window.api.playVideo(m.py)
-  window.api.recordPlay(m.id)
+  safeCall(window.api.playVideo(m.py))
+  safeCall(window.api.recordPlay(m.id))
 }
-
-/**
- * 跳转到影片详情页
- * @param {Object} m - 影片对象
- */
-function onDetail(m) { router.push(`/detail/${m.id}`) }
 
 /**
  * 卡片点击处理（根据模式分发）
  * - 批量选择模式下：切换选中状态
  * - 普通模式下：根据用户设置（点击动作）决定播放或进入详情
+ *   （onDetail 由 useMovieList composable 提供）
  * @param {Object} m - 影片对象
  */
 function onCardClick(m) {
@@ -150,17 +136,6 @@ async function onDelete(m) {
 async function onFav(m) { await store.toggleFav(m.id) }
 
 /**
- * 切换单个影片的选中状态（批量模式下使用）
- * @param {Object} m - 影片对象
- */
-function onToggle(m) {
-  const ids = store.selectedIds
-  const i = ids.indexOf(m.id)
-  if (i >= 0) ids.splice(i, 1)
-  else ids.push(m.id)
-}
-
-/**
  * 批量删除选中影片
  */
 async function onBatchDelete() {
@@ -185,6 +160,8 @@ async function onBatchFav(isFav) {
  * 批量刮削选中的影片元数据
  * 功能：遍历选中影片，调用 scrapeMovie 获取在线元数据，
  *      更新标题、女优、导演、厂商等字段，并实时更新进度通知
+ * 语义说明（2026-09-08 用户确认）：仅处理「当前页」内被选中的影片，
+ *      跨页勾选的影片不在本页数据源中，属预期行为而非缺陷。
  */
 async function onBatchScrape() {
   if (!window.api) return

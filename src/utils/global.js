@@ -119,6 +119,16 @@ export function extractCode(name) {
 }
 
 /**
+ * 安全调用 fire-and-forget 的 IPC Promise（如 playVideo / recordPlay）。
+ * 失败仅输出控制台警告，不弹 UI 提示（保持这些调用原有的"无感知"语义），
+ * 同时避免 unhandled promise rejection。
+ * @param {Promise} promise - ipcRenderer.invoke 返回的 Promise
+ */
+export function safeCall(promise) {
+  Promise.resolve(promise).catch(e => console.warn('[ipc] call failed:', e?.message || e))
+}
+
+/**
  * 将刮削结果对象转换为影片更新字段对象（仅保留有值的字段）。
  * 原 Library.vue（onBatchScrape）与 Detail.vue（onScrape）各有一份相同的
  * 10 字段映射，提取为公共函数消除重复。映射关系与原实现逐字段一致：

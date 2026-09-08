@@ -101,7 +101,7 @@ import { useMoviesStore } from '@/store/movies'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, buildScrapeUpdate } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate, safeCall } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -178,8 +178,8 @@ async function load(id) {
  */
 async function onPlay() {
   if (!m.value?.py) return ElMessage.warning('未设置视频路径')
-  window.api.playVideo(m.value.py)
-  window.api.recordPlay(m.value.id)
+  safeCall(window.api.playVideo(m.value.py))
+  safeCall(window.api.recordPlay(m.value.id))
   store.dirty = true
 }
 

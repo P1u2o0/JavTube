@@ -167,10 +167,10 @@ async function showDetail(a) {
 async function onSave() {
   if (!form.name.trim()) return ElMessage.warning('请输入名字')
   const plain = JSON.parse(JSON.stringify(form))
-  // 根据 editId 决定是新增还是更新
+  // 根据 editId 决定新增或更新（统一走 store，与 create/remove 路径一致）
   const r = editId.value
-    ? await window.api.updateActress(editId.value, plain)
-    : await window.api.createActress(plain)
+    ? await s.update(editId.value, plain)
+    : await s.create(plain)
   if (r.ok) {
     ElMessage.success('保存成功')
     dlgShow.value = false

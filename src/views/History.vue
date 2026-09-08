@@ -43,17 +43,20 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
+import { safeCall } from '@/utils/global'
+import { useMovieList } from '@/composables/useMovieList'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
 import EditMovieDialog from '@/components/EditMovieDialog.vue'
 
 // Pinia store 实例
 const store = useMoviesStore()
-// 路由实例
-const router = useRouter()
+// 公共列表交互：批量选中切换 / 翻页（历史页固定加载 historyOnly）/ 详情跳转
+const { onToggle, onPageChange, onDetail } = useMovieList(store, {
+  buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true } })
+})
 
 // 编辑对话框控制
 const showEdit = ref(false)    // 对话框显示状态
@@ -73,33 +76,18 @@ async function loadHistory() {
 }
 
 /**
- * 翻页处理
- * @param {number} p - 目标页码
- */
-async function onPageChange(p) {
-  store.page = p
-  await store.loadMovies({ append: false, extraFilter: { historyOnly: true } })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-/**
  * 播放影片并记录播放
  * @param {Object} m - 影片对象，需包含 py（视频路径）和 id
  */
 function onPlay(m) {
   if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  window.api.playVideo(m.py)
-  window.api.recordPlay(m.id)
+  safeCall(window.api.playVideo(m.py))
+  safeCall(window.api.recordPlay(m.id))
 }
 
 /**
- * 跳转到影片详情页
- * @param {Object} m - 影片对象
- */
-function onDetail(m) { router.push(`/detail/${m.id}`) }
-
-/**
  * 卡片点击处理（直接进入详情页）
+ *   （onDetail 由 useMovieList composable 提供）
  * @param {Object} m - 影片对象
  */
 function onCardClick(m) { onDetail(m) }
@@ -132,17 +120,6 @@ async function onDelete(m) {
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id) }
-
-/**
- * 切换单个影片的选中状态（批量模式下使用）
- * @param {Object} m - 影片对象
- */
-function onToggle(m) {
-  const ids = store.selectedIds
-  const i = ids.indexOf(m.id)
-  if (i >= 0) ids.splice(i, 1)
-  else ids.push(m.id)
-}
 
 /**
  * 批量删除选中影片
