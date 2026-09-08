@@ -30,7 +30,6 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
-      @detail="onDetail"
       @edit="onEdit"
       @delete="onDelete"
       @fav="onFav"

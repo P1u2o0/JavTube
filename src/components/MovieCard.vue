@@ -80,12 +80,12 @@ const props = defineProps({
 // 定义 emit 事件：
 // - click: 卡片点击事件
 // - play: 播放影片
-// - detail: 查看详情
 // - edit: 编辑影片
 // - delete: 删除影片
 // - fav: 切换收藏状态
 // - toggle: 多选模式下切换选中状态
-const emit = defineEmits(['click', 'play', 'detail', 'edit', 'delete', 'fav', 'toggle'])
+// （detail 事件已移除：卡片从未发出过此事件，详情跳转由父组件 click 处理器决定）
+const emit = defineEmits(['click', 'play', 'edit', 'delete', 'fav', 'toggle'])
 
 // 封面图片是否加载出错
 const errd = ref(false)

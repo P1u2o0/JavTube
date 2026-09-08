@@ -30,7 +30,6 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
-      @detail="onDetail"
       @delete="onDelete"
       @fav="onFav"
       @toggle="onToggle"
@@ -69,16 +68,14 @@ async function onPageChange(p) {
 }
 
 /**
- * 播放影片
- * @param {Object} m - 影片对象，需包含 py（视频路径）
+ * 播放影片并记录播放（B2 修复：与其他页面行为对齐，收藏页播放同样记入观看历史）
+ * @param {Object} m - 影片对象，需包含 py（视频路径）和 id
  */
-function onPlay(m) { if (m.py) window.api?.playVideo(m.py) }
-
-/**
- * 跳转到影片详情页
- * @param {Object} m - 影片对象，需包含 id
- */
-function onDetail(m) { router.push(`/detail/${m.id}`) }
+function onPlay(m) {
+  if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
+  window.api.playVideo(m.py)
+  window.api.recordPlay(m.id)
+}
 
 /**
  * 删除影片（带二次确认）

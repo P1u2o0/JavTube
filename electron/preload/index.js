@@ -232,13 +232,6 @@ contextBridge.exposeInMainWorld('api', {
   scanDir: (dir) => ipcRenderer.invoke(IPC.UTILS_SCAN_DIR, dir),
 
   /**
-   * 读取文本文件内容
-   * @param {string} p - 文件路径
-   * @returns {Promise<Object>} { ok, data }
-   */
-  readFileText: (p) => ipcRenderer.invoke(IPC.UTILS_READ_FILE_TEXT, p),
-
-  /**
    * 读取文件并返回 Base64 编码
    * @param {string} p - 文件路径
    * @returns {Promise<Object>} { ok, data }
@@ -258,9 +251,6 @@ contextBridge.exposeInMainWorld('api', {
 
   /** 打开可执行文件选择对话框，返回选中文件路径 */
   openFileDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_FILE),
-
-  /** 打开 NFO 文件选择对话框（支持多选），返回选中文件路径数组 */
-  openNfoDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_NFO),
 
   /** 打开数据库保存对话框，返回保存路径 */
   saveDbDialog: () => ipcRenderer.invoke(IPC.DIALOG_SAVE_DB),

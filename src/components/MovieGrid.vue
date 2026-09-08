@@ -21,7 +21,6 @@
         :isSel="selectedIds.includes(m.id)"
         @click="$emit('click', m)"
         @play="$emit('play', m)"
-        @detail="$emit('detail', m)"
         @edit="$emit('edit', m)"
         @delete="$emit('delete', m)"
         @fav="$emit('fav', m)"
@@ -62,8 +61,9 @@ const props = defineProps({
 
 // 定义 emit 事件：
 // - page: 分页切换事件，参数为目标页码
-// - click/play/detail/edit/delete/fav/toggle: 透传 MovieCard 的对应事件
-const emit = defineEmits(['page', 'click', 'play', 'detail', 'edit', 'delete', 'fav', 'toggle'])
+// - click/play/edit/delete/fav/toggle: 透传 MovieCard 的对应事件
+// （detail 事件已移除：MovieCard 从不发出此事件，透传监听为死绑定）
+const emit = defineEmits(['page', 'click', 'play', 'edit', 'delete', 'fav', 'toggle'])
 
 // 分页器页码变化处理函数
 // 参数 p: 用户选择的目标页码

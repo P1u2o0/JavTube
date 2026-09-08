@@ -50,7 +50,6 @@ module.exports = {
   // === 工具 ===
   UTILS_PLAY_VIDEO: 'utils:playVideo',
   UTILS_SCAN_DIR: 'utils:scanDir',
-  UTILS_READ_FILE_TEXT: 'utils:readFileText',
   UTILS_READ_FILE_BASE64: 'utils:readFileBase64',
 
   // === 对话框 ===
@@ -58,7 +57,6 @@ module.exports = {
   DIALOG_OPEN_VIDEO: 'dialog:openVideo',
   DIALOG_OPEN_IMAGE: 'dialog:openImage',
   DIALOG_OPEN_FILE: 'dialog:openFile',
-  DIALOG_OPEN_NFO: 'dialog:openNfo',
   DIALOG_SAVE_DB: 'dialog:saveDb',
   DIALOG_OPEN_DB: 'dialog:openDb',
 

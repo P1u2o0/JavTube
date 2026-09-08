@@ -25,7 +25,7 @@ const { scrapeMovie } = require('./scraper')
 // 引入跨文件共享常量（视频扩展名 / 封面目录名等）
 const { VIDEO_EXTS, COVER_DIR } = require('./constants')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
-const IPC = require('./common/ipc-channels')
+const IPC = require('../common/ipc-channels')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -353,15 +353,6 @@ function registerUtilsIpc() {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  // === 读取文本文件 ===
-  // 渲染进程 → 主进程：以 UTF-8 编码读取文件文本内容
-  ipcMain.handle(IPC.UTILS_READ_FILE_TEXT, (_e, filePath) => {
-    try {
-      const txt = fs.readFileSync(filePath, 'utf-8')
-      return { ok: true, data: txt }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-
   // === 读取文件并返回 Base64 ===
   // 渲染进程 → 主进程：读取文件二进制数据并转为 Base64 字符串（用于图片预览等）
   ipcMain.handle(IPC.UTILS_READ_FILE_BASE64, (_e, filePath) => {
@@ -382,8 +373,6 @@ function registerUtilsIpc() {
   ipcMain.handle(IPC.DIALOG_OPEN_IMAGE, () => doOpen({ properties: ['openFile'], filters: [{ name: '图片文件', extensions: ['jpg','jpeg','png','gif','webp','bmp'] }] }))
   // 打开可执行文件选择对话框
   ipcMain.handle(IPC.DIALOG_OPEN_FILE, () => doOpen({ properties: ['openFile'], filters: [{ name: '可执行文件', extensions: ['exe','bat','cmd'] }, { name: '所有文件', extensions: ['*'] }] }))
-  // 打开 NFO 文件选择对话框（支持多选）
-  ipcMain.handle(IPC.DIALOG_OPEN_NFO, () => dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'NFO', extensions: ['nfo','xml'] }] }).then(r => r.canceled ? null : r.filePaths))
   // 保存数据库备份文件对话框
   ipcMain.handle(IPC.DIALOG_SAVE_DB, () => dialog.showSaveDialog(mainWindow, { defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }).then(r => r.canceled ? null : r.filePath))
   // 打开数据库文件选择对话框
