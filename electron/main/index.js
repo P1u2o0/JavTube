@@ -14,8 +14,10 @@ const fs = require('fs')
 
 // 引入数据库初始化模块
 const { initDb } = require('./db/init')
-// 引入影片和女优的 IPC 处理器注册函数
-const { registerMovieIpc, registerActressIpc } = require('./db/movies')
+// 引入影片和女优的 IPC 处理器注册函数（女优/网址自轮次 3 起各自独立模块）
+const { registerMovieIpc } = require('./db/movies')
+const { registerActressIpc } = require('./db/actress')
+const { registerWebsitesIpc } = require('./db/websites')
 // 引入设置相关的 IPC 处理器注册函数
 const { registerSettingsIpc } = require('./db/settings')
 // 引入刮削模块
@@ -422,6 +424,7 @@ app.whenReady().then(async () => {
     registerUtilsIpc()                                              // 工具类 IPC
     registerMovieIpc(ipcMain, db)                                   // 影片数据 IPC
     registerActressIpc(ipcMain, db)                                 // 女优数据 IPC
+    registerWebsitesIpc(ipcMain, db)                                // 网址数据 IPC
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
     console.log('[main] IPC OK')
   } catch (e) {
