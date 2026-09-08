@@ -118,12 +118,13 @@ function invert() {
   font-size: 15px;
   margin: 0 3px;
 }
-/* 批量操作区域：margin-left:auto 推到右侧，与「选择」开关相邻 */
-.batch { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-right: 12px; flex-wrap: wrap; }
+/* 批量操作区域：紧跟在「选择」开关左侧（不自带 auto 推力） */
+.batch { display: flex; align-items: center; gap: 6px; padding-right: 12px; flex-wrap: wrap; }
 /* 已选中数量提示 */
 .sel-count { color: var(--muted); font-size: 12px; margin-right: 2px; }
-/* 右侧多选开关区域（不再用 margin-left:auto，让批量按钮组贴右） */
-.right { display: flex; align-items: center; flex-shrink: 0; }
+/* 右侧多选开关区域：margin-left:auto 始终把开关推到最右——
+   未开批量时开关独占贴右；开启后批量按钮组出现在其左侧，开关位置不动 */
+.right { display: flex; align-items: center; margin-left: auto; flex-shrink: 0; }
 .right-label { margin-right: 8px; color: var(--text-2); }
 /* 批量删除/刮削按钮：默认中性描边与全选/反选一致，hover/focus 时才显现语义色，
    替换原实心红/绿（EP 默认冷色调与暖纸白+墨黑+朱柿红配色冲突） */
