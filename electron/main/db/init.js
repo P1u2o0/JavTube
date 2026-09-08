@@ -10,6 +10,8 @@
 
 const fs = require('fs')
 const path = require('path')
+// 封面目录名等共享常量（集中定义于 constants.js）
+const { COVER_DIR } = require('../constants')
 
 // sql.js 实例缓存，避免重复初始化
 let SQL = null
@@ -98,23 +100,23 @@ async function initDb(dataDir) {
     yy TEXT,               -- 演员名称（冗余字段，用于显示）
     fxrq TEXT,             -- 发行日期
     fl TEXT DEFAULT '全部', -- 分类（有码/无码/欧美/全部）
-    zz TEXT DEFAULT 'n',    -- 是否已整理 (y/n)
-    lc TEXT DEFAULT 'n',    -- 是否已清理 (y/n)
-    pj TEXT DEFAULT 'n',    -- 是否已评级 (y/n)
-    dt TEXT DEFAULT 'n',    -- 是否有字幕 (y/n)
-    dm TEXT DEFAULT 'n',    -- 是否有代码 (y/n)
-    vr TEXT DEFAULT 'n',    -- 是否为 VR 影片 (y/n)
-    sd TEXT DEFAULT 'n',    -- 是否已删除原文件 (y/n)
-    hj TEXT DEFAULT 'n',    -- 是否已合集 (y/n)
+    zz TEXT DEFAULT 'n',    -- 中字标记 (y/n)，详情页「类型」展示用
+    lc TEXT DEFAULT 'n',    -- 流出标记 (y/n)
+    pj TEXT DEFAULT 'n',    -- 破解标记 (y/n)
+    dt TEXT DEFAULT 'n',    -- 单体标记 (y/n)
+    dm TEXT DEFAULT 'n',    -- 动漫标记 (y/n)
+    vr TEXT DEFAULT 'n',    -- VR 影片标记 (y/n)
+    sd TEXT DEFAULT 'n',    -- 3D 标记 (y/n)
+    hj TEXT DEFAULT 'n',    -- 合集标记 (y/n)
     pfs REAL DEFAULT 0,     -- 评分（满分制）
     yz REAL DEFAULT 0,      -- 硬度值
     zb TEXT DEFAULT 'A',    -- 资源质量等级 (A/B/C/D)
     tix TEXT DEFAULT '正常', -- 体型标记
     bq TEXT,                -- 标签（多个用中文逗号分隔）
-    jt TEXT,                -- 截图路径
-    py TEXT,                -- 拼音首字母
+    jt TEXT,                -- 简介
+    py TEXT,                -- 视频文件路径
     cl TEXT DEFAULT 'n',    -- 是否收藏 (y/n)
-    tjrq TEXT,              -- 添加日期（时间戳）
+    tjrq TEXT,              -- 添加日期（格式 YYYY-MM-DD HH:mm:ss）
     dx INTEGER DEFAULT 0,  -- 文件大小（字节）
     dy TEXT,                -- 导演
     sc TEXT,                -- 时长（秒）
@@ -153,7 +155,7 @@ async function initDb(dataDir) {
     value TEXT             -- 设置项值
   )`)
 
-  // 兼容旧库：添加 play_time 列（播放时间记录）
+  // 兼容旧库：添加 play_time 列（最近播放时间，ISO 8601 格式，见 movies:recordPlay）
   // 如果列已存在，ALTER TABLE 会报错，用 try-catch 忽略
   try { db.run('ALTER TABLE movies ADD COLUMN play_time TEXT') } catch {}
 
@@ -163,7 +165,7 @@ async function initDb(dataDir) {
     ['page_size','20'],      // 每页显示数量
     ['theme','light'],       // 主题
     ['video_paths','[]'],    // 视频文件路径列表（JSON 数组）
-    ['cover_dir','covers'],  // 封面目录名
+    ['cover_dir', COVER_DIR],  // 封面目录名
     ['click_action','detail'] // 点击影片时的行为（详情/播放）
   ]
   for (const [k, v] of defaults) {
@@ -172,7 +174,7 @@ async function initDb(dataDir) {
   }
 
   // 创建封面图片存放目录
-  const coversDir = path.join(dataDir, 'covers')
+  const coversDir = path.join(dataDir, COVER_DIR)
   try { if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true }) } catch {}
 
   // === 脏标记 + 定时持久化机制 ===

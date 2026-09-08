@@ -10,10 +10,8 @@
  *         db.exec('SELECT last_insert_rowid() id')[0].values[0][0] 获取最后插入的 ID
  */
 
-// 标签分隔符：使用中文逗号（全角）
-const DELIM = '\uff0c'
-// 收藏标记常量：'y' 表示已收藏，'n' 表示未收藏
-const FAV_Y = 'y', FAV_N = 'n'
+// 标签分隔符、收藏标记等共享常量（集中定义于 constants.js）
+const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
 
 /**
  * 将 sql.js 查询结果（{columns, values} 格式）转换为对象数组。
@@ -117,9 +115,8 @@ function registerMovieIpc(ipcMain, db) {
         // 随机排序
         orderSql = 'ORDER BY RANDOM()'
       } else {
-        // 白名单列名排序，防止 SQL 注入
-        const allowed = ['id','ph','pm','pfs','yz','tjrq','fxrq','zb','tix','cl','play_time']
-        const col = allowed.includes(sort.by) ? sort.by : 'tjrq'
+        // 白名单列名排序，防止 SQL 注入（白名单定义于 constants.js）
+        const col = SORTABLE_COLUMNS.includes(sort.by) ? sort.by : 'tjrq'
         const dir = String(sort.order || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
         orderSql = `ORDER BY ${col} ${dir}`
       }
@@ -156,7 +153,7 @@ function registerMovieIpc(ipcMain, db) {
       // 设置添加日期，默认为当前时间
       const tjrq = d.tjrq || nowIso()
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
-      if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(DELIM)
+      if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
       // 番号去重：已存在则跳过，返回已有 ID
       if (d.ph) {
         const exist = db.exec('SELECT id FROM movies WHERE ph=?', [d.ph])
@@ -196,7 +193,7 @@ function registerMovieIpc(ipcMain, db) {
       // 合并：用传入数据覆盖现有数据
       const d = { ...cur, ...(data||{}) }
       // 标签标准化
-      if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(DELIM)
+      if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
       // 执行更新
       db.run(`UPDATE movies SET
         ph=?,pm=?,cover=?,yid=?,yy=?,fxrq=?,fl=?,zz=?,lc=?,pj=?,dt=?,dm=?,vr=?,sd=?,hj=?,
@@ -254,7 +251,7 @@ function registerMovieIpc(ipcMain, db) {
         // 追加新标签
         for (const t of list) existing.add(t)
         // 拼接为字符串并更新（不要额外追加尾部分隔符，避免 bq 字段尾部残留逗号）
-        const newBq = Array.from(existing).join(DELIM)
+        const newBq = Array.from(existing).join(TAG_DELIM)
         db.run('UPDATE movies SET bq=? WHERE id=?', [newBq, Number(id)])
       }
       if(db._forceSave) db._forceSave(); return { ok: true }

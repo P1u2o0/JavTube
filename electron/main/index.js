@@ -20,6 +20,8 @@ const { registerMovieIpc, registerActressIpc } = require('./db/movies')
 const { registerSettingsIpc } = require('./db/settings')
 // 引入刮削模块
 const { scrapeMovie } = require('./scraper')
+// 引入跨文件共享常量（视频扩展名 / 封面目录名等）
+const { VIDEO_EXTS, COVER_DIR } = require('./constants')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -321,8 +323,7 @@ function registerUtilsIpc() {
   // 渲染进程 → 主进程：递归扫描指定目录，返回所有视频文件信息
   ipcMain.handle('utils:scanDir', async (_e, dirPath) => {
     try {
-      // 支持的视频文件扩展名列表
-      const VIDEO_EXTS = ['.mp4','.avi','.mkv','.mov','.flv','.wmv','.rmvb','.m4v','.mpg','.mpeg','.ts','.webm']
+      // 支持的视频文件扩展名列表（定义于 constants.js）
       const results = []
       // 递归遍历目录
       function walk(dir) {
@@ -389,7 +390,7 @@ function registerUtilsIpc() {
   // 参数：ph（番号）、source（刮削来源）、coverDir（封面保存目录名）
   ipcMain.handle('scraper:scrape', async (_e, { ph, source, coverDir }) => {
     try {
-      const r = await scrapeMovie(ph, { source: source || 'auto', coverDir: coverDir || 'covers', dataDir: dataDirForGlobal })
+      const r = await scrapeMovie(ph, { source: source || 'auto', coverDir: coverDir || COVER_DIR, dataDir: dataDirForGlobal })
       return r
     } catch (e) { return { ok: false, error: e.message } }
   })

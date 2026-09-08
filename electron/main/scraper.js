@@ -12,6 +12,8 @@ const { net } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const { URL } = require('url')
+// 封面目录名等共享常量（集中定义于 constants.js）
+const { COVER_DIR } = require('./constants')
 
 // 模拟浏览器请求的 User-Agent 字符串，避免被网站拦截
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
@@ -379,11 +381,11 @@ function autoSelectSources(type) {
  * @param {string} ph - 影片番号
  * @param {Object} [opts] - 可选参数
  * @param {string} [opts.source='auto'] - 刮削来源（'auto' 或具体来源名称如 'JAVDB'）
- * @param {string} [opts.coverDir='covers'] - 封面图片保存的子目录名
+ * @param {string} [opts.coverDir=COVER_DIR] - 封面图片保存的子目录名
  * @param {string} [opts.dataDir=''] - 数据根目录路径
  * @returns {Promise<Object>} 结果对象 { ok: boolean, data?: Object, source?: string, error?: string }
  */
-async function scrapeMovie(ph, { source = 'auto', coverDir = 'covers', dataDir = '' } = {}) {
+async function scrapeMovie(ph, { source = 'auto', coverDir = COVER_DIR, dataDir = '' } = {}) {
   const cleanPh = ph.trim()
   if (!cleanPh) return { ok: false, error: '番号不能为空' }
 
@@ -417,7 +419,7 @@ async function scrapeMovie(ph, { source = 'auto', coverDir = 'covers', dataDir =
       if (result) {
         // 如果有封面图且指定了数据目录，下载封面到本地
         if (result.cover && dataDir) {
-          const coversDir = path.join(dataDir, coverDir || 'covers')
+          const coversDir = path.join(dataDir, coverDir || COVER_DIR)
           if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true })
           // 从 URL 提取图片扩展名
           const ext = result.cover.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg'
@@ -425,7 +427,7 @@ async function scrapeMovie(ph, { source = 'auto', coverDir = 'covers', dataDir =
           try {
             await downloadImage(result.cover, savePath)
             // 将封面路径改为相对路径（相对于 dataDir）
-            result.cover = path.join(coverDir || 'covers', cleanPh + ext)
+            result.cover = path.join(coverDir || COVER_DIR, cleanPh + ext)
           } catch (e) {
             // 封面下载失败不影响其他数据
           }
