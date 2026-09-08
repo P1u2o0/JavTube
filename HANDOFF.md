@@ -21,7 +21,7 @@
 | 大小 | 600M（含 595M `node_modules`） |
 | 源文件数 | 36 个（`electron/` + `src/` 下 js/vue/css） |
 | git 分支 | `main`（9 个 commit） |
-| 远端 | `https://github.com/P1u2o0/JavTube.git`（落后 3 个 commit，待 push） |
+| 远端 | `https://github.com/P1u2o0/JavTube.git`（项目元数据，**用户已决定不再 push**） |
 | dev 服务 | 后台 task `uoTIaA`，Vite 5173 + Electron 窗口开 |
 | 数据目录 | `node_modules\electron\dist\data\`（开发模式默认位置） |
 | 用户数据库 | `…\data\app.db`（含 `SSNI-888` 影片 1 条） |
@@ -155,7 +155,6 @@ set JAVTUBE_DISABLE_GPU=1 && npm run dev
 
 ### P1（用户会问的）
 - **Home.vue 未接真实数据**：现在是功能引导占位页（"导入影片 / 浏览片库 / 收藏"三个按钮）。可接：统计（总影片/收藏/观看数）、最近添加、最近观看、随机推荐。**结构很适合做 Dashboard**
-- **GitHub 远端落后 3 commit**：用户需在自己终端 `git push origin main`（WorkBuddy 沙箱封了 github.com）
 
 ### P2（清理类）
 - **未引用文件**：`ScrapeForm.vue`、`SingleForm.vue` 当前没被引用（被禁用但保留）。可清理
