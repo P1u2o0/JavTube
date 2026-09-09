@@ -2,102 +2,104 @@
   ============================================================
   文件名：SettingsDialog.vue
   所属模块：公共组件 / 设置对话框
-  功能描述：应用设置弹出窗口（2026-09-09 由独立设置页改造而来）。
-           点击顶栏设置按钮弹出，包含五个标签页：
-           1. 基础设置 - 播放器路径、点击卡片动作、每行/每页显示数量
-           2. 标签设置 - 标签类别（行式布局，加号添加，空类别单行）
-                        + 标签映射（原标签映射为新标签，刮削后自动替换）
-           3. 刮削设置 - 来源、预览图下载（开关/数量）、想看看过评分、本机代理
-           4. 辅助设置 - 数据库备份、恢复、清空
-           5. 关于 - 应用信息
-           所有设置说明文字统一位于选项下一行并与选项左对齐（.form-tip）。
+  功能描述：应用设置弹出窗口（2026-09-09 由独立设置页改造，后又按用户
+           反馈改为固定尺寸 + 统一双栏网格布局）。
+           对话框整体固定尺寸（820px × 74vh），切换标签页大小不变；
+           每个标签页固定分为左右两栏：左列选项名称（右端对齐中心线）、
+           右列选项控件；选项说明小字统一放选项下方。
+           五个标签页：基础设置 / 标签设置（标签类别+标签映射）/
+           刮削设置 / 辅助设置 / 关于。
   ============================================================
 -->
 <template>
-  <!-- 设置对话框：v-model 控制显隐，align-center 垂直水平居中，每次打开重新加载设置 -->
-  <el-dialog v-model="show" title="设置" width="780px" align-center destroy-on-close>
+  <!-- 设置对话框：v-model 控制显隐，align-center 垂直水平居中，整体固定尺寸 -->
+  <el-dialog v-model="show" title="设置" width="820px" align-center destroy-on-close class="settings-dialog">
     <!-- 标签页容器 -->
     <el-tabs v-model="tab">
       <!-- ============ 基础设置 ============ -->
       <el-tab-pane label="基础设置" name="basic">
-        <el-form label-width="130px">
-          <!-- 播放器路径设置（输入框与选择按钮并排，均为独立胶囊样式） -->
-          <el-form-item label="播放器路径">
+        <div class="set-grid">
+          <!-- 播放器路径（输入框与选择按钮并排） -->
+          <div class="g-label">播放器路径</div>
+          <div class="g-control">
             <div class="player-row">
               <el-input v-model="st.player_path" placeholder="留空使用系统默认播放器" class="player-input" />
               <el-button @click="choosePlayer">选择</el-button>
             </div>
-            <span class="form-tip">填入本地播放器的可执行文件路径，播放影片时优先使用它打开</span>
-          </el-form-item>
+            <span class="g-tip">填入本地播放器的可执行文件路径，播放影片时优先使用它打开</span>
+          </div>
           <!-- 点击卡片默认动作 -->
-          <el-form-item label="点击卡片动作">
+          <div class="g-label">点击卡片动作</div>
+          <div class="g-control">
             <el-select v-model="st.click_action" style="max-width: 260px;">
               <el-option label="进入详情页" value="detail" />
               <el-option label="直接播放" value="play" />
             </el-select>
-            <span class="form-tip">在片库中单击影片卡片时执行的动作（详情页内播放不受影响）</span>
-          </el-form-item>
-          <!-- 每行显示数量（胶囊数字输入，与每页显示数量样式一致） -->
-          <el-form-item label="每行显示数量">
+            <span class="g-tip">在片库中单击影片卡片时执行的动作（详情页内播放不受影响）</span>
+          </div>
+          <!-- 每行显示数量 -->
+          <div class="g-label">每行显示数量</div>
+          <div class="g-control">
             <el-input-number v-model="colsPerRowN" :min="3" :max="8" :step="1" />
-            <span class="form-tip">片库海报墙每一行显示的影片卡片数（3 - 8）</span>
-          </el-form-item>
+            <span class="g-tip">片库海报墙每一行显示的影片卡片数（3 - 8）</span>
+          </div>
           <!-- 每页显示数量 -->
-          <el-form-item label="每页显示数量">
+          <div class="g-label">每页显示数量</div>
+          <div class="g-control">
             <el-input-number v-model="pageSizeN" :min="10" :max="200" :step="10" />
-            <span class="form-tip">片库列表每页加载的影片数量（10 - 200）</span>
-          </el-form-item>
+            <span class="g-tip">片库列表每页加载的影片数量（10 - 200）</span>
+          </div>
           <!-- 保存与恢复按钮 -->
-          <el-form-item>
+          <div class="g-label"></div>
+          <div class="g-control">
             <el-button type="primary" @click="save">保存设置</el-button>
             <el-button @click="load" style="margin-left: 10px;">恢复</el-button>
-          </el-form-item>
-        </el-form>
+          </div>
+        </div>
       </el-tab-pane>
 
       <!-- ============ 标签设置 ============ -->
       <el-tab-pane label="标签设置" name="cats">
-        <!-- 内容区缩进与表单控件列对齐（label-width 130px） -->
-        <div class="sec-wrap">
-          <!-- 标签类别 -->
-          <div class="sec-head">
-            <span class="sec-title">标签类别</span>
+        <div class="set-grid">
+          <!-- 标签类别：右列为添加按钮 + 行列表 -->
+          <div class="g-label">标签类别</div>
+          <div class="g-control">
             <el-button class="add-btn" @click="addCat">
               <AppIcon name="plus" :size="14" style="margin-right:4px" />添加类别
             </el-button>
-          </div>
-          <span class="form-tip" style="margin-top:0">每个类别一行，类别内的标签用中文逗号「，」分隔；未添加标签的类别不会显示在片库筛选区</span>
-          <div class="row-list">
-            <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
-              <span class="row-idx">{{ idx + 1 }}</span>
-              <el-input v-model="row.cat" placeholder="类别名（如：主题）" class="cat-name-input" />
-              <el-input v-model="row.tags" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
-              <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
-                <AppIcon name="close" :size="14" />
-              </button>
+            <div class="row-list">
+              <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
+                <span class="row-idx">{{ idx + 1 }}</span>
+                <el-input v-model="row.cat" placeholder="类别名（如：主题）" class="cat-name-input" />
+                <el-input v-model="row.tags" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
+                <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
+                  <AppIcon name="close" :size="14" />
+                </button>
+              </div>
             </div>
+            <span class="g-tip">每个类别一行，类别内的标签用中文逗号「，」分隔；未添加标签的类别不会显示在片库筛选区</span>
           </div>
-
           <!-- 标签映射 -->
-          <div class="sec-head" style="margin-top: 26px;">
-            <span class="sec-title">标签映射</span>
+          <div class="g-label">标签映射</div>
+          <div class="g-control">
             <el-button class="add-btn" @click="addMap">
               <AppIcon name="plus" :size="14" style="margin-right:4px" />添加映射
             </el-button>
-          </div>
-          <span class="form-tip" style="margin-top:0">刮削获得的标签若与左侧「原标签」相同，入库时自动替换为右侧「新标签」（新标签留空表示删除该标签），无需逐部手动修改</span>
-          <div class="row-list">
-            <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
-              <el-input v-model="row.from" placeholder="原标签（如：偶像术人）" class="map-input" />
-              <span class="map-arrow">映射为</span>
-              <el-input v-model="row.to" placeholder="新标签（如：偶像）" class="map-input" />
-              <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
-                <AppIcon name="close" :size="14" />
-              </button>
+            <div class="row-list">
+              <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
+                <el-input v-model="row.from" placeholder="原标签（如：偶像术人）" class="map-input" />
+                <span class="map-arrow">映射为</span>
+                <el-input v-model="row.to" placeholder="新标签（如：偶像）" class="map-input" />
+                <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
+                  <AppIcon name="close" :size="14" />
+                </button>
+              </div>
             </div>
+            <span class="g-tip">刮削获得的标签若与左侧「原标签」相同，入库时自动替换为右侧「新标签」（新标签留空表示删除该标签），无需逐部手动修改</span>
           </div>
-
-          <div style="margin-top: 20px;">
+          <!-- 保存按钮 -->
+          <div class="g-label"></div>
+          <div class="g-control">
             <el-button type="primary" @click="saveCats">保存标签设置</el-button>
             <el-button @click="loadCats" style="margin-left: 10px;">恢复</el-button>
           </div>
@@ -106,82 +108,89 @@
 
       <!-- ============ 刮削设置 ============ -->
       <el-tab-pane label="刮削设置" name="scrape">
-        <el-form label-width="130px">
+        <div class="set-grid">
           <!-- 刮削来源 -->
-          <el-form-item label="刮削来源">
+          <div class="g-label">刮削来源</div>
+          <div class="g-control">
             <el-select v-model="st.scrape_source" style="max-width: 320px;">
               <el-option label="自动（JAVBUS 优先，JAVDB 兜底）" value="auto" />
               <el-option label="仅使用 JAVBUS" value="javbus" />
               <el-option label="仅使用 JAVDB" value="javdb" />
             </el-select>
-            <span class="form-tip">自动模式下先刮 JAVBUS，失败自动换 JAVDB；指定来源失败不再兜底。详情页刮削按钮旁可临时切换</span>
-          </el-form-item>
-          <!-- 下载预览图 -->
-          <el-form-item label="下载预览图">
-            <el-switch v-model="st.scrape_previews" active-value="y" inactive-value="n" />
-            <span class="form-tip">开启后刮削时自动下载影片预览图到本地预览图目录，详情页底部可浏览</span>
-          </el-form-item>
-          <!-- 预览图数量 -->
-          <el-form-item label="预览图数量">
-            <el-input-number v-model="previewCountN" :min="0" :max="50" :step="1" />
-            <span class="form-tip">每次刮削最多下载几张预览图（0 = 全部下载）</span>
-          </el-form-item>
-          <!-- 想看/看过/评分 -->
-          <el-form-item label="想看/看过/评分">
-            <el-switch v-model="st.scrape_stats" active-value="y" inactive-value="n" />
-            <span class="form-tip">刮削 JAVDB 时同时抓取想看人数、看过人数与评分，并在影片详情页展示</span>
-          </el-form-item>
-          <!-- 使用本机代理 -->
-          <el-form-item label="使用本机代理">
-            <el-switch v-model="st.proxy_enabled" active-value="y" inactive-value="n" />
-            <span class="form-tip">访问 JAVDB 需要科学上网，开启后刮削请求走下方代理地址，保存后立即生效</span>
-          </el-form-item>
-          <!-- 代理地址 -->
-          <el-form-item label="代理地址">
-            <el-input v-model="st.proxy_url" placeholder="http://127.0.0.1:7890" style="max-width: 320px;" />
-            <span class="form-tip">本机代理的 HTTP 地址，常用 Clash 默认端口 7890、v2rayN 默认 10809</span>
-          </el-form-item>
-          <!-- 保存按钮 -->
-          <el-form-item>
-            <el-button type="primary" @click="saveScrape">保存刮削设置</el-button>
-          </el-form-item>
-        </el-form>
-      </el-tab-pane>
-
-      <!-- ============ 辅助设置（数据库管理） ============ -->
-      <el-tab-pane label="辅助设置" name="aux">
-        <el-card shadow="never" style="margin-bottom: 16px;">
-          <template #header>
-            <span style="display:inline-flex; align-items:center; gap:6px;">
-              <AppIcon name="database" :size="16" />数据库
-            </span>
-          </template>
-          <div style="display:flex; gap: 10px; flex-wrap: wrap;">
-            <!-- 备份按钮 -->
-            <el-button @click="backupDb">
-              <AppIcon name="import" :size="15" style="margin-right:5px" />备份数据库到…
-            </el-button>
-            <!-- 恢复按钮 -->
-            <el-button @click="restoreDb">
-              <AppIcon name="reset" :size="15" style="margin-right:5px" />从备份文件恢复…
-            </el-button>
-            <!-- 清空按钮（危险操作） -->
-            <el-button type="danger" @click="clearDb">
-              <AppIcon name="trash" :size="15" style="margin-right:5px" />清空所有数据
-            </el-button>
+            <span class="g-tip">自动模式下先刮 JAVBUS，失败自动换 JAVDB；指定来源失败不再兜底</span>
           </div>
-        </el-card>
+          <!-- 下载预览图 -->
+          <div class="g-label">下载预览图</div>
+          <div class="g-control">
+            <el-switch v-model="st.scrape_previews" active-value="y" inactive-value="n" />
+            <span class="g-tip">开启后刮削时自动下载影片预览图到本地预览图目录，详情页底部可浏览</span>
+          </div>
+          <!-- 预览图数量 -->
+          <div class="g-label">预览图数量</div>
+          <div class="g-control">
+            <el-input-number v-model="previewCountN" :min="0" :max="50" :step="1" />
+            <span class="g-tip">每次刮削最多下载几张预览图（0 = 全部下载）</span>
+          </div>
+          <!-- 想看/看过/评分 -->
+          <div class="g-label">想看/看过/评分</div>
+          <div class="g-control">
+            <el-switch v-model="st.scrape_stats" active-value="y" inactive-value="n" />
+            <span class="g-tip">刮削 JAVDB 时同时抓取想看人数、看过人数与评分，并在影片详情页展示</span>
+          </div>
+          <!-- 使用本机代理 -->
+          <div class="g-label">使用本机代理</div>
+          <div class="g-control">
+            <el-switch v-model="st.proxy_enabled" active-value="y" inactive-value="n" />
+            <span class="g-tip">访问 JAVDB 需要科学上网，开启后刮削请求走下方代理地址，保存后立即生效</span>
+          </div>
+          <!-- 代理地址 -->
+          <div class="g-label">代理地址</div>
+          <div class="g-control">
+            <el-input v-model="st.proxy_url" placeholder="http://127.0.0.1:7890" style="max-width: 320px;" />
+            <span class="g-tip">本机代理的 HTTP 地址，常用 Clash 默认端口 7890、v2rayN 默认 10809</span>
+          </div>
+          <!-- 保存按钮 -->
+          <div class="g-label"></div>
+          <div class="g-control">
+            <el-button type="primary" @click="saveScrape">保存刮削设置</el-button>
+          </div>
+        </div>
       </el-tab-pane>
 
-      <!-- ============ 关于信息 ============ -->
+      <!-- ============ 辅助设置 ============ -->
+      <el-tab-pane label="辅助设置" name="aux">
+        <div class="set-grid">
+          <!-- 数据库管理 -->
+          <div class="g-label">数据库</div>
+          <div class="g-control">
+            <div style="display:flex; gap: 10px; flex-wrap: wrap;">
+              <!-- 备份按钮 -->
+              <el-button @click="backupDb">
+                <AppIcon name="import" :size="14" style="margin-right:5px" />备份数据库到…
+              </el-button>
+              <!-- 恢复按钮 -->
+              <el-button @click="restoreDb">
+                <AppIcon name="reset" :size="14" style="margin-right:5px" />从备份文件恢复…
+              </el-button>
+              <!-- 清空按钮（危险操作） -->
+              <el-button class="act-del" @click="clearDb">
+                <AppIcon name="trash" :size="14" style="margin-right:5px" />清空所有数据
+              </el-button>
+            </div>
+            <span class="g-tip">清空为不可逆操作，执行前请先备份；恢复会覆盖当前全部数据</span>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- ============ 关于 ============ -->
       <el-tab-pane label="关于" name="about">
-        <div class="about-box">
-          <!-- 应用图标徽章 -->
-          <div class="about-badge"><img src="/app-icon.png" alt="JavTube" /></div>
-          <h2 style="margin: 0 0 8px;">JavTube</h2>
-          <p style="margin: 4px 0; color: var(--text-2);">版本：v1.1.0</p>
-          <p style="margin: 4px 0; color: var(--text-2);">框架：Electron 30 + Vue 3 + Vite 5 + sql.js</p>
-          <p style="margin: 4px 0; color: var(--muted);">2026 · 纯本地管理，数据仅保存在本软件 data 目录内，不上传任何内容。</p>
+        <div class="set-grid">
+          <div class="g-label">应用信息</div>
+          <div class="g-control">
+            <div class="about-line"><b>JavTube</b>　v1.1.0</div>
+            <div class="about-line">框架：Electron 30 + Vue 3 + Vite 5 + sql.js</div>
+            <div class="about-line about-muted">2026 · 纯本地管理，数据仅保存在本软件 data 目录内，不上传任何内容。</div>
+          </div>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -231,7 +240,7 @@ const catRows = ref([])
 const mapRows = ref([])
 
 /**
- * 加载设置
+ * 加载设置（对话框每次打开时调用）
  * 功能：从数据库读取设置项，填充基础/刮削表单，并加载标签类别与映射
  */
 async function load() {
@@ -411,72 +420,51 @@ async function clearDb() {
 </script>
 
 <style scoped>
-/* 对话框内容区：固定高度（不随标签页内容多少变化），长内容内部滚动。
-   滚动条恒定存在 → 内容宽度恒定，label 中心线在切换标签页时保持稳定 */
-:deep(.el-dialog__body) {
-  height: 64vh;
-  overflow-y: auto;
-  padding-top: 4px;
+/* ====== 统一双栏网格：左列选项名称（右端贴中心线）+ 右列选项 ====== */
+.set-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;  /* 左列固定宽 → 名称最后一个字贴中心线 */
+  column-gap: 22px;
+  row-gap: 22px;
+  align-items: start;
 }
-/* 细滚动条，避免粗滚动条挤占宽度造成内容晃动 */
-:deep(.el-dialog__body)::-webkit-scrollbar { width: 8px; }
-:deep(.el-dialog__body)::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 4px;
+/* 左列：选项名称，右对齐，与默认控件（32px 高）基线对齐 */
+.g-label {
+  text-align: right;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 32px;
 }
-:deep(.el-dialog__body)::-webkit-scrollbar-track { background: transparent; }
+/* 右列：选项控件 + 说明小字 */
+.g-control { min-width: 0; }
+.g-tip {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
 
-/* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排（不再用 append 拼接） */
+/* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排 */
 .player-row { display: flex; gap: 10px; width: 100%; }
 .player-input { flex: 1; }
 
-/* 标签设置内容区：缩进 160px 与其他标签页的表单控件列对齐 */
-.sec-wrap { padding-left: 130px; }
-
-/* 分组小标题行：标题 + 加号按钮 */
-.sec-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 6px;
-}
-/* 分组标题文字：与 el-form label 统一（14px / 次要文字色 / 中等字重） */
-.sec-title {
-  font-size: 14px;
-  color: var(--text-2);
-  font-weight: 500;
-  font-family: var(--font-body);
-}
-
-/* 类别行：序号 + 类别名 + 标签 + 删除 */
-.cat-row-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-}
+/* 标签类别 / 标签映射行 */
+.row-list { margin-top: 2px; }
+.cat-row-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .row-idx {
-  width: 20px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 12px;
+  width: 20px; text-align: center;
+  color: var(--muted); font-size: 12px;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
-.cat-name-input { width: 180px; flex-shrink: 0; }
+.cat-name-input { width: 170px; flex-shrink: 0; }
 .cat-tags-input { flex: 1; }
-
-/* 映射行：原标签 → 映射为 → 新标签 → 删除 */
-.map-row-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0;
-}
-.map-input { flex: 1; max-width: 280px; }
+.map-row-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.map-input { flex: 1; max-width: 250px; }
 .map-arrow { color: var(--muted); font-size: 12px; flex-shrink: 0; }
-
-/* 行删除按钮：圆形弱化，hover 危险色（与女优卡片删除按钮同风格） */
+/* 行删除按钮 */
 .row-del {
   width: 28px; height: 28px;
   flex-shrink: 0;
@@ -488,19 +476,39 @@ async function clearDb() {
 }
 .row-del:hover { background: var(--danger-soft); color: var(--danger); }
 
-/* 关于页布局 */
-.about-box { padding: 10px 0; }
-/* 关于页图标徽章：LOGO 为宽幅（图标+文字），用 contain 完整显示，不被裁剪 */
-.about-badge {
-  display: inline-flex;
-  height: 48px;
-  padding: 0 16px;
-  align-items: center;
-  border-radius: var(--r-md);
-  box-shadow: var(--sh-2);
-  margin-bottom: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+/* 辅助设置清空按钮：hover 危险色 */
+.act-del:hover,
+.act-del:focus {
+  background: var(--danger-soft) !important;
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
 }
-.about-badge img { height: 34px; width: auto; object-fit: contain; display: block; }
+
+/* 关于页文字行 */
+.about-line { padding: 3px 0; color: var(--text-2); font-size: 13.5px; }
+.about-line b { color: var(--text); font-family: var(--font-display); }
+.about-muted { color: var(--muted); font-size: 12.5px; }
+</style>
+
+<style>
+/* ====== 设置对话框整体固定尺寸（非 scoped：class 落在 el-dialog 根上） ======
+   高度固定 74vh：切换标签页时对话框大小完全不变；body 弹性填充并内部滚动 */
+.settings-dialog {
+  height: 74vh;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0 !important;
+}
+.settings-dialog .el-dialog__header { flex-shrink: 0; }
+.settings-dialog .el-dialog__body {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 4px;
+}
+.settings-dialog .el-dialog__body::-webkit-scrollbar { width: 8px; }
+.settings-dialog .el-dialog__body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+.settings-dialog .el-dialog__body::-webkit-scrollbar-track { background: transparent; }
 </style>
