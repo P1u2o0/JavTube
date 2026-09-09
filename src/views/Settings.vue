@@ -42,6 +42,37 @@
               <el-option label="直接播放" value="play" />
             </el-select>
           </el-form-item>
+
+          <!-- ============ 刮削与网络（2026-09-09 新增） ============ -->
+          <el-form-item label="刮削来源">
+            <el-select v-model="st.scrape_source" style="max-width: 260px;">
+              <el-option label="自动（JAVBUS 优先，JAVDB 兜底）" value="auto" />
+              <el-option label="仅使用 JAVBUS" value="javbus" />
+              <el-option label="仅使用 JAVDB" value="javdb" />
+            </el-select>
+            <div class="tip-text">自动模式下先刮 JAVBUS，失败自动换 JAVDB；指定来源失败不再兜底。</div>
+          </el-form-item>
+          <el-form-item label="下载预览图">
+            <el-switch v-model="st.scrape_previews" active-value="y" inactive-value="n" />
+            <span class="tip-inline">开启后刮削时自动下载影片预览图到本地（预览图目录）</span>
+          </el-form-item>
+          <el-form-item label="预览图数量">
+            <el-input-number v-model="previewCountN" :min="0" :max="50" :step="1" />
+            <span class="tip-inline">每次刮削最多下载几张（0 = 全部下载）</span>
+          </el-form-item>
+          <el-form-item label="想看/看过/评分">
+            <el-switch v-model="st.scrape_stats" active-value="y" inactive-value="n" />
+            <span class="tip-inline">刮削 JAVDB 时同时抓取想看人数、看过人数与评分（详情页展示）</span>
+          </el-form-item>
+          <el-form-item label="使用本机代理">
+            <el-switch v-model="st.proxy_enabled" active-value="y" inactive-value="n" />
+            <span class="tip-inline">访问 JAVDB 需要科学上网，开启后刮削请求走下方代理地址</span>
+          </el-form-item>
+          <el-form-item label="代理地址">
+            <el-input v-model="st.proxy_url" placeholder="http://127.0.0.1:7890" style="max-width: 320px;" />
+            <div class="tip-text">常用 Clash 默认端口 7890、v2rayN 默认 10809；保存设置后立即生效。</div>
+          </el-form-item>
+
           <!-- 保存与恢复按钮 -->
           <el-form-item>
             <el-button type="primary" @click="save">保存设置</el-button>
@@ -130,11 +161,18 @@ const store = useMoviesStore()
 // 当前激活的标签页
 const tab = ref('basic')
 // 基础设置表单（响应式）
-const st = reactive({ player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers' })
+const st = reactive({
+  player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
+  // 刮削与网络（2026-09-09 新增）
+  scrape_source: 'auto', scrape_previews: 'n', scrape_stats: 'y',
+  proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890'
+})
 // 每页显示数量（数字类型，绑定到 input-number）
 const pageSizeN = ref(20)
 // 每行显示数量（数字类型，绑定到 slider）
 const colsPerRowN = ref(5)
+// 预览图下载数量（数字类型，0 = 全部；绑定的 settings 值为字符串）
+const previewCountN = ref(0)
 // 标签类别配置数组（9大类）
 const categories = ref([])
 
@@ -149,6 +187,7 @@ async function load() {
     Object.assign(st, r.data || {})
     pageSizeN.value = Number(st.page_size || 20)
     colsPerRowN.value = Number(st.cols_per_row || 5)
+    previewCountN.value = Number(st.preview_count || 0)
   }
 }
 
@@ -160,6 +199,7 @@ async function save() {
   if (!window.api) return
   st.page_size = String(pageSizeN.value)
   st.cols_per_row = String(colsPerRowN.value)
+  st.preview_count = String(previewCountN.value)
   // 逐个写入设置项
   for (const [k, v] of Object.entries(st)) {
     await window.api.updateSetting(k, String(v ?? ''))
@@ -270,6 +310,10 @@ onMounted(async () => { await load(); await loadCats() })
   width: 100%;
   max-width: 350px;
 }
+/* 刮削与网络分组的提示文字（换行说明） */
+.tip-text { margin-top: 4px; color: var(--muted); font-size: 12px; width: 100%; }
+/* 行内提示（跟在开关/数字框后面） */
+.tip-inline { margin-left: 12px; color: var(--muted); font-size: 12px; }
 /* 滑块当前值显示 */
 .slider-value {
   min-width: 24px;
