@@ -108,10 +108,24 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
 
   // === 刮削功能 ===
   // 渲染进程 → 主进程：根据番号从网络刮削影片信息
-  // 参数：ph（番号）、source（刮削来源）、coverDir（封面保存目录名）
+  // 参数：ph（番号）、source（刮削来源：auto/javbus/javdb）、coverDir（封面保存目录名）
+  // 刮削选项（预览图下载开关/数量、统计开关）从 settings 表读取，前端无需逐次传递
   ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir }) => {
     try {
-      const r = await scrapeMovie(ph, { source: source || 'auto', coverDir: coverDir || COVER_DIR, dataDir })
+      const sget = (k) => {
+        try {
+          const r = db.exec('SELECT value FROM settings WHERE key = ?', [k])[0]
+          return r?.values?.[0]?.[0]
+        } catch { return undefined }
+      }
+      const r = await scrapeMovie(ph, {
+        source: source || 'auto',
+        coverDir: coverDir || COVER_DIR,
+        dataDir,
+        downloadPreviews: sget('scrape_previews') === 'y',
+        previewCount: Number(sget('preview_count') || 0),
+        fetchStats: sget('scrape_stats') !== 'n'
+      })
       return r
     } catch (e) { return { ok: false, error: e.message } }
   })

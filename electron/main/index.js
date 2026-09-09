@@ -20,7 +20,7 @@ const { initDb } = require('./db/init')
 const { registerMovieIpc } = require('./db/movies')
 const { registerActressIpc } = require('./db/actress')
 const { registerWebsitesIpc } = require('./db/websites')
-const { registerSettingsIpc } = require('./db/settings')
+const { registerSettingsIpc, applyProxySettings } = require('./db/settings')
 // 工具类 / 对话框 / 刮削 IPC（自本文件拆出）
 const { registerUtilsIpc } = require('./ipc-utils')
 // javtube-cover 封面协议（自本文件拆出）
@@ -226,6 +226,8 @@ app.whenReady().then(async () => {
     console.log(`[main] initDb DONE in ${Date.now()-t0}ms path=${db?._dbPath}`)
     // 注册 javtube-cover 协议处理器（scheme 已在文件顶部注册为 privileged）
     setupCoverProtocol(dataDir)
+    // 启动时按数据库设置应用本机代理（JAVDB 等站点需科学上网时使用）
+    await applyProxySettings()
   } catch (e) {
     console.error('[main] DB init FAILED:', e?.stack || e)
   }

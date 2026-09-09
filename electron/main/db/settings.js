@@ -10,6 +10,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { session } = require('electron')
 // db 层通用工具（落盘收口）
 const { persist } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
@@ -44,6 +45,29 @@ function saveCats(dataDir, cats) {
 }
 
 /**
+ * 应用代理设置到 Electron 默认 session（2026-09-09 新增）。
+ * 开启（proxy_enabled='y'）时使用用户配置的 proxy_url 作为 HTTP 代理规则，
+ * 关闭时恢复跟随系统代理。Electron 的 net.fetch（刮削请求）走 defaultSession，
+ * 因此设置后刮削 JAVDB 等站点会自动经过本机代理，无需改动 scraper 代码。
+ * @returns {Promise<void>}
+ */
+async function applyProxySettings() {
+  try {
+    const r = db.exec("SELECT key, value FROM settings WHERE key IN ('proxy_enabled','proxy_url')")[0]
+    const map = {}
+    if (r) for (const row of r.values) map[row[0]] = row[1]
+    if (map.proxy_enabled === 'y') {
+      const rules = map.proxy_url || 'http://127.0.0.1:7890'
+      await session.defaultSession.setProxy({ proxyRules: rules })
+      console.log('[proxy] enabled:', rules)
+    } else {
+      await session.defaultSession.setProxy({ mode: 'system' })
+      console.log('[proxy] disabled (follow system)')
+    }
+  } catch (e) { console.warn('[proxy] apply failed:', e.message) }
+}
+
+/**
  * 注册设置相关的 IPC 处理器。
  * @param {Object} ipcMain - Electron ipcMain 对象
  * @param {Object} db - sql.js 数据库实例
@@ -73,6 +97,8 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       db.run(`INSERT INTO settings(key,value) VALUES (?,?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
       persist(db)  // 立即持久化
+      // 代理相关设置变更时，即时应用到 Electron session（异步执行不阻塞返回）
+      if (String(key).startsWith('proxy_')) applyProxySettings()
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -137,4 +163,4 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
   ipcMain.handle(IPC.MISC_DATA_DIR, () => dataDir)
 }
 
-module.exports = { registerSettingsIpc }
+module.exports = { registerSettingsIpc, applyProxySettings }

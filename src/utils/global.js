@@ -113,6 +113,11 @@ export function buildScrapeUpdate(d) {
   if (d.xl) update.xl = d.xl        // 系列
   if (d.bq) update.bq = d.bq        // 标签
   if (d.cover) update.cover = d.cover // 封面
+  // 2026-09-09 刮削增强新增（预览图本地路径数组序列化入库；统计仅在有值时写入）
+  if (Array.isArray(d.previews) && d.previews.length) update.previews = JSON.stringify(d.previews)
+  if (d.want) update.want = Number(d.want) || 0      // 想看人数（JAVDB）
+  if (d.watched) update.watched = Number(d.watched) || 0 // 看过人数（JAVDB）
+  if (d.score) update.score = Number(d.score) || 0   // 评分（JAVDB）
   return update
 }
 

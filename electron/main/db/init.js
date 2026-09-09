@@ -167,6 +167,16 @@ async function initDb(dataDir) {
   // 如果列已存在，ALTER TABLE 会报错，用 try-catch 忽略
   try { db.run('ALTER TABLE movies ADD COLUMN play_time TEXT') } catch {}
 
+  // 2026-09-09 新增列（刮削增强功能，均为 ALTER 兼容旧库，列已存在时忽略）：
+  //   previews — 预览图本地相对路径的 JSON 数组（如 ["covers/previews/IPX-1-1.jpg",...]）
+  //   want     — 想看人数（来源 JAVDB）
+  //   watched  — 看过人数（来源 JAVDB）
+  //   score    — 评分（来源 JAVDB，如 4.53）
+  try { db.run("ALTER TABLE movies ADD COLUMN previews TEXT") } catch {}
+  try { db.run("ALTER TABLE movies ADD COLUMN want INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE movies ADD COLUMN watched INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE movies ADD COLUMN score REAL DEFAULT 0") } catch {}
+
   // 写入默认设置项（仅在不存在时插入）
   const defaults = [
     ['player_path',''],      // 自定义播放器路径
@@ -174,7 +184,14 @@ async function initDb(dataDir) {
     ['theme','light'],       // 主题
     ['video_paths','[]'],    // 视频文件路径列表（JSON 数组）
     ['cover_dir', COVER_DIR],  // 封面目录名
-    ['click_action','detail'] // 点击影片时的行为（详情/播放）
+    ['click_action','detail'], // 点击影片时的行为（详情/播放）
+    // === 刮削与网络（2026-09-09 新增） ===
+    ['scrape_source','auto'],   // 刮削来源：auto=JAVBUS优先JAVDB兜底 / javbus=仅JAVBUS / javdb=仅JAVDB
+    ['scrape_previews','n'],    // 是否下载影片预览图 (y/n)
+    ['preview_count','0'],      // 下载预览图数量（0 = 全部下载）
+    ['scrape_stats','y'],       // 是否抓取想看/看过人数与评分 (y/n，来源 JAVDB)
+    ['proxy_enabled','n'],      // 是否使用本机代理访问刮削站（JAVDB 需科学上网）
+    ['proxy_url','http://127.0.0.1:7890'] // 代理服务器地址（HTTP 代理规则）
   ]
   for (const [k, v] of defaults) {
     // INSERT OR IGNORE：如果 key 已存在则跳过，不报错

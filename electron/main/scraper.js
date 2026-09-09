@@ -215,7 +215,17 @@ async function scrapeJavBus(ph, type) {
   }
   bq = twToCn(bq)  // 繁体标签转简体
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, source: 'JAVBUS' }
+  // 提取预览图（样本图）大图 URL 列表（2026-09-09 新增）
+  // JAVBUS 详情页 sample-waterfall 区块结构：<a class="sample-box" href="大图URL"><img src="缩略图"></a>
+  const previews = []
+  const sampleRe = /class="sample-box"[^>]*href="([^"]+)"/g
+  let sm
+  while ((sm = sampleRe.exec(data)) !== null) {
+    const url = sm[1]
+    if (url && url.startsWith('http') && !previews.includes(url)) previews.push(url)
+  }
+
+  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, previews, source: 'JAVBUS' }
 }
 
 /**
@@ -223,9 +233,13 @@ async function scrapeJavBus(ph, type) {
  * 先通过搜索页面查找匹配的影片，再进入详情页提取信息。
  * @param {string} ph - 影片番号
  * @param {string} type - 影片类型（'欧美' 或其他）
- * @returns {Promise<Object|null>} 影片信息对象，与 scrapeJavBus 返回结构类似，额外包含 vr(是否VR) 字段
+ * @param {Object} [opts] - 可选参数
+ * @param {boolean} [opts.fetchStats=true] - 是否提取想看/看过人数与评分
+ * @returns {Promise<Object|null>} 影片信息对象，与 scrapeJavBus 返回结构类似，额外包含
+ *   vr(是否VR)、previews(预览图URL数组)、want/watched(想看/看过人数)、score(评分) 字段
  */
-async function scrapeJavDb(ph, type) {
+async function scrapeJavDb(ph, type, opts = {}) {
+  const fetchStats = opts.fetchStats !== false  // 默认开启
   const baseUrl = 'https://javdb.com'
   // 构建搜索 URL，对番号进行 URL 编码
   const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(ph)}&f=all`
@@ -344,7 +358,37 @@ async function scrapeJavDb(ph, type) {
   let cover = inteHandler(inteHandler(detail, '<div class="video-meta-panel">', '</div>', [0, 0, 0]), '<img src="', '"', [0, 0, 0])
   if (cover && !cover.startsWith('http')) cover = baseUrl + cover  // 补全相对路径
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, source: 'JAVDB' }
+  // 提取预览图 URL 列表（2026-09-09 新增）
+  // JAVDB 详情页 preview-images 区块：<div class="preview-images"><a ...><img src="https://...jpg"></a>...</div>
+  const previews = []
+  const previewBlock = inteHandler(data, '<div class="preview-images">', '</div>', [0, 0, 0])
+  if (previewBlock) {
+    const imgRe = /<img[^>]*src="([^"]+)"/g
+    let im
+    while ((im = imgRe.exec(previewBlock)) !== null) {
+      const url = im[1]
+      if (url && url.startsWith('http') && !previews.includes(url)) previews.push(url)
+    }
+  }
+
+  // 提取想看/看过人数与评分（2026-09-09 新增，按 opts.fetchStats 开关执行）
+  // 页面结构：<span class="nav-separated-title">想要看</span><span class="nav-separated-value">1,234</span>
+  //           评分：<span class="score-average">4.53</span>
+  let want = '', watched = '', score = ''
+  if (opts.fetchStats) {
+    const sepRe = /nav-separated-title">([^<]+)<\/span><span class="nav-separated-value">([\d,.]+)/g
+    let sm
+    while ((sm = sepRe.exec(data)) !== null) {
+      const label = sm[1]
+      const num = sm[2].replace(/,/g, '')
+      if (label.indexOf('想要看') !== -1) want = num
+      else if (label.indexOf('看過') !== -1 || label.indexOf('看过') !== -1) watched = num
+    }
+    const scoreM = data.match(/score-average">([\d.]+)/)
+    if (scoreM) score = scoreM[1]
+  }
+
+  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, previews, want, watched, score, source: 'JAVDB' }
 }
 
 /**
@@ -380,12 +424,20 @@ function autoSelectSources(type) {
  * 根据番号和指定的来源，从相应网站获取影片信息，并下载封面图片到本地。
  * @param {string} ph - 影片番号
  * @param {Object} [opts] - 可选参数
- * @param {string} [opts.source='auto'] - 刮削来源（'auto' 或具体来源名称如 'JAVDB'）
+ * @param {string} [opts.source='auto'] - 刮削来源：'auto'（JAVBUS 优先 JAVDB 兜底，
+ *   欧美仅 JAVDB）/ 'javbus'（仅 JAVBUS）/ 'javdb'（仅 JAVDB），大小写不敏感
  * @param {string} [opts.coverDir=COVER_DIR] - 封面图片保存的子目录名
  * @param {string} [opts.dataDir=''] - 数据根目录路径
+ * @param {boolean} [opts.downloadPreviews=false] - 是否下载预览图到本地
+ * @param {number} [opts.previewCount=0] - 预览图下载数量上限（0 = 全部下载）
+ * @param {boolean} [opts.fetchStats=true] - 是否提取想看/看过人数与评分（仅 JAVDB 有效）
  * @returns {Promise<Object>} 结果对象 { ok: boolean, data?: Object, source?: string, error?: string }
+ *   data.previews 在开启下载时为本地相对路径数组，未开启时该字段被移除（不入库远程 URL）
  */
-async function scrapeMovie(ph, { source = 'auto', coverDir = COVER_DIR, dataDir = '' } = {}) {
+async function scrapeMovie(ph, {
+  source = 'auto', coverDir = COVER_DIR, dataDir = '',
+  downloadPreviews = false, previewCount = 0, fetchStats = true
+} = {}) {
   const cleanPh = ph.trim()
   if (!cleanPh) return { ok: false, error: '番号不能为空' }
 
@@ -393,12 +445,14 @@ async function scrapeMovie(ph, { source = 'auto', coverDir = COVER_DIR, dataDir 
   const type = getMovieType(cleanPh)
   let sourceIds
 
-  if (source === 'auto') {
+  // 来源归一：兼容 'auto'/'javbus'/'javdb' 与旧 'JAVDB'/'JAVBUS' 写法
+  const srcName = String(source || 'auto').toUpperCase()
+  if (srcName === 'AUTO') {
     // 自动模式：根据类型选择来源
     sourceIds = autoSelectSources(type)
   } else {
-    // 指定来源模式
-    const found = WEB_SOURCES.find(s => s.name === source)
+    // 指定来源模式：仅使用该来源，失败不 fallback
+    const found = WEB_SOURCES.find(s => s.name.toUpperCase() === srcName)
     if (found) sourceIds = [found.id]
     else return { ok: false, error: '未知的刮削来源' }
   }
@@ -412,7 +466,7 @@ async function scrapeMovie(ph, { source = 'auto', coverDir = COVER_DIR, dataDir 
       let result = null
       // 根据来源名称调用对应的刮削函数
       if (src.name === 'JAVDB') {
-        result = await scrapeJavDb(cleanPh, type)
+        result = await scrapeJavDb(cleanPh, type, { fetchStats })
       } else if (src.name === 'JAVBUS') {
         result = await scrapeJavBus(cleanPh, type)
       }
@@ -431,6 +485,28 @@ async function scrapeMovie(ph, { source = 'auto', coverDir = COVER_DIR, dataDir 
           } catch (e) {
             // 封面下载失败不影响其他数据
           }
+        }
+        // 下载预览图（2026-09-09 新增，按设置开关与数量上限）
+        if (downloadPreviews && dataDir && Array.isArray(result.previews) && result.previews.length) {
+          const list = previewCount > 0 ? result.previews.slice(0, previewCount) : result.previews
+          const prevDirAbs = path.join(dataDir, coverDir || COVER_DIR, 'previews')
+          if (!fs.existsSync(prevDirAbs)) fs.mkdirSync(prevDirAbs, { recursive: true })
+          const localPreviews = []
+          for (let i = 0; i < list.length; i++) {
+            const pExt = list[i].match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
+            const relPath = path.join(coverDir || COVER_DIR, 'previews', `${cleanPh}-${i + 1}${pExt}`)
+            try {
+              await downloadImage(list[i], path.join(dataDir, relPath))
+              localPreviews.push(relPath.replace(/\\/g, '/'))
+            } catch (e2) {
+              // 单张预览图下载失败跳过，不影响其余
+            }
+          }
+          if (localPreviews.length) result.previews = localPreviews
+          else delete result.previews  // 全部失败则不入库
+        } else {
+          // 未开启下载：移除远程 URL，避免把外链入库（离线时无法显示）
+          delete result.previews
         }
         return { ok: true, data: result, source: src.name }
       }

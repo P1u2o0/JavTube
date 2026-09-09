@@ -61,7 +61,12 @@ const MOVIE_COLUMNS = [
   ['sc',    S('sc')],
   ['ps',    S('ps')],
   ['fx',    S('fx')],
-  ['xl',    S('xl')]
+  ['xl',    S('xl')],
+  // 2026-09-09 刮削增强新增列（init.js 已 ALTER 兼容旧库）
+  ['previews', S('previews')],  // 预览图本地路径 JSON 数组
+  ['want',     N('want')],      // 想看人数（JAVDB）
+  ['watched',  N('watched')],   // 看过人数（JAVDB）
+  ['score',    N('score')]      // 评分（JAVDB）
 ]
 
 // INSERT 语句与参数构造器（全部 30 列）
