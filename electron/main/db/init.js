@@ -198,7 +198,9 @@ async function initDb(dataDir) {
     ['proxy_enabled','n'],      // 是否使用本机代理访问刮削站（JAVDB 需科学上网）
     ['proxy_url','http://127.0.0.1:7890'], // 代理服务器地址（HTTP 代理规则）
     // === 标签设置（2026-09-09 新增） ===
-    ['tag_mapping','[]']        // 标签映射规则（JSON 数组 [[原标签,新标签],...]，刮削后自动替换）
+    ['tag_mapping','[]'],       // 标签映射规则（JSON 数组 [[原标签,新标签],...]，刮削后自动替换）
+    // === 界面（2026-09-09 新增） ===
+    ['show_tips','y']           // 设置对话框是否显示选项注释小字 (y/n)
   ]
   for (const [k, v] of defaults) {
     // INSERT OR IGNORE：如果 key 已存在则跳过，不报错

@@ -26,7 +26,12 @@
               <el-input v-model="st.player_path" placeholder="留空使用系统默认播放器" class="player-input" />
               <el-button @click="choosePlayer">选择</el-button>
             </div>
-            <span class="g-tip">填入本地播放器的可执行文件路径，播放影片时优先使用它打开</span>
+            <span class="g-tip" v-if="showTips">播放影片时优先使用此播放器</span>
+          </div>
+          <!-- 显示注释开关（控制所有选项说明小字的显隐） -->
+          <div class="g-label">显示注释</div>
+          <div class="g-control">
+            <el-switch v-model="st.show_tips" active-value="y" inactive-value="n" />
           </div>
           <!-- 点击卡片默认动作 -->
           <div class="g-label">点击卡片动作</div>
@@ -35,19 +40,19 @@
               <el-option label="进入详情页" value="detail" />
               <el-option label="直接播放" value="play" />
             </el-select>
-            <span class="g-tip">在片库中单击影片卡片时执行的动作（详情页内播放不受影响）</span>
+            <span class="g-tip" v-if="showTips">单击影片卡片时执行的动作</span>
           </div>
           <!-- 每行显示数量 -->
           <div class="g-label">每行显示数量</div>
           <div class="g-control">
             <el-input-number v-model="colsPerRowN" :min="3" :max="8" :step="1" />
-            <span class="g-tip">片库海报墙每一行显示的影片卡片数（3 - 8）</span>
+            <span class="g-tip" v-if="showTips">每行卡片数（3 - 8）</span>
           </div>
           <!-- 每页显示数量 -->
           <div class="g-label">每页显示数量</div>
           <div class="g-control">
             <el-input-number v-model="pageSizeN" :min="10" :max="200" :step="10" />
-            <span class="g-tip">片库列表每页加载的影片数量（10 - 200）</span>
+            <span class="g-tip" v-if="showTips">每页影片数量（10 - 200）</span>
           </div>
         </div>
       </el-tab-pane>
@@ -70,7 +75,7 @@
                 </button>
               </div>
             </div>
-            <span class="g-tip">每个类别一行，类别内的标签用中文逗号「，」分隔；未添加标签的类别不会显示在片库筛选区</span>
+            <span class="g-tip" v-if="showTips">标签用中文逗号「，」分隔；未使用的类别不显示在片库</span>
           </div>
           <!-- 标签映射 -->
           <div class="g-label">标签映射</div>
@@ -88,11 +93,11 @@
                 </button>
               </div>
             </div>
-            <span class="g-tip">刮削获得的标签若与左侧「原标签」相同，入库时自动替换为右侧「新标签」（新标签留空表示删除该标签），无需逐部手动修改</span>
+            <span class="g-tip" v-if="showTips">刮削到的标签命中原标签时自动替换；新标签留空则删除该标签</span>
           </div>
           <!-- 保存按钮 -->
           <div class="g-control">
-            <span class="g-tip">保存设置时，标签类别自动补齐至 9 大类（片库筛选按 9 类工作）</span>
+            <span class="g-tip" v-if="showTips">保存时自动补齐至 9 大类</span>
           </div>
         </div>
       </el-tab-pane>
@@ -108,37 +113,37 @@
               <el-option label="仅使用 JAVBUS" value="javbus" />
               <el-option label="仅使用 JAVDB" value="javdb" />
             </el-select>
-            <span class="g-tip">自动模式下先刮 JAVBUS，失败自动换 JAVDB；指定来源失败不再兜底</span>
+            <span class="g-tip" v-if="showTips">自动：JAVBUS 优先，失败换 JAVDB</span>
           </div>
           <!-- 下载预览图 -->
           <div class="g-label">下载预览图</div>
           <div class="g-control">
             <el-switch v-model="st.scrape_previews" active-value="y" inactive-value="n" />
-            <span class="g-tip">开启后刮削时自动下载影片预览图到本地预览图目录，详情页底部可浏览</span>
+            <span class="g-tip" v-if="showTips">刮削时自动下载预览图，详情页底部浏览</span>
           </div>
           <!-- 预览图数量 -->
           <div class="g-label">预览图数量</div>
           <div class="g-control">
             <el-input-number v-model="previewCountN" :min="0" :max="50" :step="1" />
-            <span class="g-tip">每次刮削最多下载几张预览图（0 = 全部下载）</span>
+            <span class="g-tip" v-if="showTips">最多下载张数（0 = 全部）</span>
           </div>
           <!-- 想看/看过/评分 -->
           <div class="g-label">想看/看过/评分</div>
           <div class="g-control">
             <el-switch v-model="st.scrape_stats" active-value="y" inactive-value="n" />
-            <span class="g-tip">刮削 JAVDB 时同时抓取想看人数、看过人数与评分，并在影片详情页展示</span>
+            <span class="g-tip" v-if="showTips">抓取 JAVDB 想看/看过人数与评分</span>
           </div>
           <!-- 使用本机代理 -->
           <div class="g-label">使用本机代理</div>
           <div class="g-control">
             <el-switch v-model="st.proxy_enabled" active-value="y" inactive-value="n" />
-            <span class="g-tip">访问 JAVDB 需要科学上网，开启后刮削请求走下方代理地址，保存后立即生效</span>
+            <span class="g-tip" v-if="showTips">访问 JAVDB 需科学上网，开启后刮削走代理</span>
           </div>
           <!-- 代理地址 -->
           <div class="g-label">代理地址</div>
           <div class="g-control">
             <el-input v-model="st.proxy_url" placeholder="http://127.0.0.1:7890" style="max-width: 320px;" />
-            <span class="g-tip">本机代理的 HTTP 地址，常用 Clash 默认端口 7890、v2rayN 默认 10809</span>
+            <span class="g-tip" v-if="showTips">如 Clash: 7890、v2rayN: 10809</span>
           </div>
         </div>
       </el-tab-pane>
@@ -163,7 +168,7 @@
                 <AppIcon name="trash" :size="14" style="margin-right:5px" />清空所有数据
               </el-button>
             </div>
-            <span class="g-tip">清空为不可逆操作，执行前请先备份；恢复会覆盖当前全部数据</span>
+            <span class="g-tip" v-if="showTips">清空不可逆，请先备份；恢复会覆盖现有数据</span>
           </div>
         </div>
       </el-tab-pane>
@@ -215,8 +220,11 @@ const tab = ref('basic')
 const st = reactive({
   player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
   scrape_source: 'auto', scrape_previews: 'n', scrape_stats: 'y',
-  proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890'
+  proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890',
+  show_tips: 'y'
 })
+// 注释开关（计算属性）：控制所有选项说明小字的显示（基础设置内可切换）
+const showTips = computed(() => st.show_tips === 'y')
 // 每页显示数量（数字类型，绑定到 input-number）
 const pageSizeN = ref(20)
 // 每行显示数量（数字类型，绑定到 input-number）
@@ -313,7 +321,7 @@ async function saveAll() {
   st.cols_per_row = String(colsPerRowN.value)
   st.preview_count = String(previewCountN.value)
   const kvKeys = [
-    'player_path', 'click_action', 'page_size', 'cols_per_row',
+    'player_path', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
     'proxy_enabled', 'proxy_url'
   ]
@@ -463,13 +471,19 @@ async function clearDb() {
 </style>
 
 <style>
-/* ====== 设置对话框整体固定尺寸（非 scoped：class 落在 el-dialog 根上） ======
+/* ====== 设置对话框整体固定尺寸 + 强制居中（非 scoped：class 落在 el-dialog 根上） ======
    高度固定 74vh：切换标签页时对话框大小完全不变；body 弹性填充并内部滚动 */
 .settings-dialog {
   height: 74vh;
   display: flex;
   flex-direction: column;
-  margin-bottom: 0 !important;
+  margin: 0 !important;
+}
+/* 覆盖层 flex 居中（硬保证，不依赖 align-center 属性） */
+.el-overlay-dialog:has(.settings-dialog) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .settings-dialog .el-dialog__header { flex-shrink: 0; }
 .settings-dialog .el-dialog__body {
