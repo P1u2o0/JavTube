@@ -15,6 +15,8 @@
 <template>
   <div class="settings-page">
     <div class="page-head"><h3>设置</h3></div>
+    <!-- 白底内容面板：统一各标签页的边距与宽度，最大化时不显空旷 -->
+    <div class="settings-panel">
     <!-- 标签页容器 -->
     <el-tabs v-model="tab">
       <!-- ============ 基础设置 ============ -->
@@ -149,7 +151,7 @@
 
       <!-- ============ 辅助设置（数据库管理） ============ -->
       <el-tab-pane label="辅助设置" name="aux">
-        <el-card shadow="never" style="margin-bottom: 16px;">
+        <el-card shadow="never" style="max-width: 760px; margin-bottom: 16px;">
           <template #header>
             <span style="display:inline-flex; align-items:center; gap:6px;">
               <AppIcon name="database" :size="16" />数据库
@@ -184,6 +186,7 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+    </div>
   </div>
 </template>
 
@@ -402,8 +405,17 @@ onMounted(async () => { await load() })
 </script>
 
 <style scoped>
-/* 设置页容器 */
-.settings-page { padding-bottom: 20px; }
+/* 设置页容器：统一左右内边距，暖纸白底上衬托白面板 */
+.settings-page { padding: 2px 18px 24px; }
+
+/* 白底内容面板：限定宽度，最大化窗口时不显空旷；内部左右留白统一 */
+.settings-panel {
+  max-width: 1000px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 26px 24px;
+}
 
 /* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排（不再用 append 拼接） */
 .player-row { display: flex; gap: 10px; width: 100%; }
