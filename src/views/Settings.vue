@@ -20,11 +20,12 @@
       <!-- ============ 基础设置 ============ -->
       <el-tab-pane label="基础设置" name="basic">
         <el-form label-width="160px" style="max-width: 760px;">
-          <!-- 播放器路径设置 -->
+          <!-- 播放器路径设置（输入框与选择按钮并排，均为独立胶囊样式） -->
           <el-form-item label="播放器路径">
-            <el-input v-model="st.player_path" placeholder="留空使用系统默认播放器">
-              <template #append><el-button @click="choosePlayer">选择</el-button></template>
-            </el-input>
+            <div class="player-row">
+              <el-input v-model="st.player_path" placeholder="留空使用系统默认播放器" class="player-input" />
+              <el-button @click="choosePlayer">选择</el-button>
+            </div>
             <span class="form-tip">填入本地播放器的可执行文件路径，播放影片时优先使用它打开</span>
           </el-form-item>
           <!-- 点击卡片默认动作 -->
@@ -403,6 +404,10 @@ onMounted(async () => { await load() })
 <style scoped>
 /* 设置页容器 */
 .settings-page { padding-bottom: 20px; }
+
+/* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排（不再用 append 拼接） */
+.player-row { display: flex; gap: 10px; width: 100%; }
+.player-input { flex: 1; }
 
 /* 标签设置内容区：缩进 160px 与其他标签页的表单控件列对齐 */
 .sec-wrap { max-width: 760px; padding-left: 160px; }
