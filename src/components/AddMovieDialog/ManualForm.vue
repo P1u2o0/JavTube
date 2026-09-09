@@ -10,10 +10,14 @@
   <el-form :model="d" label-width="100px" size="default">
     <!-- 番号输入框 -->
     <el-form-item label="番号"><el-input v-model="d.ph" placeholder="例: IPX-001" /></el-form-item>
-    <!-- 标题输入框 -->
-    <el-form-item label="标题"><el-input v-model="d.pm" /></el-form-item>
-    <!-- 女优输入框（多个用中文逗号分隔） -->
-    <el-form-item label="女优"><el-input v-model="d.yid" placeholder="多个用中文逗号分隔：，" /></el-form-item>
+    <!-- 标题（自适应高度多行文本，过长自动换行） -->
+    <el-form-item label="标题">
+      <el-input v-model="d.pm" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }" placeholder="影片标题" />
+    </el-form-item>
+    <!-- 女优（可多个，自适应高度多行文本，过长自动换行） -->
+    <el-form-item label="女优">
+      <el-input v-model="d.yid" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" placeholder="多个用中文逗号分隔：，" />
+    </el-form-item>
     <!-- 发行日期选择器 -->
     <el-form-item label="发行日期">
       <el-date-picker v-model="d._fxrq" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" />
@@ -27,13 +31,12 @@
         placeholder="请用中文逗号分隔：标签1，标签2"
       />
     </el-form-item>
-    <!-- 视频路径输入框（带浏览按钮） -->
+    <!-- 视频路径：完整胶囊输入框 + 独立胶囊按钮并排（与设置页播放器路径一致） -->
     <el-form-item label="视频路径">
-      <el-input v-model="d.py" placeholder="本地视频文件绝对路径">
-        <template #append>
-          <el-button @click="chooseVideo">浏览</el-button>
-        </template>
-      </el-input>
+      <div class="path-row">
+        <el-input v-model="d.py" placeholder="本地视频文件绝对路径" class="path-input" />
+        <el-button @click="chooseVideo">浏览</el-button>
+      </div>
     </el-form-item>
     <!-- 简介输入框（多行文本） -->
     <el-form-item label="简介">
@@ -96,3 +99,9 @@ function onSubmit() {
   emit('submit', plain)
 }
 </script>
+
+<style scoped>
+/* 视频路径行：完整胶囊输入框 + 独立胶囊按钮并排（与设置页播放器路径一致） */
+.path-row { display: flex; gap: 10px; width: 100%; }
+.path-input { flex: 1; }
+</style>
