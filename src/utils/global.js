@@ -1,50 +1,14 @@
 /**
  * ============================================================
  * 文件名：global.js
- * 功能：全局搜索处理与数据辅助工具函数。
- *      包含搜索分发逻辑、封面路径解析、番号提取、
+ * 功能：数据辅助工具函数集合。
+ *      包含封面路径解析、番号提取、刮削结果映射、
  *      全局响应式数据目录引用等通用功能。
- * 依赖：element-plus（ElMessage）、vue（ref）、window.api（Electron preload）
+ *      （原全局搜索分发 onSearch 已移除：搜索改为跳转片库结果页，
+ *        逻辑收敛至 TopNav + Library 的 q 参数过滤。）
+ * 依赖：vue（ref）、window.api（Electron preload）
  * ============================================================
  */
-
-// 搜索全局处理 + 数据辅助工具
-import { ElMessage } from 'element-plus'
-
-/**
- * 全局搜索处理函数
- * 功能：根据搜索范围和关键词调用后端搜索 API，返回结果类型和数据
- * @param {string} scope - 搜索范围（如 'movie'）
- * @param {string} q - 搜索关键词
- * @returns {Promise<Object>} 结果对象，type 字段：
- *   - 'empty'：空关键词
- *   - 'no_api'：无 API 环境
- *   - 'nav'：唯一结果，直接跳转（data 为路由路径）
- *   - 'data'：多条结果，返回数据数组
- *   - 'err'：搜索出错
- */
-export async function onSearch(scope, q) {
-  q = (q || '').trim()
-  if (!q) return { type: 'empty' }
-  if (!window.api) return { type: 'no_api' }
-  try {
-    const r = await window.api.search(scope, q)
-    if (!r.ok) throw new Error(r.error)
-    // 如果是 movie，跳转到片库并附加筛选关键词
-    if (scope === 'movie') {
-      // 先尝试直接跳转到第一个匹配的详情
-      if (r.data && r.data.length === 1) {
-        return { type: 'nav', data: `/detail/${r.data[0].id}` }
-      }
-      // 多个结果回传数据让上层筛选（简化处理：返回数据）
-      return { type: 'data', data: r.data }
-    }
-    return { type: 'data', data: r.data || [] }
-  } catch (e) {
-    ElMessage.error('搜索失败：' + e.message)
-    return { type: 'err', data: [] }
-  }
-}
 
 // 全局响应式 dataDir - 存储应用数据目录路径，供 resolveCover 使用
 import { ref } from 'vue'

@@ -74,8 +74,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 // 引入影片数据仓库（Pinia store）
 import { useMoviesStore } from '@/store/movies'
-// 引入全局搜索工具函数
-import { onSearch as globalSearch } from '@/utils/global'
 // 引入添加影片对话框组件
 import AddMovieDialog from '@/components/AddMovieDialog.vue'
 // 引入统一图标组件
@@ -113,17 +111,13 @@ async function onCreated() {
   await store.loadMovies({ append: false })
 }
 
-// 搜索处理函数：调用全局搜索并处理结果
-// 根据搜索结果类型决定是路由跳转还是显示提示消息
+// 搜索处理函数：跳转到片库并携带搜索关键词
+// 2026-09-09 按用户要求：搜索始终展示结果列表页（哪怕只有一条匹配），
+// 不再唯一结果直达详情；列表由片库页按 q 参数过滤（番号/片名/标签模糊匹配）
 function onSearch() {
-  globalSearch('movie', q.value).then(({ type, data }) => {
-    // type 为 'nav' 时，data 是路由路径，执行页面跳转
-    if (type === 'nav') router.push(data)
-    // 搜索结果为空时提示用户
-    else if (!data || !data.length) ElMessage.info('没有搜索结果')
-    // 搜索有结果时显示数量
-    else ElMessage.success(`找到 ${data.length} 条结果`)
-  })
+  const kw = q.value.trim()
+  if (!kw) { ElMessage.info('请输入搜索关键词'); return }
+  router.push({ path: '/library', query: { q: kw } })
 }
 </script>
 

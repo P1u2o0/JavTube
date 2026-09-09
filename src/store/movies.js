@@ -37,6 +37,8 @@ export const useMoviesStore = defineStore('movies', {
     sort: { by: 'tjrq', order: 'DESC', random: false },  // 排序：字段、方向、随机模式
     tagSelected: [[], [], [], [], [], [], [], [], []],   // 9个类别选中的标签数组
     collapsed: [false, false, false, false, false, false, false, false, false], // 各类别折叠状态
+    searchQ: '',          // 当前搜索关键词（2026-09-09 新增：来自顶栏搜索，
+                          //  loadMovies 会并入 filter.q，保证翻页/刷新不丢搜索条件）
 
     // 批量选择
     selectMode: false,    // 是否处于批量选择模式
@@ -117,8 +119,9 @@ export const useMoviesStore = defineStore('movies', {
       if (!window.api) { this.movies = []; this.total = 0; return }
       this.loading = true
       try {
-        // 合并标签筛选与额外筛选条件
+        // 合并标签筛选与额外筛选条件；搜索词并入 filter.q（主进程按番号/片名/标签 LIKE）
         const filter = { tagSelected: JSON.parse(JSON.stringify(this.tagSelected)), ...extraFilter }
+        if (this.searchQ) filter.q = this.searchQ
         const r = await window.api.getMovies({
           filter,
           sort: JSON.parse(JSON.stringify(this.sort)),
@@ -176,6 +179,7 @@ export const useMoviesStore = defineStore('movies', {
       this.page = 1
       this.sort = { by: 'tjrq', order: 'DESC', random: false }
       this.selectedIds = []
+      this.searchQ = ''
     },
 
     /**

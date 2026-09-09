@@ -198,10 +198,13 @@ async function onBatchScrape() {
 
 /**
  * 根据路由 query 应用筛选并刷新片库
- * 从详情页通过 query 跳转过滤（标签/女优/厂商/系列）
+ * 从详情页通过 query 跳转过滤（标签/女优/厂商/系列），
+ * 或从顶栏搜索跳转（q：番号/片名/标签模糊搜索，2026-09-09 新增）
  */
 async function applyRouteFilter(q) {
-  if (!q.tag && !q.actress && !q.studio && !q.series) return false
+  // 同步搜索词到 store（loadMovies 统一并入 filter.q；翻页不丢失）
+  store.searchQ = q.q || ''
+  if (!q.tag && !q.actress && !q.studio && !q.series && !q.q) return false
   if (q.tag) {
     for (let ci = 0; ci < 9; ci++) {
       if (store.categories[ci]?.tags?.includes(q.tag)) {
@@ -241,6 +244,14 @@ onMounted(async () => {
 // 监听 store.sort.random 改变，触发刷新（随机排序切换）
 watch(() => store.sort.random, () => onRefresh())
 
-// 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库时自动过滤）
-watch(() => route.query, (q) => { applyRouteFilter(q) }, { deep: true })
+// 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库、或顶栏搜索跳转时自动过滤）
+watch(() => route.query, async (q) => {
+  if (await applyRouteFilter(q)) return
+  // 无任何筛选参数（如点导航回到片库）：若此前有搜索词则清空并重载全部
+  if (store.searchQ) {
+    store.searchQ = ''
+    store.page = 1
+    await store.loadMovies({ append: false })
+  }
+}, { deep: true })
 </script>
