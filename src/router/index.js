@@ -18,7 +18,6 @@ import Favorite from '@/views/Favorite.vue'
 import History from '@/views/History.vue'
 import Actress from '@/views/Actress.vue'
 import Website from '@/views/Website.vue'
-import Settings from '@/views/Settings.vue'
 import Detail from '@/views/Detail.vue'
 
 // 路由表定义
@@ -40,9 +39,6 @@ const routes = [
 
   // 网址导航 - 管理收藏的网址链接
   { path: '/website', component: Website, meta: { title: '网址' } },
-
-  // 设置 - 基础设置、标签分类、数据库管理、关于
-  { path: '/settings', component: Settings, meta: { title: '设置' } },
 
   // 影片详情 - 展示单部影片完整信息，:id 为路由参数，props: true 将参数作为 props 传入
   { path: '/detail/:id', component: Detail, meta: { title: '详情' }, props: true }

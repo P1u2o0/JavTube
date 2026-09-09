@@ -1,8 +1,9 @@
 <!--
   ============================================================
-  文件名：Settings.vue
-  所属模块：视图 / 设置页
-  功能描述：应用程序设置页面。2026-09-09 按用户需求重组为五个标签页：
+  文件名：SettingsDialog.vue
+  所属模块：公共组件 / 设置对话框
+  功能描述：应用设置弹出窗口（2026-09-09 由独立设置页改造而来）。
+           点击顶栏设置按钮弹出，包含五个标签页：
            1. 基础设置 - 播放器路径、点击卡片动作、每行/每页显示数量
            2. 标签设置 - 标签类别（行式布局，加号添加，空类别单行）
                         + 标签映射（原标签映射为新标签，刮削后自动替换）
@@ -13,10 +14,8 @@
   ============================================================
 -->
 <template>
-  <div class="settings-page">
-    <div class="page-head"><h3>设置</h3></div>
-    <!-- 白底内容面板：统一各标签页的边距与宽度，最大化时不显空旷 -->
-    <div class="settings-panel">
+  <!-- 设置对话框：v-model 控制显隐，每次打开重新加载设置 -->
+  <el-dialog v-model="show" title="设置" width="780px" top="6vh" destroy-on-close>
     <!-- 标签页容器 -->
     <el-tabs v-model="tab">
       <!-- ============ 基础设置 ============ -->
@@ -186,15 +185,27 @@
         </div>
       </el-tab-pane>
     </el-tabs>
-    </div>
-  </div>
+  </el-dialog>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import AppIcon from '@/components/AppIcon.vue'
+
+// 组件 props / emit：支持 v-model 控制对话框显隐
+const props = defineProps({ modelValue: Boolean })
+const emit = defineEmits(['update:modelValue'])
+
+// 对话框显示状态（v-model 双向绑定）
+const show = computed({
+  get() { return props.modelValue },
+  set(v) { emit('update:modelValue', v) }
+})
+
+// 每次打开对话框时重新加载全部设置（保证读到最新值）
+watch(show, (v) => { if (v) load() })
 
 // Pinia store 实例（用于更新标签分类配置）
 const store = useMoviesStore()
@@ -397,24 +408,14 @@ async function clearDb() {
     if (r.ok) { ElMessage.success('已清空'); location.reload() }
   } catch {}
 }
-
-/**
- * 组件挂载时：加载基础/刮削设置和标签类别与映射
- */
-onMounted(async () => { await load() })
 </script>
 
 <style scoped>
-/* 设置页容器：统一左右内边距，暖纸白底上衬托白面板 */
-.settings-page { padding: 2px 18px 24px; }
-
-/* 白底内容面板：限定宽度，最大化窗口时不显空旷；内部左右留白统一 */
-.settings-panel {
-  max-width: 1000px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 10px 26px 24px;
+/* 对话框内容区：限高滚动，内容多的标签页不出屏幕 */
+:deep(.el-dialog__body) {
+  padding-top: 4px;
+  max-height: 72vh;
+  overflow-y: auto;
 }
 
 /* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排（不再用 append 拼接） */

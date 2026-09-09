@@ -52,14 +52,17 @@
         <AppIcon name="import" :size="16" />
         <span>导入</span>
       </button>
-      <!-- 设置按钮，点击跳转到设置页面 -->
+      <!-- 设置按钮，点击弹出设置对话框 -->
       <el-tooltip content="设置" placement="bottom">
-        <button class="settings-btn" :class="{ 'is-active': route.path === '/settings' }" @click="goSettings" aria-label="设置">
+        <button class="settings-btn" @click="showSettings = true" aria-label="设置">
           <AppIcon name="settings" :size="18" />
         </button>
       </el-tooltip>
     </div>
   </div>
+
+  <!-- 设置对话框（弹出窗口形式） -->
+  <SettingsDialog v-model="showSettings" />
 
   <!-- 添加影片对话框（必须挂在根模板里才能显示） -->
   <AddMovieDialog v-model="showAdd" @created="onCreated" />
@@ -76,6 +79,8 @@ import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 // 引入添加影片对话框组件
 import AddMovieDialog from '@/components/AddMovieDialog.vue'
+// 引入设置对话框组件
+import SettingsDialog from '@/components/SettingsDialog.vue'
 // 引入统一图标组件
 import AppIcon from '@/components/AppIcon.vue'
 
@@ -90,11 +95,11 @@ const store = useMoviesStore()
 const q = ref('')
 // 控制添加影片对话框的显示/隐藏状态
 const showAdd = ref(false)
+// 控制设置对话框的显示/隐藏状态
+const showSettings = ref(false)
 
 // 跳转到片库页面
 function goLibrary() { router.push('/library') }
-// 跳转到设置页面
-function goSettings() { router.push('/settings') }
 // 打开添加影片对话框
 function onAdd() { showAdd.value = true }
 
