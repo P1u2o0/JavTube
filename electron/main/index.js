@@ -227,7 +227,7 @@ app.whenReady().then(async () => {
     // 注册 javtube-cover 协议处理器（scheme 已在文件顶部注册为 privileged）
     setupCoverProtocol(dataDir)
     // 启动时按数据库设置应用本机代理（JAVDB 等站点需科学上网时使用）
-    await applyProxySettings()
+    await applyProxySettings(db)
   } catch (e) {
     console.error('[main] DB init FAILED:', e?.stack || e)
   }

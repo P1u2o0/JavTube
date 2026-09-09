@@ -51,7 +51,7 @@ function saveCats(dataDir, cats) {
  * 因此设置后刮削 JAVDB 等站点会自动经过本机代理，无需改动 scraper 代码。
  * @returns {Promise<void>}
  */
-async function applyProxySettings() {
+async function applyProxySettings(db) {
   try {
     const r = db.exec("SELECT key, value FROM settings WHERE key IN ('proxy_enabled','proxy_url')")[0]
     const map = {}
@@ -98,7 +98,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
         ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
       persist(db)  // 立即持久化
       // 代理相关设置变更时，即时应用到 Electron session（异步执行不阻塞返回）
-      if (String(key).startsWith('proxy_')) applyProxySettings()
+      if (String(key).startsWith('proxy_')) applyProxySettings(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
