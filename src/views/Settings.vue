@@ -55,47 +55,50 @@
 
       <!-- ============ 标签设置 ============ -->
       <el-tab-pane label="标签设置" name="cats">
-        <!-- 标签类别 -->
-        <div class="sec-head">
-          <span class="sec-title">标签类别</span>
-          <el-button size="small" class="add-btn" @click="addCat">
-            <AppIcon name="plus" :size="13" style="margin-right:4px" />添加类别
-          </el-button>
-        </div>
-        <span class="form-tip" style="margin-top:0">每个类别一行，类别内的标签用中文逗号「，」分隔；未添加标签的类别不会显示在片库筛选区</span>
-        <div class="row-list">
-          <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
-            <span class="row-idx">{{ idx + 1 }}</span>
-            <el-input v-model="row.cat" size="small" placeholder="类别名（如：主题）" class="cat-name-input" />
-            <el-input v-model="row.tags" size="small" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
-            <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
-              <AppIcon name="close" :size="13" />
-            </button>
+        <!-- 内容区缩进与表单控件列对齐（label-width 160px） -->
+        <div class="sec-wrap">
+          <!-- 标签类别 -->
+          <div class="sec-head">
+            <span class="sec-title">标签类别</span>
+            <el-button class="add-btn" @click="addCat">
+              <AppIcon name="plus" :size="14" style="margin-right:4px" />添加类别
+            </el-button>
           </div>
-        </div>
-
-        <!-- 标签映射 -->
-        <div class="sec-head" style="margin-top: 26px;">
-          <span class="sec-title">标签映射</span>
-          <el-button size="small" class="add-btn" @click="addMap">
-            <AppIcon name="plus" :size="13" style="margin-right:4px" />添加映射
-          </el-button>
-        </div>
-        <span class="form-tip" style="margin-top:0">刮削获得的标签若与左侧「原标签」相同，入库时自动替换为右侧「新标签」（新标签留空表示删除该标签），无需逐部手动修改</span>
-        <div class="row-list">
-          <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
-            <el-input v-model="row.from" size="small" placeholder="原标签（如：偶像术人）" class="map-input" />
-            <span class="map-arrow">映射为</span>
-            <el-input v-model="row.to" size="small" placeholder="新标签（如：偶像）" class="map-input" />
-            <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
-              <AppIcon name="close" :size="13" />
-            </button>
+          <span class="form-tip" style="margin-top:0">每个类别一行，类别内的标签用中文逗号「，」分隔；未添加标签的类别不会显示在片库筛选区</span>
+          <div class="row-list">
+            <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
+              <span class="row-idx">{{ idx + 1 }}</span>
+              <el-input v-model="row.cat" placeholder="类别名（如：主题）" class="cat-name-input" />
+              <el-input v-model="row.tags" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
+              <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div style="margin-top: 18px;">
-          <el-button type="primary" @click="saveCats">保存标签设置</el-button>
-          <el-button @click="loadCats" style="margin-left: 10px;">恢复</el-button>
+          <!-- 标签映射 -->
+          <div class="sec-head" style="margin-top: 26px;">
+            <span class="sec-title">标签映射</span>
+            <el-button class="add-btn" @click="addMap">
+              <AppIcon name="plus" :size="14" style="margin-right:4px" />添加映射
+            </el-button>
+          </div>
+          <span class="form-tip" style="margin-top:0">刮削获得的标签若与左侧「原标签」相同，入库时自动替换为右侧「新标签」（新标签留空表示删除该标签），无需逐部手动修改</span>
+          <div class="row-list">
+            <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
+              <el-input v-model="row.from" placeholder="原标签（如：偶像术人）" class="map-input" />
+              <span class="map-arrow">映射为</span>
+              <el-input v-model="row.to" placeholder="新标签（如：偶像）" class="map-input" />
+              <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top: 20px;">
+            <el-button type="primary" @click="saveCats">保存标签设置</el-button>
+            <el-button @click="loadCats" style="margin-left: 10px;">恢复</el-button>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -401,6 +404,9 @@ onMounted(async () => { await load() })
 /* 设置页容器 */
 .settings-page { padding-bottom: 20px; }
 
+/* 标签设置内容区：缩进 160px 与其他标签页的表单控件列对齐 */
+.sec-wrap { max-width: 760px; padding-left: 160px; }
+
 /* 分组小标题行：标题 + 加号按钮 */
 .sec-head {
   display: flex;
@@ -408,12 +414,12 @@ onMounted(async () => { await load() })
   gap: 10px;
   margin: 4px 0 6px;
 }
-/* 分组标题文字 */
+/* 分组标题文字：与 el-form label 统一（14px / 次要文字色 / 中等字重） */
 .sec-title {
-  font-weight: 600;
   font-size: 14px;
-  color: var(--text);
-  font-family: var(--font-display);
+  color: var(--text-2);
+  font-weight: 500;
+  font-family: var(--font-body);
 }
 
 /* 类别行：序号 + 类别名 + 标签 + 删除 */
@@ -446,7 +452,7 @@ onMounted(async () => { await load() })
 
 /* 行删除按钮：圆形弱化，hover 危险色（与女优卡片删除按钮同风格） */
 .row-del {
-  width: 26px; height: 26px;
+  width: 28px; height: 28px;
   flex-shrink: 0;
   border: none; border-radius: 50%;
   background: transparent; color: var(--muted);
@@ -455,9 +461,6 @@ onMounted(async () => { await load() })
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 .row-del:hover { background: var(--danger-soft); color: var(--danger); }
-
-/* 添加按钮：中性描边小按钮（与整体设置风格一致） */
-.add-btn { border-radius: var(--r-pill); }
 
 /* 关于页布局 */
 .about-box { padding: 10px 0; }
