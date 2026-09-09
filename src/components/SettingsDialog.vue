@@ -13,7 +13,7 @@
 -->
 <template>
   <!-- 设置对话框：v-model 控制显隐，align-center 垂直水平居中，整体固定尺寸 -->
-  <el-dialog v-model="show" title="设置" width="820px" align-center destroy-on-close class="settings-dialog">
+  <el-dialog v-model="show" title="设置" width="900px" align-center destroy-on-close class="settings-dialog">
     <!-- 标签页容器 -->
     <el-tabs v-model="tab">
       <!-- ============ 基础设置 ============ -->
@@ -49,12 +49,6 @@
             <el-input-number v-model="pageSizeN" :min="10" :max="200" :step="10" />
             <span class="g-tip">片库列表每页加载的影片数量（10 - 200）</span>
           </div>
-          <!-- 保存与恢复按钮 -->
-          <div class="g-label"></div>
-          <div class="g-control">
-            <el-button type="primary" @click="save">保存设置</el-button>
-            <el-button @click="load" style="margin-left: 10px;">恢复</el-button>
-          </div>
         </div>
       </el-tab-pane>
 
@@ -64,12 +58,11 @@
           <!-- 标签类别：右列为添加按钮 + 行列表 -->
           <div class="g-label">标签类别</div>
           <div class="g-control">
-            <el-button class="add-btn" @click="addCat">
-              <AppIcon name="plus" :size="14" style="margin-right:4px" />添加类别
+            <el-button class="add-btn" title="添加类别" @click="addCat">
+              <AppIcon name="plus" :size="15" />
             </el-button>
             <div class="row-list">
               <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
-                <span class="row-idx">{{ idx + 1 }}</span>
                 <el-input v-model="row.cat" placeholder="类别名（如：主题）" class="cat-name-input" />
                 <el-input v-model="row.tags" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
                 <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
@@ -82,8 +75,8 @@
           <!-- 标签映射 -->
           <div class="g-label">标签映射</div>
           <div class="g-control">
-            <el-button class="add-btn" @click="addMap">
-              <AppIcon name="plus" :size="14" style="margin-right:4px" />添加映射
+            <el-button class="add-btn" title="添加映射" @click="addMap">
+              <AppIcon name="plus" :size="15" />
             </el-button>
             <div class="row-list">
               <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
@@ -98,10 +91,8 @@
             <span class="g-tip">刮削获得的标签若与左侧「原标签」相同，入库时自动替换为右侧「新标签」（新标签留空表示删除该标签），无需逐部手动修改</span>
           </div>
           <!-- 保存按钮 -->
-          <div class="g-label"></div>
           <div class="g-control">
-            <el-button type="primary" @click="saveCats">保存标签设置</el-button>
-            <el-button @click="loadCats" style="margin-left: 10px;">恢复</el-button>
+            <span class="g-tip">保存设置时，标签类别自动补齐至 9 大类（片库筛选按 9 类工作）</span>
           </div>
         </div>
       </el-tab-pane>
@@ -149,11 +140,6 @@
             <el-input v-model="st.proxy_url" placeholder="http://127.0.0.1:7890" style="max-width: 320px;" />
             <span class="g-tip">本机代理的 HTTP 地址，常用 Clash 默认端口 7890、v2rayN 默认 10809</span>
           </div>
-          <!-- 保存按钮 -->
-          <div class="g-label"></div>
-          <div class="g-control">
-            <el-button type="primary" @click="saveScrape">保存刮削设置</el-button>
-          </div>
         </div>
       </el-tab-pane>
 
@@ -194,6 +180,10 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+    <!-- 统一保存按钮（右下角）：一次性保存所有标签页的设置 -->
+    <template #footer>
+      <el-button type="primary" @click="saveAll">保存设置</el-button>
+    </template>
   </el-dialog>
 </template>
 
@@ -312,11 +302,25 @@ function addMap() {
 }
 
 /**
- * 保存标签设置（类别 + 映射）
- * 类别行过滤掉类别名为空的行，自动补齐至 9 大类（片库筛选按 9 类工作）
+ * 统一保存：一次性写入基础 / 刮削 / 标签类别 / 标签映射全部设置（footer 按钮）
+ * 标签类别过滤掉类别名为空的行，自动补齐至 9 大类（片库筛选按 9 类工作）
+ * 保存完成后刷新页面（每行显示数量等需重建筛选区生效）
  */
-async function saveCats() {
+async function saveAll() {
   if (!window.api) return
+  // 基础 + 刮削设置（数字项转字符串入库）
+  st.page_size = String(pageSizeN.value)
+  st.cols_per_row = String(colsPerRowN.value)
+  st.preview_count = String(previewCountN.value)
+  const kvKeys = [
+    'player_path', 'click_action', 'page_size', 'cols_per_row',
+    'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
+    'proxy_enabled', 'proxy_url'
+  ]
+  for (const k of kvKeys) {
+    await window.api.updateSetting(k, String(st[k] ?? ''))
+  }
+  // 标签类别（补齐 9 大类）
   const cats = catRows.value
     .map(r => ({ cat: (r.cat || '').trim(), tags: (r.tags || '').split(/[，,]/).map(s => s.trim()).filter(Boolean) }))
     .filter(c => c.cat)
@@ -326,47 +330,18 @@ async function saveCats() {
     if (!cats.some(c => c.cat === name)) cats.push({ cat: name, tags: [] })
   }
   const arr = cats.slice(0, 9)
-  const r = await window.api.saveTagCategories(arr)
+  const rc = await window.api.saveTagCategories(arr)
+  if (rc.ok) {
+    store.categories = arr
+    await store.loadAllDbTags()
+  } else { ElMessage.error(rc.error); return }
   // 标签映射入库（JSON 数组，过滤两侧皆空的行）
   const mapping = mapRows.value
     .filter(m => (m.from || '').trim() || (m.to || '').trim())
     .map(m => [(m.from || '').trim(), (m.to || '').trim()])
   await window.api.updateSetting('tag_mapping', JSON.stringify(mapping))
-  if (r.ok) {
-    store.categories = arr
-    await store.loadAllDbTags()
-    await loadCats()
-    ElMessage.success('标签设置已保存，实时生效')
-  }
-  else ElMessage.error(r.error)
-}
-
-/**
- * 保存基础设置（播放器路径/点击动作/每行/每页）
- */
-async function save() {
-  if (!window.api) return
-  st.page_size = String(pageSizeN.value)
-  st.cols_per_row = String(colsPerRowN.value)
-  const keys = ['player_path', 'click_action', 'page_size', 'cols_per_row']
-  for (const k of keys) {
-    await window.api.updateSetting(k, String(st[k] ?? ''))
-  }
-  location.reload()
   ElMessage.success('设置已保存')
-}
-
-/**
- * 保存刮削设置（来源/预览图/统计/代理；代理变更由主进程即时应用）
- */
-async function saveScrape() {
-  if (!window.api) return
-  st.preview_count = String(previewCountN.value)
-  const keys = ['scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats', 'proxy_enabled', 'proxy_url']
-  for (const k of keys) {
-    await window.api.updateSetting(k, String(st[k] ?? ''))
-  }
-  ElMessage.success('刮削设置已保存')
+  location.reload()
 }
 
 /**
@@ -423,8 +398,8 @@ async function clearDb() {
 /* ====== 统一双栏网格：左列选项名称（右端贴中心线）+ 右列选项 ====== */
 .set-grid {
   display: grid;
-  grid-template-columns: 120px 1fr;  /* 左列固定宽 → 名称最后一个字贴中心线 */
-  column-gap: 22px;
+  grid-template-columns: 110px 1fr;  /* 左列固定宽 → 名称最后一个字贴中心线 */
+  column-gap: 16px;
   row-gap: 22px;
   align-items: start;
 }
@@ -453,12 +428,6 @@ async function clearDb() {
 /* 标签类别 / 标签映射行 */
 .row-list { margin-top: 2px; }
 .cat-row-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.row-idx {
-  width: 20px; text-align: center;
-  color: var(--muted); font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
 .cat-name-input { width: 170px; flex-shrink: 0; }
 .cat-tags-input { flex: 1; }
 .map-row-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
@@ -484,6 +453,9 @@ async function clearDb() {
   color: var(--danger) !important;
 }
 
+/* 加号按钮：圆形图标按钮（只保留 + 图标） */
+.add-btn { width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+
 /* 关于页文字行 */
 .about-line { padding: 3px 0; color: var(--text-2); font-size: 13.5px; }
 .about-line b { color: var(--text); font-family: var(--font-display); }
@@ -505,6 +477,7 @@ async function clearDb() {
   overflow-y: auto;
   padding-top: 4px;
 }
+.settings-dialog .el-dialog__footer { flex-shrink: 0; }
 .settings-dialog .el-dialog__body::-webkit-scrollbar { width: 8px; }
 .settings-dialog .el-dialog__body::-webkit-scrollbar-thumb {
   background: var(--border-strong);
