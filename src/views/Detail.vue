@@ -15,76 +15,62 @@
 <template>
   <!-- 详情根容器，仅在有数据时渲染 -->
   <div class="detail" v-if="m">
-    <!-- 顶部操作栏：返回、播放、喜欢、刮削、编辑、删除（2026-09-09 按用户要求精简并统一风格） -->
-    <div class="back">
-      <el-button @click="$router.back()">
-        <AppIcon name="back" :size="15" style="margin-right:5px" />返回
-      </el-button>
-      <el-button type="primary" @click="onPlay">
-        <AppIcon name="play" :size="13" style="margin-right:5px" />播放
-      </el-button>
-      <el-button class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
-        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="15" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
-      </el-button>
-      <el-button class="act-scrape" @click="onScrape" :loading="scraping">
-        <AppIcon v-if="!scraping" name="globe" :size="15" style="margin-right:5px" />刮削
-      </el-button>
-      <el-button @click="editShow = true">
-        <AppIcon name="edit" :size="15" style="margin-right:5px" />编辑
-      </el-button>
-      <el-button class="act-del" @click="onDel">
-        <AppIcon name="trash" :size="15" style="margin-right:5px" />删除
-      </el-button>
-    </div>
-
-    <!-- 红：标题区（番号 + 片名） -->
-    <div class="title-block">
-      <div class="code">{{ m.ph || '—' }}</div>
-      <div class="title">{{ m.pm || '无标题' }}</div>
+    <!-- 红：标题区（圆形返回按钮 + 番号 + 标题，同一行） -->
+    <div class="title-row">
+      <button class="round-back" @click="$router.back()" title="返回">
+        <AppIcon name="back" :size="16" />
+      </button>
+      <span class="code">{{ m.ph || '—' }}</span>
+      <span class="title-text">{{ m.pm || '无标题' }}</span>
     </div>
 
     <!-- 主行：绿=大图展示区（左，固定尺寸） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：大图展示区：固定 3:4 框，任何比例的图片在框内等比缩放居中，格局不随图片尺寸变化 -->
+      <!-- 绿：大图展示区：固定 3:4 框，任何比例的图片在框内等比缩放居中，格局不随图片尺寸变化。
+           鼠标悬停时海报变暗 + 中央播放按钮（样式/过渡与片库卡片一致），点击播放 -->
       <div class="main-image">
         <img v-if="displayImage && !imgErr" :src="displayImage" @error="imgErr = true" />
         <div v-if="!displayImage || imgErr" class="no-cover">暂无封面</div>
-      </div>
-      <!-- 蓝：影片信息卡 -->
-      <div class="info-card">
-        <!-- 统计条：评分 / 想看 / 看过（有任一数据时展示） -->
-        <div class="stats-bar" v-if="hasStats">
-          <span v-if="m.score" class="stat-score">{{ Number(m.score).toFixed(1) }}<small>分</small></span>
-          <span v-if="m.want" class="stat-item"><AppIcon name="heart" :size="14" />想看 {{ fmt(m.want) }}</span>
-          <span v-if="m.watched" class="stat-item"><AppIcon name="history" :size="14" />看过 {{ fmt(m.watched) }}</span>
+        <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
+          <button v-if="m.py" class="play-btn" aria-label="播放">
+            <AppIcon name="play" :size="22" />
+          </button>
         </div>
-        <!-- 女优（可点击筛选） -->
-        <div class="info-line" v-if="actressList.length">
-          <span class="info-label">女优</span>
-          <div class="info-value tag-list">
-            <TagChip v-for="a in actressList" :key="a" :label="a" @click="filterByActress(a)" />
+      </div>
+      <!-- 蓝：影片信息卡（行序：番号/日期/时长/导演/片商/系列/评分/类别/演员，底部为操作按钮） -->
+      <div class="info-card">
+        <!-- 番号行：番号 + 复制按钮（点击复制到剪贴板） -->
+        <div class="info-line" v-if="m.ph">
+          <span class="info-label">番号</span>
+          <div class="info-value code-line">
+            <span class="code-text">{{ m.ph }}</span>
+            <button class="copy-btn" title="复制番号" @click="copyCode">
+              <AppIcon name="copy" :size="14" />
+            </button>
           </div>
         </div>
-        <!-- 发行日期 -->
+        <!-- 日期 -->
         <div class="info-line" v-if="m.fxrq">
-          <span class="info-label">发行日期</span>
+          <span class="info-label">日期</span>
           <div class="info-value">{{ m.fxrq }}</div>
         </div>
-        <!-- 类型标记（中字、流出等） -->
-        <div class="info-line" v-if="flagsText !== '—'">
-          <span class="info-label">类型</span>
-          <div class="info-value">{{ flagsText }}</div>
+        <!-- 时长（刮削優先；无刮削值时由视频文件解析补齐） -->
+        <div class="info-line" v-if="m.duration">
+          <span class="info-label">时长</span>
+          <div class="info-value">{{ m.duration }} 分钟</div>
         </div>
-        <!-- 导演 -->
-        <div class="info-line" v-if="m.dy">
+        <!-- 导演（可点击筛选） -->
+        <div class="info-line" v-if="directorList.length">
           <span class="info-label">导演</span>
-          <div class="info-value">{{ m.dy }}</div>
-        </div>
-        <!-- 厂商（可点击筛选） -->
-        <div class="info-line" v-if="studioList.length">
-          <span class="info-label">厂商</span>
           <div class="info-value tag-list">
-            <TagChip v-for="s in studioList" :key="s" :label="s" @click="filterByStudio(s)" />
+            <TagChip v-for="d in directorList" :key="d" :label="d" @click="filterByDirector(d)" />
+          </div>
+        </div>
+        <!-- 片商（可点击筛选） -->
+        <div class="info-line" v-if="psList.length">
+          <span class="info-label">片商</span>
+          <div class="info-value tag-list">
+            <TagChip v-for="s in psList" :key="s" :label="s" @click="filterByStudio(s)" />
           </div>
         </div>
         <!-- 系列（可点击筛选） -->
@@ -94,12 +80,55 @@
             <TagChip :label="m.xl" @click="filterBySeries(m.xl)" />
           </div>
         </div>
-        <!-- 标签（可点击筛选） -->
+        <!-- 评分（五颗星：一颗星一分，有分填充黄色，无分灰色；星后为数字分数） -->
+        <div class="info-line" v-if="m.score">
+          <span class="info-label">评分</span>
+          <div class="info-value star-row">
+            <span class="stars">
+              <svg v-for="i in 5" :key="i" class="star" :class="{ on: i <= starCount }"
+                   viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="STAR_PATH" />
+              </svg>
+            </span>
+            <span class="score-num">{{ Number(m.score).toFixed(1) }}</span>
+          </div>
+        </div>
+        <!-- 类别（影片标签，可点击筛选） -->
         <div class="info-line" v-if="tags.length">
-          <span class="info-label">标签</span>
+          <span class="info-label">类别</span>
           <div class="info-value tag-list">
             <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
           </div>
+        </div>
+        <!-- 热度（想看/看过人数，来源 JAVDB） -->
+        <div class="info-line" v-if="m.want || m.watched">
+          <span class="info-label">热度</span>
+          <div class="info-value stats-line">
+            <span v-if="m.want"><AppIcon name="heart" :size="13" />想看 {{ fmt(m.want) }}</span>
+            <span v-if="m.watched"><AppIcon name="history" :size="13" />看过 {{ fmt(m.watched) }}</span>
+          </div>
+        </div>
+        <!-- 演员（可点击筛选） -->
+        <div class="info-line" v-if="actressList.length">
+          <span class="info-label">演员</span>
+          <div class="info-value tag-list">
+            <TagChip v-for="a in actressList" :key="a" :label="a" @click="filterByActress(a)" />
+          </div>
+        </div>
+        <!-- 操作按钮：喜欢 / 刮削 / 编辑 / 删除（移到信息卡底部） -->
+        <div class="card-actions">
+          <el-button class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
+            <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
+          </el-button>
+          <el-button class="act-scrape" @click="onScrape" :loading="scraping">
+            <AppIcon v-if="!scraping" name="globe" :size="14" style="margin-right:5px" />刮削
+          </el-button>
+          <el-button @click="editShow = true">
+            <AppIcon name="edit" :size="14" style="margin-right:5px" />编辑
+          </el-button>
+          <el-button class="act-del" @click="onDel">
+            <AppIcon name="trash" :size="14" style="margin-right:5px" />删除
+          </el-button>
         </div>
       </div>
     </div>
@@ -218,18 +247,35 @@ const tags = computed(() => (m.value?.bq || '').split(/[，,]/).map(s => s.trim(
 const actressList = computed(() => (m.value?.yid || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
 
 /**
- * 计算属性：厂商列表（合并 ps 制作商和 fx 发行商，去重）
+ * 计算属性：导演列表（按逗号分割 dy 字段）
  */
-const studioList = computed(() => {
-  const ps = (m.value?.ps || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)
-  const fx = (m.value?.fx || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)
-  return [...new Set([...ps, ...fx])]
-})
+const directorList = computed(() => (m.value?.dy || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
 
 /**
- * 计算属性：是否有统计数据（评分/想看/看过任一有值）
+ * 计算属性：片商列表（按逗号分割 ps 制作商字段）
  */
-const hasStats = computed(() => !!(m.value && (m.value.score || m.value.want || m.value.watched)))
+const psList = computed(() => (m.value?.ps || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+
+/**
+ * 计算属性：五角星填充数量（一颗星一分，四舍五入，范围 0-5）
+ */
+const starCount = computed(() => Math.min(5, Math.max(0, Math.round(Number(m.value?.score) || 0))))
+
+// 五角星 SVG 路径（实心五角星）
+const STAR_PATH = 'M12 2l2.95 6.3 6.9.62-5.2 4.55 1.55 6.78L12 16.77 5.8 20.25l1.55-6.78-5.2-4.55 6.9-.62z'
+
+/**
+ * 复制番号到剪贴板
+ */
+async function copyCode() {
+  if (!m.value?.ph) return
+  try {
+    await navigator.clipboard.writeText(m.value.ph)
+    ElMessage.success('番号已复制：' + m.value.ph)
+  } catch {
+    ElMessage.error('复制失败，请手动选择复制')
+  }
+}
 
 /**
  * 数字格式化（千分位，用于想看/看过人数）
@@ -254,6 +300,16 @@ async function load(id) {
   const r = await window.api.getMovie(id)
   if (r.ok) m.value = r.data
   else { ElMessage.error(r.error); router.replace('/library') }
+  // 时长兜底：无刮削时长且有本地视频文件时，解析 MP4 文件时长（分钟）并入库
+  if (r.ok && m.value && !m.value.duration && m.value.py && window.api.readVideoDuration) {
+    try {
+      const dr = await window.api.readVideoDuration(m.value.py)
+      if (dr.ok && dr.data) {
+        await window.api.updateMovie(m.value.id, { duration: dr.data })
+        m.value.duration = dr.data
+      }
+    } catch {}
+  }
 }
 
 /**
@@ -344,6 +400,10 @@ function filterByActress(a) { router.push({ path: '/library', query: { actress: 
  */
 function filterByStudio(s) { router.push({ path: '/library', query: { studio: s } }) }
 /**
+ * 跳转到片库按导演筛选（2026-09-09 新增）
+ */
+function filterByDirector(d) { router.push({ path: '/library', query: { director: d } }) }
+/**
  * 跳转到片库按系列筛选
  */
 function filterBySeries(s) { router.push({ path: '/library', query: { series: s } }) }
@@ -362,33 +422,54 @@ onMounted(async () => {
 <style scoped>
 /* 详情页根容器内边距 */
 .detail { padding: 4px 4px 40px; }
-/* 顶部操作栏 */
-.back { margin-bottom: 14px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-
+/* 信息卡底部操作按钮区（喜欢/刮削/编辑/删除） */
+.card-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
 /* 喜欢按钮：收藏态朱柿红描边 + 图标强调 */
-.back .act-fav.fav-on {
+.card-actions .act-fav.fav-on {
   color: var(--accent) !important;
   border-color: var(--accent) !important;
   background: var(--accent-soft) !important;
 }
-.back .act-fav.fav-on .app-icon { color: var(--accent); }
-/* 刮削按钮：hover 朱柿红（强调语义），替代原实心绿 */
-.back .act-scrape:hover,
-.back .act-scrape:focus {
+.card-actions .act-fav.fav-on .app-icon { color: var(--accent); }
+/* 刮削按钮：hover 朱柿红（强调语义） */
+.card-actions .act-scrape:hover,
+.card-actions .act-scrape:focus {
   background: var(--accent-soft) !important;
   border-color: var(--accent) !important;
   color: var(--accent) !important;
 }
-/* 删除按钮：hover 危险红（强调语义），替代原实心红 */
-.back .act-del:hover,
-.back .act-del:focus {
+/* 删除按钮：hover 危险红（强调语义） */
+.card-actions .act-del:hover,
+.card-actions .act-del:focus {
   background: var(--danger-soft) !important;
   border-color: var(--danger) !important;
   color: var(--danger) !important;
 }
 
-/* 红：标题区（番号 + 片名，页面顶部） */
-.title-block { margin-bottom: 14px; }
+/* 红：标题行（圆形返回 + 番号 + 标题） */
+.title-row {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+/* 圆形返回按钮：描边圆钮，与软件按钮体系一致 */
+.round-back {
+  width: 34px; height: 34px;
+  align-self: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.round-back:hover { background: var(--surface-2); color: var(--text); }
 /* 番号样式：展示字 + 等宽数字 */
 .code {
   color: var(--primary);
@@ -396,10 +477,9 @@ onMounted(async () => {
   font-variant-numeric: tabular-nums;
   font-weight: 700; font-size: 18px;
   letter-spacing: 0.02em;
-  margin-bottom: 4px;
 }
-/* 标题样式 */
-.title { font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.5; }
+/* 标题样式：与番号同行，长标题自动换行 */
+.title-text { font-size: 17px; font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
 
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右） */
 .main-row { display: flex; gap: 20px; align-items: flex-start; }
@@ -413,9 +493,33 @@ onMounted(async () => {
   overflow: hidden;
   border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
+  position: relative;
 }
 /* 图片在固定框内等比缩放居中（竖版海报/横版预览图都不改变框体） */
 .main-image img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+/* 悬停遮罩：海报变暗 + 中央播放按钮（样式/过渡与片库卡片完全一致） */
+.main-hover {
+  position: absolute; inset: 0;
+  background: rgba(29, 28, 26, 0.42);
+  opacity: 0;
+  transition: opacity var(--dur-fast) ease;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.main-hover.playable { cursor: pointer; }
+.main-image:hover .main-hover.playable { opacity: 1; pointer-events: auto; }
+/* 播放按钮：圆形白底墨黑图标（复刻片库卡片 .play-btn） */
+.play-btn {
+  width: 52px; height: 52px;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--primary);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0 0 0 3px; /* 视觉居中补偿 */
+  box-shadow: var(--sh-2);
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
+}
+.play-btn:hover { transform: scale(1.1); background: #fff; }
 /* 无图占位块 */
 .no-cover {
   width: 300px; aspect-ratio: 3/2;
@@ -431,25 +535,41 @@ onMounted(async () => {
   border-radius: var(--r-md);
   padding: 14px 20px;
 }
-/* 统计条：评分大字 + 想看/看过，底部与信息行分隔 */
-.stats-bar {
-  display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
-  padding-bottom: 12px; margin-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
-.stat-score {
-  color: var(--accent);
+/* 番号行：番号文字 + 复制按钮 */
+.code-line { display: inline-flex; align-items: center; gap: 8px; }
+.code-text {
+  color: var(--primary);
   font-family: var(--font-display);
-  font-weight: 700; font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700; font-size: 15px;
+  letter-spacing: 0.02em;
+}
+/* 复制按钮：小型圆形弱化按钮，hover 强调色 */
+.copy-btn {
+  width: 24px; height: 24px;
+  border: none; border-radius: 50%;
+  background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.copy-btn:hover { background: var(--accent-soft); color: var(--accent); }
+
+/* 评分五角星行 */
+.star-row { display: flex; align-items: center; gap: 10px; }
+.stars { display: inline-flex; gap: 2px; }
+.star { width: 18px; height: 18px; fill: var(--border-strong); }
+.star.on { fill: #f5b50a; }
+.score-num {
+  color: var(--text); font-weight: 600; font-size: 14px;
+  font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
 }
-.stat-score small { font-size: 12px; font-weight: 500; margin-left: 3px; color: var(--muted); }
-.stat-item {
-  display: inline-flex; align-items: center; gap: 5px;
-  color: var(--text-2); font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-.stat-item .app-icon { color: var(--muted); }
+
+/* 热度行（想看/看过） */
+.stats-line { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.stats-line > span { display: inline-flex; align-items: center; gap: 5px; }
+.stats-line .app-icon { color: var(--muted); }
 /* 信息行：固定宽标签 + 内容，行间细虚线分隔 */
 .info-line {
   display: flex; gap: 14px;
