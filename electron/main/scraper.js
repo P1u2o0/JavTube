@@ -215,6 +215,11 @@ async function scrapeJavBus(ph, type) {
   }
   bq = twToCn(bq)  // 繁体标签转简体
 
+  // 提取时长（分钟，2026-09-09 新增）：JAVBUS「長度:」字段，如 "120 分鐘"
+  const lenStr = inteHandler(data, '<p class="header">長度:</p>', '</p>', [0, 1, 0])
+  const lenM = lenStr.match(/(\d+)/)
+  const duration = lenM ? Number(lenM[1]) : 0
+
   // 提取预览图（样本图）大图 URL 列表（2026-09-09 新增）
   // JAVBUS 详情页 sample-waterfall 区块结构：<a class="sample-box" href="大图URL"><img src="缩略图"></a>
   const previews = []
@@ -225,7 +230,7 @@ async function scrapeJavBus(ph, type) {
     if (url && url.startsWith('http') && !previews.includes(url)) previews.push(url)
   }
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, previews, source: 'JAVBUS' }
+  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, duration, previews, source: 'JAVBUS' }
 }
 
 /**
@@ -358,6 +363,12 @@ async function scrapeJavDb(ph, type, opts = {}) {
   let cover = inteHandler(inteHandler(detail, '<div class="video-meta-panel">', '</div>', [0, 0, 0]), '<img src="', '"', [0, 0, 0])
   if (cover && !cover.startsWith('http')) cover = baseUrl + cover  // 补全相对路径
 
+  // 提取时长（分钟，2026-09-09 新增）：JAVDB「時長:」字段，如 "120 分鐘"
+  let duration = 0
+  const lenStr = inteHandler(detail, '<strong>時長:</strong>', '</div>', [0, 0, 0])
+  const lenM = lenStr.match(/(\d+)/)
+  if (lenM) duration = Number(lenM[1])
+
   // 提取预览图 URL 列表（2026-09-09 新增）
   // JAVDB 详情页 preview-images 区块：<div class="preview-images"><a ...><img src="https://...jpg"></a>...</div>
   const previews = []
@@ -388,7 +399,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
     if (scoreM) score = scoreM[1]
   }
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, previews, want, watched, score, source: 'JAVDB' }
+  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, duration, previews, want, watched, score, source: 'JAVDB' }
 }
 
 /**

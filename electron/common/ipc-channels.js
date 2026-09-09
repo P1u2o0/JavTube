@@ -51,6 +51,7 @@ module.exports = {
   UTILS_PLAY_VIDEO: 'utils:playVideo',
   UTILS_SCAN_DIR: 'utils:scanDir',
   UTILS_READ_FILE_BASE64: 'utils:readFileBase64',
+  UTILS_READ_DURATION: 'utils:readDuration',
 
   // === 对话框 ===
   DIALOG_OPEN_DIR: 'dialog:openDir',

@@ -66,7 +66,10 @@ const MOVIE_COLUMNS = [
   ['previews', S('previews')],  // 预览图本地路径 JSON 数组
   ['want',     N('want')],      // 想看人数（JAVDB）
   ['watched',  N('watched')],   // 看过人数（JAVDB）
-  ['score',    N('score')]      // 评分（JAVDB）
+  ['score',    N('score')],     // 评分（JAVDB）
+  // 2026-09-09 下午新增（详情页改版）
+  ['duration',   N('duration')],   // 影片时长（分钟）：刮削優先，无值时由视频文件解析补齐
+  ['play_count', N('play_count')]  // 观看次数（recordPlay 累加，供排序）
 ]
 
 // INSERT 语句与参数构造器（全部 30 列）
@@ -109,6 +112,8 @@ function registerMovieIpc(ipcMain, db) {
       if (filter.actress) { where.push('yid LIKE ?'); args.push(`%${filter.actress}%`) }
       // 按制作商/发行商过滤
       if (filter.studio) { where.push('(ps LIKE ? OR fx LIKE ?)'); args.push(`%${filter.studio}%`, `%${filter.studio}%`) }
+      // 导演筛选（2026-09-09 新增：详情页点击导演跳转）
+      if (filter.director) { where.push('dy LIKE ?'); args.push(`%${filter.director}%`) }
       // 按系列过滤
       if (filter.series) { where.push('xl LIKE ?'); args.push(`%${filter.series}%`) }
       // 只看有播放记录的
@@ -291,7 +296,9 @@ function registerMovieIpc(ipcMain, db) {
   // 两种格式字符串排序规则不同，混排会导致观看记录排序偏差）
   ipcMain.handle(IPC.MOVIES_RECORD_PLAY, (_e, id) => {
     try {
-      db.run('UPDATE movies SET play_time = ? WHERE id = ?', [nowLocal(), Number(id)])
+      // play_time 更新最近播放时间；play_count 累加观看次数（供「观看次数」排序）
+      db.run('UPDATE movies SET play_time = ?, play_count = COALESCE(play_count, 0) + 1 WHERE id = ?',
+        [nowLocal(), Number(id)])
       persist(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }

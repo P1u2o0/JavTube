@@ -16,6 +16,7 @@ const fs = require('fs')
 const { VIDEO_EXTS, COVER_DIR } = require('./constants')
 const IPC = require('../common/ipc-channels')
 const { scrapeMovie } = require('./scraper')
+const { readMp4DurationMinutes } = require('./video-meta')
 
 /**
  * 注册工具类 IPC 处理器。
@@ -86,6 +87,17 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
     try {
       const buf = fs.readFileSync(filePath)
       return { ok: true, data: buf.toString('base64') }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // === 读取视频文件时长（分钟，2026-09-09 新增） ===
+  // 渲染进程 → 主进程：解析 MP4/M4V/MOV 容器的 mvhd 得到时长；
+  // AVI/MKV 等容器返回 data=0（前端显示为未知）
+  ipcMain.handle(IPC.UTILS_READ_DURATION, (_e, filePath) => {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: '文件不存在' }
+      const minutes = readMp4DurationMinutes(filePath)
+      return { ok: true, data: minutes || 0 }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

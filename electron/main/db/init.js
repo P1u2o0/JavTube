@@ -176,6 +176,11 @@ async function initDb(dataDir) {
   try { db.run("ALTER TABLE movies ADD COLUMN want INTEGER DEFAULT 0") } catch {}
   try { db.run("ALTER TABLE movies ADD COLUMN watched INTEGER DEFAULT 0") } catch {}
   try { db.run("ALTER TABLE movies ADD COLUMN score REAL DEFAULT 0") } catch {}
+  // 2026-09-09 下午新增（详情页改版）：
+  //   duration   — 影片时长（分钟）：刮削到「長度/時長」时写入；无刮削值时由视频文件解析补齐
+  //   play_count — 观看次数：recordPlay 每次播放 +1（供「观看次数」排序）
+  try { db.run("ALTER TABLE movies ADD COLUMN duration INTEGER DEFAULT 0") } catch {}
+  try { db.run("ALTER TABLE movies ADD COLUMN play_count INTEGER DEFAULT 0") } catch {}
 
   // 写入默认设置项（仅在不存在时插入）
   const defaults = [

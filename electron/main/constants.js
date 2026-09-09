@@ -13,7 +13,7 @@
 const VIDEO_EXTS = ['.mp4', '.avi', '.mkv', '.mov', '.flv', '.wmv', '.rmvb', '.m4v', '.mpg', '.mpeg', '.ts', '.webm']
 
 // movies 表允许排序的列白名单（防 SQL 注入；不在名单内的排序字段回退为 tjrq）
-const SORTABLE_COLUMNS = ['id', 'ph', 'pm', 'pfs', 'yz', 'tjrq', 'fxrq', 'zb', 'tix', 'cl', 'play_time']
+const SORTABLE_COLUMNS = ['id', 'ph', 'pm', 'pfs', 'yz', 'tjrq', 'fxrq', 'zb', 'tix', 'cl', 'play_time', 'score', 'play_count', 'duration']
 
 // 标签分隔符（项目约定：中文逗号「，」）
 const TAG_DELIM = '\uff0c'

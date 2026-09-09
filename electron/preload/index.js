@@ -232,6 +232,13 @@ contextBridge.exposeInMainWorld('api', {
   scanDir: (dir) => ipcRenderer.invoke(IPC.UTILS_SCAN_DIR, dir),
 
   /**
+   * 读取视频文件时长（分钟）
+   * @param {string} p - 视频文件绝对路径
+   * @returns {Promise<Object>} { ok, data }，data 为分钟数（0 表示无法解析）
+   */
+  readVideoDuration: (p) => ipcRenderer.invoke(IPC.UTILS_READ_DURATION, p),
+
+  /**
    * 读取文件并返回 Base64 编码
    * @param {string} p - 文件路径
    * @returns {Promise<Object>} { ok, data }
