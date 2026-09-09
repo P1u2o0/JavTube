@@ -191,7 +191,9 @@ async function initDb(dataDir) {
     ['preview_count','0'],      // 下载预览图数量（0 = 全部下载）
     ['scrape_stats','y'],       // 是否抓取想看/看过人数与评分 (y/n，来源 JAVDB)
     ['proxy_enabled','n'],      // 是否使用本机代理访问刮削站（JAVDB 需科学上网）
-    ['proxy_url','http://127.0.0.1:7890'] // 代理服务器地址（HTTP 代理规则）
+    ['proxy_url','http://127.0.0.1:7890'], // 代理服务器地址（HTTP 代理规则）
+    // === 标签设置（2026-09-09 新增） ===
+    ['tag_mapping','[]']        // 标签映射规则（JSON 数组 [[原标签,新标签],...]，刮削后自动替换）
   ]
   for (const [k, v] of defaults) {
     // INSERT OR IGNORE：如果 key 已存在则跳过，不报错

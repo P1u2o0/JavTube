@@ -118,13 +118,18 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
           return r?.values?.[0]?.[0]
         } catch { return undefined }
       }
+      // 标签映射规则（settings.tag_mapping 为 JSON 数组 [[原标签,新标签],...]）
+      let tagMapping = []
+      try { tagMapping = JSON.parse(sget('tag_mapping') || '[]') } catch { tagMapping = [] }
+      if (!Array.isArray(tagMapping)) tagMapping = []
       const r = await scrapeMovie(ph, {
         source: source || 'auto',
         coverDir: coverDir || COVER_DIR,
         dataDir,
         downloadPreviews: sget('scrape_previews') === 'y',
         previewCount: Number(sget('preview_count') || 0),
-        fetchStats: sget('scrape_stats') !== 'n'
+        fetchStats: sget('scrape_stats') !== 'n',
+        tagMapping
       })
       return r
     } catch (e) { return { ok: false, error: e.message } }

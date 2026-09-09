@@ -420,6 +420,31 @@ function autoSelectSources(type) {
 }
 
 /**
+ * 应用标签映射（2026-09-09 新增，配合设置页「标签映射」功能）。
+ * 刮削获得的标签逐个与映射表对照：命中原标签则替换为新标签
+ * （新标签为空字符串表示删除该标签），最后去重。
+ * @param {string} bq - 中文逗号分隔的标签串
+ * @param {Array[]} mapping - 映射规则数组 [[原标签, 新标签], ...]
+ * @returns {string} 替换后的标签串
+ */
+function applyTagMapping(bq, mapping) {
+  if (!bq || !Array.isArray(mapping) || !mapping.length) return bq
+  const map = new Map()
+  for (const pair of mapping) {
+    if (Array.isArray(pair) && pair[0]) map.set(String(pair[0]).trim(), String(pair[1] ?? '').trim())
+  }
+  if (!map.size) return bq
+  const out = []
+  for (const raw of String(bq).split('，')) {
+    const tag = raw.trim()
+    if (!tag) continue
+    const nt = map.has(tag) ? map.get(tag) : tag
+    if (nt && !out.includes(nt)) out.push(nt)
+  }
+  return out.join('，')
+}
+
+/**
  * 影片刮削主入口函数。
  * 根据番号和指定的来源，从相应网站获取影片信息，并下载封面图片到本地。
  * @param {string} ph - 影片番号
@@ -431,12 +456,13 @@ function autoSelectSources(type) {
  * @param {boolean} [opts.downloadPreviews=false] - 是否下载预览图到本地
  * @param {number} [opts.previewCount=0] - 预览图下载数量上限（0 = 全部下载）
  * @param {boolean} [opts.fetchStats=true] - 是否提取想看/看过人数与评分（仅 JAVDB 有效）
+ * @param {Array[]} [opts.tagMapping=[]] - 标签映射规则 [[原标签,新标签],...]，刮削后自动替换
  * @returns {Promise<Object>} 结果对象 { ok: boolean, data?: Object, source?: string, error?: string }
  *   data.previews 在开启下载时为本地相对路径数组，未开启时该字段被移除（不入库远程 URL）
  */
 async function scrapeMovie(ph, {
   source = 'auto', coverDir = COVER_DIR, dataDir = '',
-  downloadPreviews = false, previewCount = 0, fetchStats = true
+  downloadPreviews = false, previewCount = 0, fetchStats = true, tagMapping = []
 } = {}) {
   const cleanPh = ph.trim()
   if (!cleanPh) return { ok: false, error: '番号不能为空' }
@@ -508,6 +534,8 @@ async function scrapeMovie(ph, {
           // 未开启下载：移除远程 URL，避免把外链入库（离线时无法显示）
           delete result.previews
         }
+        // 应用标签映射（设置页「标签映射」规则，2026-09-09 新增）
+        if (result.bq) result.bq = applyTagMapping(result.bq, tagMapping)
         return { ok: true, data: result, source: src.name }
       }
     } catch (e) {

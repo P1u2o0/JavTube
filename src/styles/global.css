@@ -156,6 +156,45 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 }
 .btn-primary:hover { background: var(--primary-hover); }
 
+/* ====== 带追加按钮的输入框（如播放器路径的「选择」按钮） ======
+   输入框左半为胶囊，append 容器承担右半圆角并统一描边，
+   内部按钮自身不再绘制边框圆角，避免双层边框错乱 */
+.el-input-group--append .el-input__wrapper {
+  border-radius: var(--r-pill) 0 0 var(--r-pill) !important;
+  box-shadow: 0 0 0 1px var(--border-strong) inset !important;
+}
+.el-input-group__append {
+  background: var(--surface-2) !important;
+  border-radius: 0 var(--r-pill) var(--r-pill) 0 !important;
+  box-shadow: 0 0 0 1px var(--border-strong) inset !important;
+  padding: 0 6px !important;
+}
+.el-input-group__append .el-button {
+  border-radius: var(--r-pill) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--text-2) !important;
+}
+.el-input-group__append .el-button:hover {
+  background: var(--surface-3) !important;
+  color: var(--text) !important;
+}
+
+/* ====== 表单控件间距统一 ====== */
+.el-form-item { margin-bottom: 20px; }
+.el-form-item:last-child { margin-bottom: 0; }
+
+/* ====== 设置项说明文字：统一位于选项下一行并与选项左对齐 ====== */
+.form-tip {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* ====== Element Plus 组件统一圆角 ====== */
 .el-dialog { border-radius: var(--r-lg) !important; box-shadow: var(--sh-3) !important; }
 .el-card { border-radius: var(--r-md) !important; border-color: var(--border) !important; }
