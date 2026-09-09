@@ -15,7 +15,7 @@
 <template>
   <!-- 详情根容器，仅在有数据时渲染 -->
   <div class="detail" v-if="m">
-    <!-- 顶部操作栏：返回、播放、收藏、编辑、刮削来源、刮削、删除 -->
+    <!-- 顶部操作栏：返回、播放、喜欢、刮削、编辑、删除（2026-09-09 按用户要求精简并统一风格） -->
     <div class="back">
       <el-button @click="$router.back()">
         <AppIcon name="back" :size="15" style="margin-right:5px" />返回
@@ -23,22 +23,16 @@
       <el-button type="primary" @click="onPlay">
         <AppIcon name="play" :size="13" style="margin-right:5px" />播放
       </el-button>
-      <el-button :class="{ 'fav-on': isFav }" @click="toggleFav">
-        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="15" style="margin-right:5px" />{{ isFav ? '已收藏' : '收藏' }}
+      <el-button class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="15" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
+      </el-button>
+      <el-button class="act-scrape" @click="onScrape" :loading="scraping">
+        <AppIcon v-if="!scraping" name="globe" :size="15" style="margin-right:5px" />刮削
       </el-button>
       <el-button @click="editShow = true">
         <AppIcon name="edit" :size="15" style="margin-right:5px" />编辑
       </el-button>
-      <!-- 刮削来源选择（2026-09-09 新增）：自动 / 仅 JAVBUS / 仅 JAVDB -->
-      <el-select v-model="scrapeSource" size="small" class="scrape-source" title="刮削来源">
-        <el-option label="来源：自动" value="auto" />
-        <el-option label="仅 JAVBUS" value="javbus" />
-        <el-option label="仅 JAVDB" value="javdb" />
-      </el-select>
-      <el-button type="success" @click="onScrape" :loading="scraping">
-        <AppIcon v-if="!scraping" name="globe" :size="15" style="margin-right:5px" />刮削
-      </el-button>
-      <el-button type="danger" @click="onDel">
+      <el-button class="act-del" @click="onDel">
         <AppIcon name="trash" :size="15" style="margin-right:5px" />删除
       </el-button>
     </div>
@@ -100,10 +94,6 @@
               <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
             </div>
           </el-descriptions-item>
-          <!-- 预览图数量提示 -->
-          <el-descriptions-item v-if="previewCount" label="预览图">
-            {{ previewCount }} 张（点击下方小图查看）
-          </el-descriptions-item>
         </el-descriptions>
       </div>
     </div>
@@ -154,8 +144,6 @@ const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 大图加载失败标志
 const activeIdx = ref(0)       // 当前大图在画廊中的索引（0 = 海报）
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
-// 刮削来源（auto/javbus/javdb），初始值取设置页的 scrape_source
-const scrapeSource = ref('auto')
 
 /**
  * 计算属性：海报图解析为可显示的 URL（无值时为空串）
@@ -189,11 +177,6 @@ const galleryImages = computed(() => {
  * 计算属性：大图区当前展示的图片 URL
  */
 const displayImage = computed(() => galleryImages.value[activeIdx.value] || '')
-
-/**
- * 计算属性：预览图数量（不含海报）
- */
-const previewCount = computed(() => previewList.value.length)
 
 // 画廊变化（加载新影片/刮削后刷新）时，重置索引与图片错误状态
 watch([galleryImages], () => { activeIdx.value = 0; imgErr.value = false })
@@ -263,11 +246,7 @@ const flagsText = computed(() => {
 async function load(id) {
   if (!window.api) return
   const r = await window.api.getMovie(id)
-  if (r.ok) {
-    m.value = r.data
-    // 刮削来源初始值取设置页配置（每次加载详情同步一次）
-    scrapeSource.value = store.settings.scrape_source || 'auto'
-  }
+  if (r.ok) m.value = r.data
   else { ElMessage.error(r.error); router.replace('/library') }
 }
 
@@ -319,15 +298,16 @@ async function onSaveEdit(data) {
 }
 
 /**
- * 在线刮削影片元数据（按顶部来源下拉指定的来源）
- * 刮削选项（预览图下载/统计抓取）由设置页配置，主进程自动读取
+ * 在线刮削影片元数据
+ * 刮削来源取设置页「刮削设置」的来源配置（auto/javbus/javdb）；
+ * 刮削选项（预览图下载/统计抓取）同样由设置页配置，主进程自动读取
  */
 async function onScrape() {
   if (!m.value || !window.api) return
   if (!m.value.ph) return ElMessage.warning('该影片没有番号，无法刮削')
   scraping.value = true
   try {
-    const r = await window.api.scrapeMovie(m.value.ph, scrapeSource.value)
+    const r = await window.api.scrapeMovie(m.value.ph, store.settings.scrape_source || 'auto')
     if (r.ok && r.data) {
       const ur = await window.api.updateMovie(m.value.id, buildScrapeUpdate(r.data))
       if (ur.ok) {
@@ -378,10 +358,28 @@ onMounted(async () => {
 .detail { padding: 4px 4px 40px; }
 /* 顶部操作栏 */
 .back { margin-bottom: 14px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-/* 刮削来源下拉宽度 */
-.scrape-source { width: 140px; }
-/* 已收藏按钮：心形图标用强调色 */
-.back .fav-on .app-icon { color: var(--accent); }
+
+/* 喜欢按钮：收藏态朱柿红描边 + 图标强调 */
+.back .act-fav.fav-on {
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+}
+.back .act-fav.fav-on .app-icon { color: var(--accent); }
+/* 刮削按钮：hover 朱柿红（强调语义），替代原实心绿 */
+.back .act-scrape:hover,
+.back .act-scrape:focus {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+/* 删除按钮：hover 危险红（强调语义），替代原实心红 */
+.back .act-del:hover,
+.back .act-del:focus {
+  background: var(--danger-soft) !important;
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
 
 /* 红：标题区（番号 + 片名，页面顶部） */
 .title-block { margin-bottom: 14px; }
