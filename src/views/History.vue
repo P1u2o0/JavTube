@@ -13,6 +13,7 @@
     <!-- 状态栏：显示总数，提供批量删除与批量收藏操作 -->
     <StatusBar
       :total="store.total"
+      @sortChange="onSortChange"
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
     />
@@ -73,6 +74,13 @@ async function loadHistory() {
     append: false,
     extraFilter: { historyOnly: true }
   })
+}
+
+/**
+ * 排序方式变更（StatusBar 排序下拉）：重新加载观看历史
+ */
+async function onSortChange() {
+  await loadHistory()
 }
 
 /**

@@ -30,9 +30,9 @@
       <div v-if="isFav" class="fav-badge" title="已收藏">
         <AppIcon name="heart-filled" :size="13" />
       </div>
-      <!-- 多选模式下的勾选框 -->
-      <div v-if="selectMode" class="check" @click.stop="$emit('toggle')">
-        <el-checkbox :model-value="isSel" />
+      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心 + 白色对勾） -->
+      <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
+        <AppIcon v-if="isSel" name="check" :size="13" />
       </div>
       <!-- 更多操作按钮（三点菜单） -->
       <button class="more-btn" @click.stop="toggleMenu" aria-label="更多操作">
@@ -211,14 +211,23 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   box-shadow: var(--sh-1);
   pointer-events: none;
 }
-/* 多选模式勾选框 */
+/* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形），选中后朱柿红实心 + 白勾 */
 .check {
   position: absolute; top: 8px; left: 8px;
   background: rgba(255, 255, 255, 0.92);
+  border: 1.5px solid var(--border-strong);
   border-radius: 50%;
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--sh-1);
+  color: transparent;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.check.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 /* 更多操作按钮（三点菜单） */
 .more-btn {

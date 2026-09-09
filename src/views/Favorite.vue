@@ -15,6 +15,7 @@
     <!-- 状态栏：显示总数，提供批量删除与批量收藏操作 -->
     <StatusBar
       :total="store.total"
+      @sortChange="onSortChange"
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
     />
@@ -59,6 +60,14 @@ const { onToggle, onPageChange } = useMovieList(store, {
  * 功能：重置页码为 1，仅加载已收藏的影片
  */
 async function onRefresh() { store.page = 1; await store.loadMovies({ onlyFavorite: true }) }
+
+/**
+ * 排序方式变更（StatusBar 排序下拉）：重新加载收藏列表
+ */
+async function onSortChange() {
+  store.page = 1
+  await store.loadMovies({ onlyFavorite: true })
+}
 
 /**
  * 播放影片并记录播放（B2 修复：与其他页面行为对齐，收藏页播放同样记入观看历史）

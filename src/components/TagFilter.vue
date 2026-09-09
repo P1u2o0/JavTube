@@ -57,15 +57,35 @@ const emit = defineEmits(['change'])
 // 获取 store 实例
 const store = useMoviesStore()
 
-// 所有数据库标签（计算属性，从 store 获取）
+// 所有数据库标签（计算属性，从 store 获取；allDbTags 本身按使用频率降序）
 const allTags = computed(() => store.allDbTags || [])
+
+/**
+ * 按使用次数（出现频率）对标签数组降序排序
+ * allDbTags 即按频率降序的标签名数组，以其索引为序；不在库中的标签排最后
+ * @param {string[]} tags - 原始标签数组
+ * @returns {string[]} 排序后的新数组（不改动 store 内数据）
+ */
+function byUsage(tags) {
+  const order = store.allDbTags || []
+  return [...tags].sort((a, b) => {
+    const ia = order.indexOf(a)
+    const ib = order.indexOf(b)
+    if (ia === -1 && ib === -1) return 0
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
+}
 
 // 当前所有已选中的标签（计算属性，将多分类的二维数组展平为一维）
 const selectedTags = computed(() => store.tagSelected.flat())
 
-// 可显示的分类列表（计算属性）：过滤掉无标签的分类
+// 可显示的分类列表（计算属性）：过滤掉无标签的分类，并按使用次数排序各类内标签
 const displayCategories = computed(() => {
-  return store.visibleCategories.filter(c => c.tags.length > 0)
+  return store.visibleCategories
+    .filter(c => c.tags.length > 0)
+    .map(c => ({ ...c, tags: byUsage(c.tags) }))
 })
 
 // 已分类标签集合（计算属性）：收集所有分类下的标签，用于区分未分类标签
@@ -77,9 +97,9 @@ const categorizedTags = computed(() => {
   return set
 })
 
-// 未分类标签列表（计算属性）：不在任何分类中的标签
+// 未分类标签列表（计算属性）：不在任何分类中的标签，同样按使用次数排序
 const uncategorizedTags = computed(() => {
-  return allTags.value.filter(t => !categorizedTags.value.has(t))
+  return byUsage(allTags.value.filter(t => !categorizedTags.value.has(t)))
 })
 
 // 判断指定分类下的标签是否被选中

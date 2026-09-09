@@ -11,11 +11,19 @@
 -->
 <template>
   <div>
+    <!-- 结果页标题条：从详情页点击导演/片商/系列/类别/演员或搜索跳转时显示来源说明 -->
+    <div class="filter-title" v-if="pageTitle">
+      <span class="ft-text">{{ pageTitle }}</span>
+      <button class="ft-clear" title="查看全部影片" @click="clearFilterTitle">
+        <AppIcon name="close" :size="13" />
+      </button>
+    </div>
     <!-- 标签筛选栏，标签变化时触发刷新 -->
     <TagFilter @change="onRefresh" />
     <!-- 状态栏：显示影片总数，提供批量删除、批量收藏、批量刮削入口 -->
     <StatusBar
       :total="store.total"
+      @sortChange="onSortChange"
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
       @batchScrape="onBatchScrape"
@@ -44,7 +52,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
@@ -54,19 +62,64 @@ import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
 import EditMovieDialog from '@/components/EditMovieDialog.vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 // Pinia store 实例，管理影片数据、筛选、排序等状态
 const store = useMoviesStore()
 // 当前路由信息，用于读取 query 参数
 const route = useRoute()
-// 公共列表交互：批量选中切换 / 翻页 / 详情跳转（自 composable 提供）
-const { onToggle, onPageChange, onDetail } = useMovieList(store)
+// 公共列表交互：批量选中切换 / 翻页 / 详情跳转（翻页时携带路由筛选参数不丢条件）
+const { onToggle, onPageChange, onDetail } = useMovieList(store, {
+  buildLoadArgs: () => ({ append: false, extraFilter: routeExtra() })
+})
+
+/**
+ * 从路由 query 提取翻页需保留的筛选参数（导演/片商/系列）
+ */
+function routeExtra() {
+  const q = route.query
+  const extra = {}
+  if (q.actress) extra.actress = q.actress
+  if (q.director) extra.director = q.director
+  if (q.studio) extra.studio = q.studio
+  if (q.series) extra.series = q.series
+  return extra
+}
+
+/**
+ * 计算属性：结果页标题条文案（按跳转来源生成说明）
+ */
+const pageTitle = computed(() => {
+  const q = route.query
+  if (q.actress) return `${q.actress}参演的影片`
+  if (q.director) return `${q.director}执导的影片`
+  if (q.series) return `${q.series}系列影片`
+  if (q.studio) return `${q.studio}出品的影片`
+  if (q.tag) return `含有「${q.tag}」的影片`
+  if (q.q) return `含有「${q.q}」的影片`
+  return ''
+})
+
+/**
+ * 清除标题条筛选（回到全部影片列表）
+ */
+async function clearFilterTitle() {
+  router.push({ path: '/library' })
+}
 
 /**
  * 刷新影片列表
  * 功能：重置页码为 1，重新加载影片数据
  */
-async function onRefresh() { store.page = 1; await store.loadMovies({ append: false }) }
+async function onRefresh() { store.page = 1; await store.loadMovies({ append: false, extraFilter: routeExtra() }) }
+
+/**
+ * 排序方式变更（StatusBar 排序下拉）：携带路由筛选重新加载
+ */
+async function onSortChange() {
+  store.page = 1
+  await store.loadMovies({ append: false, extraFilter: routeExtra() })
+}
 
 // 编辑对话框控制
 const showEdit = ref(false)    // 对话框显示状态
@@ -204,7 +257,7 @@ async function onBatchScrape() {
 async function applyRouteFilter(q) {
   // 同步搜索词到 store（loadMovies 统一并入 filter.q；翻页不丢失）
   store.searchQ = q.q || ''
-  if (!q.tag && !q.actress && !q.studio && !q.series && !q.q) return false
+  if (!q.tag && !q.actress && !q.director && !q.studio && !q.series && !q.q) return false
   if (q.tag) {
     for (let ci = 0; ci < 9; ci++) {
       if (store.categories[ci]?.tags?.includes(q.tag)) {
@@ -216,6 +269,7 @@ async function applyRouteFilter(q) {
   store.page = 1
   const extra = {}
   if (q.actress) extra.actress = q.actress
+  if (q.director) extra.director = q.director
   if (q.studio) extra.studio = q.studio
   if (q.series) extra.series = q.series
   await store.loadMovies({ append: false, extraFilter: extra })
@@ -255,3 +309,31 @@ watch(() => route.query, async (q) => {
   }
 }, { deep: true })
 </script>
+
+<style scoped>
+/* 结果页标题条：说明当前列表的筛选来源（女优/导演/系列/片商/类别/搜索词） */
+.filter-title {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 7px 8px 7px 18px;
+}
+.ft-text {
+  flex: 1;
+  font-size: 15px; font-weight: 600;
+  color: var(--text);
+  font-family: var(--font-display);
+}
+/* 清除筛选按钮：圆形弱化，hover 危险色 */
+.ft-clear {
+  width: 26px; height: 26px;
+  border: none; border-radius: 50%;
+  background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.ft-clear:hover { background: var(--danger-soft); color: var(--danger); }
+</style>

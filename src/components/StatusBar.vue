@@ -8,6 +8,13 @@
 <template>
   <!-- 状态栏主体 -->
   <div class="statusbar">
+    <!-- 排序方式选择（2026-09-09 新增）：添加日期/发行日期/评分/观看次数，均为降序 -->
+    <el-select v-model="sortKey" class="sort-select" @change="onSortChange">
+      <el-option label="按添加日期排序" value="tjrq" />
+      <el-option label="按发行日期排序" value="fxrq" />
+      <el-option label="按评分排序" value="score" />
+      <el-option label="按观看次数排序" value="play_count" />
+    </el-select>
     <!-- 左侧：显示搜索结果总数 -->
     <div class="left">共找到 <b>{{ total }}</b> 个结果</div>
     <!-- 批量操作区域：仅在多选模式下显示 -->
@@ -48,6 +55,8 @@
 import { useMoviesStore } from '@/store/movies'
 // 引入统一图标组件
 import AppIcon from '@/components/AppIcon.vue'
+// 引入 Vue 响应式 API
+import { ref } from 'vue'
 
 // 组件 props 定义
 // - total: 影片搜索结果总数
@@ -58,10 +67,22 @@ const props = defineProps({ total: Number })
 // - batchDelete: 批量删除按钮点击时触发
 // - batchFav: 批量收藏/取消收藏时触发，参数为 true(收藏) 或 false(取消)
 // - batchScrape: 批量刮削按钮点击时触发
-const emit = defineEmits(['toggle', 'batchDelete', 'batchFav', 'batchScrape'])
+// - sortChange: 排序方式变更时触发（父页面按各自筛选场景重新加载列表）
+const emit = defineEmits(['toggle', 'batchDelete', 'batchFav', 'batchScrape', 'sortChange'])
 
 // 获取 store 实例
 const store = useMoviesStore()
+
+// 当前排序字段（下拉绑定值；随机模式等非标准排序显示为添加日期）
+const sortKey = ref(['fxrq', 'score', 'play_count'].includes(store.sort.by) ? store.sort.by : 'tjrq')
+
+/**
+ * 排序方式变更：更新 store 排序状态（统一降序、退出随机模式）并通知父页面刷新
+ */
+function onSortChange(v) {
+  store.sort = { by: v, order: 'DESC', random: false }
+  emit('sortChange', v)
+}
 
 // 多选模式开关变化处理函数
 // 参数 v: 新的开关状态（true=开启多选，false=关闭多选）
@@ -98,6 +119,8 @@ function invert() {
 </script>
 
 <style scoped>
+/* 排序方式下拉 */
+.sort-select { width: 150px; margin-right: 14px; flex-shrink: 0; }
 /* 状态栏主体：统一面板样式 */
 .statusbar {
   display: flex; align-items: center;
