@@ -43,58 +43,64 @@
       <div class="title">{{ m.pm || '无标题' }}</div>
     </div>
 
-    <!-- 主行：绿=大图展示区（左） + 蓝=影片信息区（右） -->
+    <!-- 主行：绿=大图展示区（左，固定尺寸） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：大图展示区（默认海报，点击底部小图切换） -->
+      <!-- 绿：大图展示区：固定 3:4 框，任何比例的图片在框内等比缩放居中，格局不随图片尺寸变化 -->
       <div class="main-image">
         <img v-if="displayImage && !imgErr" :src="displayImage" @error="imgErr = true" />
         <div v-if="!displayImage || imgErr" class="no-cover">暂无封面</div>
       </div>
-      <!-- 蓝：影片信息区 -->
-      <div class="info">
-        <el-descriptions :column="1" size="small" border style="margin-top:0" class="desc">
-          <!-- 评分 / 想看 / 看过（有任一数据时展示，2026-09-09 新增） -->
-          <el-descriptions-item v-if="hasStats" label="统计">
-            <div class="stats-row">
-              <span v-if="m.score" class="stat-score">{{ Number(m.score).toFixed(1) }} 分</span>
-              <span v-if="m.want">想看 {{ Number(m.want).toLocaleString() }}</span>
-              <span v-if="m.watched">看过 {{ Number(m.watched).toLocaleString() }}</span>
-            </div>
-          </el-descriptions-item>
-          <!-- 女优列表（可点击筛选） -->
-          <el-descriptions-item label="女优" :span="span2(m.yid || '')">
-            <div class="tag-list" v-if="actressList.length">
-              <TagChip v-for="a in actressList" :key="a" :label="a" @click="filterByActress(a)" />
-            </div>
-            <span v-else>—</span>
-          </el-descriptions-item>
-          <!-- 发行日期 -->
-          <el-descriptions-item v-if="m.fxrq" label="发行日期">{{ m.fxrq }}</el-descriptions-item>
-          <!-- 类型标记（中字、流出等） -->
-          <el-descriptions-item v-if="flagsText !== '—'" label="类型">{{ flagsText }}</el-descriptions-item>
-          <!-- 导演 -->
-          <el-descriptions-item v-if="m.dy" label="导演">{{ m.dy }}</el-descriptions-item>
-          <!-- 厂商列表（可点击筛选） -->
-          <el-descriptions-item label="厂商">
-            <div class="tag-list" v-if="studioList.length">
-              <TagChip v-for="s in studioList" :key="s" :label="s" @click="filterByStudio(s)" />
-            </div>
-            <span v-else>—</span>
-          </el-descriptions-item>
-          <!-- 系列（可点击筛选） -->
-          <el-descriptions-item label="系列">
-            <div class="tag-list" v-if="m.xl">
-              <TagChip :label="m.xl" @click="filterBySeries(m.xl)" />
-            </div>
-            <span v-else>—</span>
-          </el-descriptions-item>
-          <!-- 标签列表（可点击筛选） -->
-          <el-descriptions-item v-if="tags.length" label="标签">
-            <div class="tag-list">
-              <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
-            </div>
-          </el-descriptions-item>
-        </el-descriptions>
+      <!-- 蓝：影片信息卡 -->
+      <div class="info-card">
+        <!-- 统计条：评分 / 想看 / 看过（有任一数据时展示） -->
+        <div class="stats-bar" v-if="hasStats">
+          <span v-if="m.score" class="stat-score">{{ Number(m.score).toFixed(1) }}<small>分</small></span>
+          <span v-if="m.want" class="stat-item"><AppIcon name="heart" :size="14" />想看 {{ fmt(m.want) }}</span>
+          <span v-if="m.watched" class="stat-item"><AppIcon name="history" :size="14" />看过 {{ fmt(m.watched) }}</span>
+        </div>
+        <!-- 女优（可点击筛选） -->
+        <div class="info-line" v-if="actressList.length">
+          <span class="info-label">女优</span>
+          <div class="info-value tag-list">
+            <TagChip v-for="a in actressList" :key="a" :label="a" @click="filterByActress(a)" />
+          </div>
+        </div>
+        <!-- 发行日期 -->
+        <div class="info-line" v-if="m.fxrq">
+          <span class="info-label">发行日期</span>
+          <div class="info-value">{{ m.fxrq }}</div>
+        </div>
+        <!-- 类型标记（中字、流出等） -->
+        <div class="info-line" v-if="flagsText !== '—'">
+          <span class="info-label">类型</span>
+          <div class="info-value">{{ flagsText }}</div>
+        </div>
+        <!-- 导演 -->
+        <div class="info-line" v-if="m.dy">
+          <span class="info-label">导演</span>
+          <div class="info-value">{{ m.dy }}</div>
+        </div>
+        <!-- 厂商（可点击筛选） -->
+        <div class="info-line" v-if="studioList.length">
+          <span class="info-label">厂商</span>
+          <div class="info-value tag-list">
+            <TagChip v-for="s in studioList" :key="s" :label="s" @click="filterByStudio(s)" />
+          </div>
+        </div>
+        <!-- 系列（可点击筛选） -->
+        <div class="info-line" v-if="m.xl">
+          <span class="info-label">系列</span>
+          <div class="info-value">
+            <TagChip :label="m.xl" @click="filterBySeries(m.xl)" />
+          </div>
+        </div>
+        <!-- 标签（可点击筛选） -->
+        <div class="info-line" v-if="tags.length">
+          <span class="info-label">标签</span>
+          <div class="info-value tag-list">
+            <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -226,9 +232,9 @@ const studioList = computed(() => {
 const hasStats = computed(() => !!(m.value && (m.value.score || m.value.want || m.value.watched)))
 
 /**
- * 根据值长度返回 span 值（长文本占 2 列，否则 1 列）
+ * 数字格式化（千分位，用于想看/看过人数）
  */
-function span2(val) { return val && String(val).length > 15 ? 2 : 1 }
+function fmt(n) { return Number(n || 0).toLocaleString() }
 
 /**
  * 计算属性：类型标记文本（中字/流出/破解等）
@@ -395,40 +401,76 @@ onMounted(async () => {
 /* 标题样式 */
 .title { font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.5; }
 
-/* 主行：大图区（左）+ 信息区（右） */
+/* 主行：大图区（左，固定尺寸）+ 信息卡（右） */
 .main-row { display: flex; gap: 20px; align-items: flex-start; }
-/* 绿：大图展示区：内容自适应宽度，暖灰渐变兜底 */
+/* 绿：大图展示区：固定 3:4 框——图片更换时框体尺寸不变，格局稳定 */
 .main-image {
-  width: fit-content;
-  max-width: 52%;
+  width: 400px;
+  aspect-ratio: 3 / 4;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
   overflow: hidden;
   border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
 }
-/* 大图：等比自适应，限制高度避免竖版海报过长 */
-.main-image img { display: block; max-width: 100%; max-height: 620px; width: auto; height: auto; }
+/* 图片在固定框内等比缩放居中（竖版海报/横版预览图都不改变框体） */
+.main-image img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 /* 无图占位块 */
 .no-cover {
   width: 300px; aspect-ratio: 3/2;
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); font-size: 14px;
 }
-/* 蓝：信息区占据剩余空间 */
-.info { flex: 1; min-width: 0; }
 
-/* 统计行（评分/想看/看过） */
-.stats-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+/* 蓝：影片信息卡（与整体卡片风格一致的轻量行式布局） */
+.info-card {
+  flex: 1; min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 20px;
+}
+/* 统计条：评分大字 + 想看/看过，底部与信息行分隔 */
+.stats-bar {
+  display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
+  padding-bottom: 12px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
 .stat-score {
   color: var(--accent);
   font-family: var(--font-display);
-  font-weight: 700; font-size: 15px;
+  font-weight: 700; font-size: 24px;
   font-variant-numeric: tabular-nums;
 }
-.stats-row span { color: var(--text-2); }
-
-/* 黄：预览小图条（统一面板样式，与整体卡片风格一致） */
+.stat-score small { font-size: 12px; font-weight: 500; margin-left: 3px; color: var(--muted); }
+.stat-item {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--text-2); font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-item .app-icon { color: var(--muted); }
+/* 信息行：固定宽标签 + 内容，行间细虚线分隔 */
+.info-line {
+  display: flex; gap: 14px;
+  padding: 8px 0;
+  align-items: flex-start;
+}
+.info-line + .info-line { border-top: 1px dashed var(--border); }
+.info-label {
+  width: 60px; flex-shrink: 0;
+  color: var(--muted); font-size: 12.5px;
+  line-height: 26px;
+}
+.info-value {
+  flex: 1; min-width: 0;
+  color: var(--text); font-size: 13.5px;
+  line-height: 1.7;
+  padding-top: 3px;
+  word-break: break-all;
+}
+/* 标签列表：自动换行排列 */
+.tag-list { white-space: normal; display: flex; flex-wrap: wrap; }
 .preview-strip {
   margin-top: 16px;
   display: flex; align-items: center; gap: 8px;
@@ -476,11 +518,6 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* 描述列表表格布局 */
-.desc :deep(table) { table-layout: auto; width: 100%; }
-.desc :deep(.el-descriptions__cell) { width: auto; white-space: nowrap; padding: 4px 6px; }
-.desc :deep(.el-descriptions__label-cell) { width: 1%; white-space: nowrap; color: var(--muted); font-size: 12px; }
-.desc :deep(.el-descriptions__content-cell) { word-break: break-all; }
-/* 标签列表：自动换行排列 */
+/* 标签列表：自动换行排列（TagChip 自带外边距） */
 .tag-list { white-space: normal; display: flex; flex-wrap: wrap; }
 </style>
