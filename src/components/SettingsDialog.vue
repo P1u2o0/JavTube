@@ -411,12 +411,20 @@ async function clearDb() {
 </script>
 
 <style scoped>
-/* 对话框内容区：限高滚动，内容多的标签页不出屏幕 */
+/* 对话框内容区：固定高度（不随标签页内容多少变化），长内容内部滚动。
+   滚动条恒定存在 → 内容宽度恒定，label 中心线在切换标签页时保持稳定 */
 :deep(.el-dialog__body) {
-  padding-top: 4px;
-  max-height: 72vh;
+  height: 64vh;
   overflow-y: auto;
+  padding-top: 4px;
 }
+/* 细滚动条，避免粗滚动条挤占宽度造成内容晃动 */
+:deep(.el-dialog__body)::-webkit-scrollbar { width: 8px; }
+:deep(.el-dialog__body)::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+:deep(.el-dialog__body)::-webkit-scrollbar-track { background: transparent; }
 
 /* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排（不再用 append 拼接） */
 .player-row { display: flex; gap: 10px; width: 100%; }
