@@ -14,13 +14,13 @@
   ============================================================
 -->
 <template>
-  <!-- 设置对话框：v-model 控制显隐，每次打开重新加载设置 -->
-  <el-dialog v-model="show" title="设置" width="780px" top="6vh" destroy-on-close>
+  <!-- 设置对话框：v-model 控制显隐，align-center 垂直水平居中，每次打开重新加载设置 -->
+  <el-dialog v-model="show" title="设置" width="780px" align-center destroy-on-close>
     <!-- 标签页容器 -->
     <el-tabs v-model="tab">
       <!-- ============ 基础设置 ============ -->
       <el-tab-pane label="基础设置" name="basic">
-        <el-form label-width="160px" style="max-width: 760px;">
+        <el-form label-width="130px">
           <!-- 播放器路径设置（输入框与选择按钮并排，均为独立胶囊样式） -->
           <el-form-item label="播放器路径">
             <div class="player-row">
@@ -57,7 +57,7 @@
 
       <!-- ============ 标签设置 ============ -->
       <el-tab-pane label="标签设置" name="cats">
-        <!-- 内容区缩进与表单控件列对齐（label-width 160px） -->
+        <!-- 内容区缩进与表单控件列对齐（label-width 130px） -->
         <div class="sec-wrap">
           <!-- 标签类别 -->
           <div class="sec-head">
@@ -106,7 +106,7 @@
 
       <!-- ============ 刮削设置 ============ -->
       <el-tab-pane label="刮削设置" name="scrape">
-        <el-form label-width="160px" style="max-width: 760px;">
+        <el-form label-width="130px">
           <!-- 刮削来源 -->
           <el-form-item label="刮削来源">
             <el-select v-model="st.scrape_source" style="max-width: 320px;">
@@ -150,7 +150,7 @@
 
       <!-- ============ 辅助设置（数据库管理） ============ -->
       <el-tab-pane label="辅助设置" name="aux">
-        <el-card shadow="never" style="max-width: 760px; margin-bottom: 16px;">
+        <el-card shadow="never" style="margin-bottom: 16px;">
           <template #header>
             <span style="display:inline-flex; align-items:center; gap:6px;">
               <AppIcon name="database" :size="16" />数据库
@@ -423,7 +423,7 @@ async function clearDb() {
 .player-input { flex: 1; }
 
 /* 标签设置内容区：缩进 160px 与其他标签页的表单控件列对齐 */
-.sec-wrap { max-width: 760px; padding-left: 160px; }
+.sec-wrap { padding-left: 130px; }
 
 /* 分组小标题行：标题 + 加号按钮 */
 .sec-head {
