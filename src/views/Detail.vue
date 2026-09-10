@@ -26,12 +26,10 @@
 
     <!-- 主行：绿=大图展示区（左，固定尺寸） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：大图展示区：固定尺寸（413×620，即改版前海报区域的显示大小），
-           切换预览图时框不变。横图缩放填满（cover）、竖图完整显示（contain）。
-           鼠标悬停时海报变暗 + 中央播放按钮（样式/过渡与片库卡片一致），点击播放 -->
+      <!-- 绿：大图展示区：自适应尺寸——框贴合图片（海报/预览图原始比例显示，
+           高度上限 620px），无空白。悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
       <div class="main-image">
-        <img v-if="displayImage && !imgErr" :src="displayImage" :class="mainImgCover ? 'img-cover' : 'img-contain'"
-             @load="onImgLoad" @error="imgErr = true" />
+        <img v-if="displayImage && !imgErr" :src="displayImage" @error="imgErr = true" />
         <div v-if="!displayImage || imgErr" class="no-cover">暂无封面</div>
         <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
@@ -183,18 +181,6 @@ const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 大图加载失败标志
 const activeIdx = ref(0)       // 当前大图在画廊中的索引（0 = 海报）
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
-// 当前大图是否为横图（横图 cover 填满固定框，竖图 contain 完整显示）
-const mainImgCover = ref(false)
-
-/**
- * 大图加载完成回调：按图片真实比例判断填充模式。
- * 横图（宽 > 高）→ cover 等比放大填满固定框（无上下空白，左右轻微裁切）；
- * 竖图/方图 → contain 完整显示（高度撑满与海报对齐，宽度按比例居中）。
- */
-function onImgLoad(e) {
-  const img = e.target
-  mainImgCover.value = img.naturalWidth > img.naturalHeight
-}
 
 /**
  * 计算属性：海报图解析为可显示的 URL（无值时为空串）
@@ -499,11 +485,11 @@ onMounted(async () => {
 
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
-/* 绿：大图展示区：固定尺寸 437×620——即此前自适应版本下典型海报
-   （800×1136 比例、高 620 上限）的实际显示大小，切换预览图时框保持不变 */
+/* 绿：大图展示区：自适应尺寸——容器贴合图片，图片按原始比例显示
+   （高度上限 620px、宽度上限 52% 区域），无上下空白 */
 .main-image {
-  width: 437px;
-  height: 620px;
+  width: fit-content;
+  max-width: 52%;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
@@ -511,6 +497,12 @@ onMounted(async () => {
   border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
   position: relative;
+}
+.main-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 620px;
+  width: auto; height: auto;
 }
 /* 横图：等比放大填满整个框（无上下空白，超出部分裁切） */
 .main-image img.img-cover { width: 100%; height: 100%; object-fit: cover; }
