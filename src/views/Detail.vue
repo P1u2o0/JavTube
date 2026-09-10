@@ -215,8 +215,8 @@ function computeBox() {
   if (!posterNatural.value) return
   const { w, h } = posterNatural.value
   const scale = Math.min(
-    (window.innerHeight * 0.78) / h,
-    (window.innerWidth * 0.58) / w
+    (window.innerHeight * 0.76) / h,
+    (window.innerWidth * 0.56) / w
   )
   boxW.value = Math.round(w * scale)
   boxH.value = Math.round(h * scale)
@@ -584,7 +584,7 @@ onMounted(async () => {
 /* 主行：海报区（左，尺寸按海报比例放大）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
 /* 绿：海报展示区：框体尺寸由 JS 按海报原始比例计算（:style 绑定 boxW/boxH），
-   放大到窗口的 78vh / 58vw——小分辨率海报同样放大显示，
+   放大到窗口的 76vh / 56vw——小分辨率海报同样放大显示，
    窗口 resize 时重算。海报 contain 贴合框体，无空白 */
 .main-image {
   flex-shrink: 0;
