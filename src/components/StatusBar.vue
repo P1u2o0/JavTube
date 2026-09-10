@@ -8,13 +8,21 @@
 <template>
   <!-- 状态栏主体 -->
   <div class="statusbar">
-    <!-- 排序方式选择（2026-09-09 新增）：添加日期/发行日期/评分/观看次数，均为降序 -->
-    <el-select v-model="sortKey" class="sort-select" @change="onSortChange">
-      <el-option label="按添加日期排序" value="tjrq" />
-      <el-option label="按发行日期排序" value="fxrq" />
-      <el-option label="按评分排序" value="score" />
-      <el-option label="按观看次数排序" value="play_count" />
-    </el-select>
+    <!-- 排序选择（2026-09-10 优化）：点击当前排序项可切换正序/倒序；含随机排序 -->
+    <el-dropdown trigger="click" @command="onSortCommand">
+      <el-button class="sort-btn">
+        <AppIcon name="sw" :size="14" style="margin-right:5px" />{{ sortLabel }}<span v-if="sortArrow" style="margin-left:4px">{{ sortArrow }}</span>
+      </el-button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="tjrq" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'tjrq' }">添加日期</el-dropdown-item>
+          <el-dropdown-item command="fxrq" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'fxrq' }">发行日期</el-dropdown-item>
+          <el-dropdown-item command="score" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'score' }">评分</el-dropdown-item>
+          <el-dropdown-item command="play_count" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'play_count' }">观看次数</el-dropdown-item>
+          <el-dropdown-item command="random" divided :class="{ 'sort-active': store.sort.random }">随机排序</el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
     <!-- 左侧：显示搜索结果总数 -->
     <div class="left">共找到 <b>{{ total }}</b> 个结果</div>
     <!-- 批量操作区域：仅在多选模式下显示 -->
@@ -56,7 +64,7 @@ import { useMoviesStore } from '@/store/movies'
 // 引入统一图标组件
 import AppIcon from '@/components/AppIcon.vue'
 // 引入 Vue 响应式 API
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 // 组件 props 定义
 // - total: 影片搜索结果总数
@@ -73,15 +81,30 @@ const emit = defineEmits(['toggle', 'batchDelete', 'batchFav', 'batchScrape', 's
 // 获取 store 实例
 const store = useMoviesStore()
 
-// 当前排序字段（下拉绑定值；随机模式等非标准排序显示为添加日期）
-const sortKey = ref(['fxrq', 'score', 'play_count'].includes(store.sort.by) ? store.sort.by : 'tjrq')
+// 排序按钮显示文案：随机模式显示「随机排序」，否则显示当前字段名
+const sortLabel = computed(() => {
+  if (store.sort.random) return '随机排序'
+  return { tjrq: '添加日期', fxrq: '发行日期', score: '评分', play_count: '观看次数' }[store.sort.by] || '添加日期'
+})
+// 方向箭头（随机模式无方向）
+const sortArrow = computed(() => (store.sort.random ? '' : (store.sort.order === 'ASC' ? '↑' : '↓')))
 
 /**
- * 排序方式变更：更新 store 排序状态（统一降序、退出随机模式）并通知父页面刷新
+ * 排序命令处理（el-dropdown）：
+ * - 点击当前字段：切换正序/倒序
+ * - 点击其他字段：默认降序
+ * - 随机：进入随机模式
+ * 变更后通知父页面按各自筛选场景重新加载列表
  */
-function onSortChange(v) {
-  store.sort = { by: v, order: 'DESC', random: false }
-  emit('sortChange', v)
+function onSortCommand(cmd) {
+  if (cmd === 'random') {
+    store.sort = { by: store.sort.by, order: store.sort.order, random: true }
+  } else if (store.sort.by === cmd && !store.sort.random) {
+    store.sort = { by: cmd, order: store.sort.order === 'DESC' ? 'ASC' : 'DESC', random: false }
+  } else {
+    store.sort = { by: cmd, order: 'DESC', random: false }
+  }
+  emit('sortChange', cmd)
 }
 
 // 多选模式开关变化处理函数
@@ -119,8 +142,10 @@ function invert() {
 </script>
 
 <style scoped>
-/* 排序方式下拉 */
-.sort-select { width: 150px; margin-right: 14px; flex-shrink: 0; }
+/* 排序下拉触发按钮 */
+.sort-btn { margin-right: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+/* 下拉菜单当前排序项高亮 */
+.sort-active { color: var(--accent); font-weight: 600; }
 /* 状态栏主体：统一面板样式 */
 .statusbar {
   display: flex; align-items: center;
