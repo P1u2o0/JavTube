@@ -11,7 +11,11 @@
     <!-- 排序选择（2026-09-10 优化）：点击当前排序项可切换正序/倒序；含随机排序 -->
     <el-dropdown trigger="click" @command="onSortCommand">
       <el-button class="sort-btn">
-        <AppIcon name="sw" :size="14" style="margin-right:5px" />{{ sortLabel }}<span v-if="sortArrow" style="margin-left:4px">{{ sortArrow }}</span>
+        <AppIcon v-if="store.sort.random" name="shuffle" :size="14" style="margin-right:5px" />
+        <span>{{ sortLabel }}</span>
+        <span v-if="sortArrow" class="sort-dir" :class="store.sort.order === 'ASC' ? 'asc' : 'desc'">
+          <AppIcon name="back" :size="12" />
+        </span>
       </el-button>
       <template #dropdown>
         <el-dropdown-menu>
@@ -142,7 +146,10 @@ function invert() {
 </script>
 
 <style scoped>
-/* 排序下拉触发按钮 */
+.sort-dir { display: inline-flex; margin-left: 5px; }
+.sort-dir :deep(svg) { transition: transform 0.15s ease; }
+.sort-dir.desc :deep(svg) { transform: rotate(-90deg); }  /* 左箭头 → 下 */
+.sort-dir.asc :deep(svg) { transform: rotate(90deg); }   /* 左箭头 → 上 */
 .sort-btn { margin-right: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 /* 下拉菜单当前排序项高亮 */
 .sort-active { color: var(--accent); font-weight: 600; }
