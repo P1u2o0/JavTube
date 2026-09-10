@@ -30,9 +30,12 @@
       <div v-if="isFav" class="fav-badge" title="已收藏">
         <AppIcon name="heart-filled" :size="13" />
       </div>
-      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心 + 白色对勾） -->
+      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
-        <AppIcon v-if="isSel" name="check" :size="13" />
+        <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+          <path d="M5 12.5 10 17.5 19 7" fill="none" stroke="#fff" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
       </div>
       <!-- 更多操作按钮（三点菜单） -->
       <button class="more-btn" @click.stop="toggleMenu" aria-label="更多操作">
@@ -211,23 +214,22 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   box-shadow: var(--sh-1);
   pointer-events: none;
 }
-/* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形），选中后朱柿红实心 + 白勾 */
+/* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
+   选中底色写死朱柿红 #d2401e（与 --accent 同值），不依赖 CSS 变量解析 */
 .check {
   position: absolute; top: 8px; left: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1.5px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1.5px solid #d8d4cb;
   border-radius: 50%;
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--sh-1);
-  color: transparent;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, color var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
 .check.checked {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: #d2401e;
+  border-color: #d2401e;
 }
 /* 更多操作按钮（三点菜单） */
 .more-btn {
