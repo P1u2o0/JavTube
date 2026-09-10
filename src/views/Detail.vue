@@ -24,13 +24,13 @@
       <span class="title-text">{{ m.pm || '无标题' }}</span>
     </div>
 
-    <!-- 主行：绿=大图展示区（左，固定尺寸） + 蓝=影片信息卡（右） -->
+    <!-- 主行：绿=海报展示区（左） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：大图展示区：自适应尺寸——框贴合图片（海报/预览图原始比例显示，
-           高度上限 620px），无空白。悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
+      <!-- 绿：海报展示区：只显示海报（自适应尺寸，高度上限 78vh）。
+           悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
       <div class="main-image">
-        <img v-if="displayImage && !imgErr" :src="displayImage" @error="imgErr = true" />
-        <div v-if="!displayImage || imgErr" class="no-cover">暂无封面</div>
+        <img v-if="cover && !imgErr" :src="cover" @error="imgErr = true" />
+        <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
         <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
             <AppIcon name="play" :size="22" />
@@ -135,22 +135,37 @@
       </div>
     </div>
 
-    <!-- 黄：预览小图条（第一张固定为海报；左右箭头切换；点击小图在大图区展示） -->
+    <!-- 黄：预览小图条（第一张固定为海报；点击小图在灯箱中查看，灯箱内左右切换/滚轮缩放） -->
     <div class="preview-strip" v-if="galleryImages.length > 1">
-      <button class="strip-arrow" @click="stepImage(-1)" aria-label="上一张">
-        <AppIcon name="back" :size="15" />
-      </button>
       <div class="strip-track" ref="stripRef">
-        <div v-for="(g, i) in galleryImages" :key="i" class="strip-item"
-             :class="{ active: i === activeIdx }" @click="activeIdx = i">
+        <div v-for="(g, i) in galleryImages" :key="i" class="strip-item" @click="openLightbox(i)">
           <img :src="g" loading="lazy" />
           <span v-if="i === 0" class="strip-badge">海报</span>
         </div>
       </div>
-      <button class="strip-arrow" @click="stepImage(1)" aria-label="下一张">
-        <AppIcon name="back" :size="15" class="flip-x" />
-      </button>
     </div>
+
+    <!-- ====== 灯箱查看器：点击预览图后全屏弹出（背景渐暗）， ====== -->
+    <!-- ====== 滚轮缩放、左右按钮/方向键切换、Esc 或点击空白关闭 ====== -->
+    <transition name="lb-fade">
+      <div v-if="lightboxShow" class="lightbox" @click.self="closeLightbox" @wheel.prevent="onWheel">
+        <!-- 关闭按钮（右上角） -->
+        <button class="lb-close" aria-label="关闭" @click="closeLightbox">
+          <AppIcon name="close" :size="20" />
+        </button>
+        <!-- 左右切换按钮 -->
+        <button class="lb-arrow lb-prev" aria-label="上一张" @click.stop="stepLightbox(-1)">
+          <AppIcon name="back" :size="22" />
+        </button>
+        <!-- 当前图片 -->
+        <img class="lb-img" :src="galleryImages[lightboxIdx]" :style="{ transform: `scale(${zoom})` }" @click.stop />
+        <button class="lb-arrow lb-next" aria-label="下一张" @click.stop="stepLightbox(1)">
+          <AppIcon name="back" :size="22" class="flip-x" />
+        </button>
+        <!-- 页码指示 -->
+        <div class="lb-count">{{ lightboxIdx + 1 }} / {{ galleryImages.length }}</div>
+      </div>
+    </transition>
 
     <!-- 编辑对话框 - 复用 ManualForm 手动录入表单 -->
     <el-dialog v-model="editShow" title="编辑影片" width="820px" destroy-on-close>
@@ -160,7 +175,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
@@ -178,9 +193,12 @@ const store = useMoviesStore()
 const m = ref(null)            // 当前影片数据对象
 const editShow = ref(false)    // 编辑对话框显示状态
 const scraping = ref(false)    // 刮削进行中标志
-const imgErr = ref(false)      // 大图加载失败标志
-const activeIdx = ref(0)       // 当前大图在画廊中的索引（0 = 海报）
+const imgErr = ref(false)      // 海报加载失败标志
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
+// 灯箱查看器状态
+const lightboxShow = ref(false)  // 灯箱显隐
+const lightboxIdx = ref(0)       // 灯箱当前图片索引（galleryImages 内）
+const zoom = ref(1)              // 灯箱图片缩放倍数（滚轮调节）
 
 /**
  * 计算属性：海报图解析为可显示的 URL（无值时为空串）
@@ -210,28 +228,60 @@ const galleryImages = computed(() => {
   return list
 })
 
-/**
- * 计算属性：大图区当前展示的图片 URL
- */
-const displayImage = computed(() => galleryImages.value[activeIdx.value] || '')
-
-// 画廊变化（加载新影片/刮削后刷新）时，重置索引与图片错误状态
-watch([galleryImages], () => { activeIdx.value = 0; imgErr.value = false })
+// 画廊变化（加载新影片/刮削后刷新）时，重置海报加载错误状态并关闭灯箱
+watch([galleryImages], () => { imgErr.value = false; lightboxShow.value = false })
 
 /**
- * 预览小图条左右箭头：切换大图并滚动到对应小图（循环）
- * @param {number} dir - 1 下一张 / -1 上一张
+ * 灯箱：打开（从预览小图点击进入），索引指向所点小图，缩放复位
  */
-function stepImage(dir) {
+function openLightbox(i) {
+  lightboxIdx.value = i
+  zoom.value = 1
+  lightboxShow.value = true
+}
+
+/**
+ * 灯箱：关闭
+ */
+function closeLightbox() {
+  lightboxShow.value = false
+}
+
+/**
+ * 灯箱：左右切换图片（循环），切换后缩放复位
+ */
+function stepLightbox(dir) {
   const n = galleryImages.value.length
   if (!n) return
-  activeIdx.value = (activeIdx.value + dir + n) % n
-  nextTick(() => {
-    const track = stripRef.value
-    const el = track?.children?.[activeIdx.value]
-    el?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
-  })
+  lightboxIdx.value = (lightboxIdx.value + dir + n) % n
+  zoom.value = 1
 }
+
+/**
+ * 灯箱：鼠标滚轮缩放（上滚放大 / 下滚缩小，0.5 ~ 5 倍）
+ */
+function onWheel(e) {
+  const delta = e.deltaY > 0 ? -0.15 : 0.15
+  zoom.value = Math.min(5, Math.max(0.5, zoom.value + delta))
+}
+
+/**
+ * 灯箱打开时的键盘操作：Esc 关闭、←/→ 切换
+ */
+function onKey(e) {
+  if (e.key === 'Escape') closeLightbox()
+  else if (e.key === 'ArrowLeft') stepLightbox(-1)
+  else if (e.key === 'ArrowRight') stepLightbox(1)
+}
+
+// 灯箱显隐时挂载/卸载键盘监听
+watch(lightboxShow, (v) => {
+  if (v) window.addEventListener('keydown', onKey)
+  else window.removeEventListener('keydown', onKey)
+})
+
+// 组件卸载时清理键盘监听，避免泄漏
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 /**
  * 计算属性：是否已收藏（cl 字段为 'y'）
@@ -621,21 +671,64 @@ onMounted(async () => {
   border-radius: var(--r-md);
   padding: 10px 12px;
 }
-/* 左右箭头按钮：圆形中性描边 */
-.strip-arrow {
-  width: 32px; height: 32px;
-  flex-shrink: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--text-2);
+/* 右箭头：左箭头图标翻转 180°（灯箱切换按钮复用） */
+.flip-x { transform: rotate(180deg); }
+
+/* ====== 灯箱查看器 ====== */
+/* 全屏遮罩：点击空白处关闭；淡入淡出过渡（背景慢慢变暗/变亮） */
+.lightbox {
+  position: fixed; inset: 0;
+  z-index: 3000;
+  background: rgba(15, 14, 13, 0.88);
+  display: flex; align-items: center; justify-content: center;
+}
+.lb-fade-enter-active, .lb-fade-leave-active { transition: opacity 0.3s ease; }
+.lb-fade-enter-from, .lb-fade-leave-to { opacity: 0; }
+/* 当前图片：初始 contain 于视口内（约 82% 宽 / 84% 高），滚轮缩放经 transform 生效 */
+.lb-img {
+  max-width: 82vw; max-height: 84vh;
+  width: auto; height: auto;
+  border-radius: var(--r-sm);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease;
+  cursor: grab;
+}
+/* 关闭按钮：右上角半透明圆钮 */
+.lb-close {
+  position: absolute; top: 20px; right: 24px;
+  width: 40px; height: 40px;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease;
 }
-.strip-arrow:hover { background: var(--surface-2); color: var(--text); }
-/* 右箭头：左箭头图标翻转 180° */
-.flip-x { transform: rotate(180deg); }
+.lb-close:hover { background: rgba(255, 255, 255, 0.26); }
+/* 左右切换按钮：两侧居中半透明圆钮，hover 放大 */
+.lb-arrow {
+  position: absolute; top: 50%;
+  transform: translateY(-50%);
+  width: 48px; height: 48px;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, transform var(--dur-fast) ease;
+}
+.lb-arrow:hover { background: rgba(255, 255, 255, 0.26); transform: translateY(-50%) scale(1.08); }
+.lb-prev { left: 24px; }
+.lb-next { right: 24px; }
+/* 页码指示：底部居中 */
+.lb-count {
+  position: absolute; bottom: 22px; left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
 /* 小图横向轨道 */
 .strip-track { display: flex; gap: 8px; overflow-x: auto; flex: 1; scroll-behavior: smooth; padding: 2px; }
 /* 单个小图：3:2 缩略，选中时朱柿红描边 */
