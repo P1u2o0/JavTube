@@ -152,7 +152,9 @@ function registerMovieIpc(ipcMain, db) {
         // 白名单列名排序，防止 SQL 注入（白名单定义于 constants.js）
         const col = SORTABLE_COLUMNS.includes(sort.by) ? sort.by : 'tjrq'
         const dir = String(sort.order || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
-        orderSql = `ORDER BY ${col} ${dir}`
+        // 次级唯一键 id DESC：排序值相同（如同批添加的影片 tjrq 一致）时
+        // 保证跨查询顺序稳定，否则 LIMIT/OFFSET 分页会出现影片在页间跳动
+        orderSql = `ORDER BY ${col} ${dir}, id DESC`
       }
       // 分页参数计算
       const ps = Math.max(1, Number(pageSize) || 20)  // 每页条数
