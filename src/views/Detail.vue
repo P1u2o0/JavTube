@@ -26,10 +26,12 @@
 
     <!-- 主行：绿=大图展示区（左，固定尺寸） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：大图展示区：固定 3:4 框，任何比例的图片在框内等比缩放居中，格局不随图片尺寸变化。
+      <!-- 绿：大图展示区：固定尺寸（460×620），切换预览图时区域不变。
+           横图缩放填满（cover）、竖图完整显示（contain，高度与海报对齐）。
            鼠标悬停时海报变暗 + 中央播放按钮（样式/过渡与片库卡片一致），点击播放 -->
       <div class="main-image">
-        <img v-if="displayImage && !imgErr" :src="displayImage" @error="imgErr = true" />
+        <img v-if="displayImage && !imgErr" :src="displayImage" :class="mainImgCover ? 'img-cover' : 'img-contain'"
+             @load="onImgLoad" @error="imgErr = true" />
         <div v-if="!displayImage || imgErr" class="no-cover">暂无封面</div>
         <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
@@ -40,6 +42,7 @@
       <!-- 蓝：影片信息卡（行序：番号/日期/时长/导演/片商/系列/评分/类别/演员，底部为操作按钮） -->
       <div class="info-card">
         <!-- 番号行：番号 + 复制按钮（点击复制到剪贴板） -->
+        <div class="info-body">
         <div class="info-line" v-if="m.ph">
           <span class="info-label">番号</span>
           <div class="info-value code-line">
@@ -115,6 +118,7 @@
             <TagChip v-for="a in actressList" :key="a" :label="a" @click="filterByActress(a)" />
           </div>
         </div>
+        </div>
         <!-- 操作按钮：喜欢 / 刮削 / 编辑 / 删除（移到信息卡底部） -->
         <div class="card-actions">
           <el-button class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
@@ -179,6 +183,17 @@ const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 大图加载失败标志
 const activeIdx = ref(0)       // 当前大图在画廊中的索引（0 = 海报）
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
+// 当前大图是否为横图（横图 cover 填满固定框，竖图 contain 完整显示）
+const mainImgCover = ref(false)
+
+/**
+ * 大图加载完成：按图片真实比例判断填充模式
+ * 横图（宽 > 高）→ cover 缩放填满海报区域；竖图/方图 → contain 完整显示
+ */
+function onImgLoad(e) {
+  const img = e.target
+  mainImgCover.value = img.naturalWidth > img.naturalHeight
+}
 
 /**
  * 计算属性：海报图解析为可显示的 URL（无值时为空串）
@@ -481,15 +496,12 @@ onMounted(async () => {
 /* 标题样式：与番号同行，长标题自动换行 */
 .title-text { font-size: 17px; font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
 
-/* 主行：大图区（左，固定尺寸）+ 信息卡（右） */
-.main-row { display: flex; gap: 20px; align-items: flex-start; }
-/* 绿：大图展示区：恢复自适应尺寸——海报以原始大小填满区域；
-   竖版图片（海报/竖预览图）高度统一对齐（max-height 620），
-   横版预览图按自身比例显示，容器贴合内容、无上下空白 */
+/* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
+.main-row { display: flex; gap: 20px; align-items: stretch; }
+/* 绿：大图展示区：固定 460×620 框——切换预览图时区域尺寸不变 */
 .main-image {
-  width: fit-content;
-  min-height: 420px;
-  max-width: 52%;
+  width: 460px;
+  height: 620px;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
@@ -498,13 +510,10 @@ onMounted(async () => {
   display: flex; align-items: center; justify-content: center;
   position: relative;
 }
-/* 图片按自身比例显示：高度上限 620px（海报/竖图一致），宽度上限 52% 区域 */
-.main-image img {
-  display: block;
-  max-width: 100%;
-  max-height: 620px;
-  width: auto; height: auto;
-}
+/* 横图：等比放大填满整个框（无上下空白，超出部分裁切） */
+.main-image img.img-cover { width: 100%; height: 100%; object-fit: cover; }
+/* 竖图：等比缩小完整显示（高度撑满 620 与海报对齐，宽度按比例居中） */
+.main-image img.img-contain { max-width: 100%; max-height: 100%; width: auto; height: auto; }
 /* 悬停遮罩：海报变暗 + 中央播放按钮（样式/过渡与片库卡片完全一致） */
 .main-hover {
   position: absolute; inset: 0;
@@ -535,13 +544,24 @@ onMounted(async () => {
   color: var(--muted); font-size: 14px;
 }
 
-/* 蓝：影片信息卡（与整体卡片风格一致的轻量行式布局） */
+/* 蓝：影片信息卡（轻量行式布局）：高度与大图区一致（stretch），
+   信息行在卡内均匀分布（space-evenly），行数多时自动紧凑 */
 .info-card {
   flex: 1; min-width: 0;
+  align-self: stretch;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 14px 20px;
+  padding: 12px 20px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+/* 信息行容器：均匀分布填满卡片高度（不含底部按钮区） */
+.info-body {
+  flex: 1;
+  display: flex; flex-direction: column;
+  justify-content: space-evenly;
+  min-height: 0;
 }
 /* 番号行：番号文字 + 复制按钮 */
 .code-line { display: inline-flex; align-items: center; gap: 8px; }
@@ -581,7 +601,7 @@ onMounted(async () => {
 /* 信息行：固定宽标签 + 内容，行间细虚线分隔 */
 .info-line {
   display: flex; gap: 14px;
-  padding: 8px 0;
+  padding: 6px 0;
   align-items: flex-start;
 }
 .info-line + .info-line { border-top: 1px dashed var(--border); }
