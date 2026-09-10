@@ -3,10 +3,10 @@
   文件名：Library.vue
   所属模块：视图 / 片库页
   功能描述：影片库主视图。整合标签筛选（TagFilter）、状态栏
-           （StatusBar）、影片网格（MovieGrid）和编辑对话框
-           （EditMovieDialog）。支持播放、详情查看、编辑、删除、
-           收藏、批量操作（删除/收藏/刮削）、随机排序、以及从
-           详情页通过路由 query 跳转过滤（标签/女优/厂商/系列）。
+           （StatusBar）和影片网格（MovieGrid）。
+           支持播放、详情查看、
+           收藏、批量操作（删除/收藏/刮削）、以及从
+           详情页通过路由 query 跳转过滤（标签/女优/厂商/系列/导演）。
   ============================================================
 -->
 <template>
@@ -40,14 +40,9 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
-      @edit="onEdit"
-      @delete="onDelete"
-      @fav="onFav"
       @toggle="onToggle"
       @click="onCardClick"
     />
-    <!-- 编辑影片对话框，v-model 控制显示/隐藏 -->
-    <EditMovieDialog v-model="showEdit" :movie="editMovie" @saved="onEditSaved" />
   </div>
 </template>
 
@@ -62,7 +57,6 @@ import { useScrapeStore } from '@/store/scrape'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
-import EditMovieDialog from '@/components/EditMovieDialog.vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 // Pinia store 实例，管理影片数据、筛选、排序等状态
@@ -124,31 +118,11 @@ async function onSortChange() {
   await store.loadMovies({ append: false, extraFilter: routeExtra() })
 }
 
-// 编辑对话框控制
-const showEdit = ref(false)    // 对话框显示状态
-const editMovie = ref(null)    // 当前编辑的影片对象
 
 /**
  * 打开编辑对话框
  * @param {Object} m - 要编辑的影片对象
  */
-function onEdit(m) { editMovie.value = m; showEdit.value = true }
-
-/**
- * 编辑保存后的回调
- * 功能：重新从数据库获取影片最新数据并更新列表，同时刷新标签
- * @returns {Promise<void>}
- */
-async function onEditSaved() {
-  if (!window.api || !editMovie.value?.id) return
-  const r = await window.api.getMovie(editMovie.value.id)
-  if (r.ok && r.data) {
-    const idx = store.movies.findIndex(m => m.id === editMovie.value.id)
-    if (idx >= 0) store.movies[idx] = r.data
-  }
-  await store.loadAllDbTags()
-}
-
 /**
  * 播放影片
  * @param {Object} m - 影片对象，需包含 py（视频文件路径）和 id
@@ -173,24 +147,6 @@ function onCardClick(m) {
   if (action === 'play') onPlay(m)
   else onDetail(m)
 }
-
-/**
- * 删除影片（带二次确认）
- * @param {Object} m - 影片对象
- */
-async function onDelete(m) {
-  try {
-    await ElMessageBox.confirm(`确定删除 ${m.ph || m.pm}？`, '提示', { type: 'warning' })
-    const ok = await store.deleteMovie(m.id)
-    if (ok) ElMessage.success('已删除')
-  } catch {}
-}
-
-/**
- * 切换收藏状态
- * @param {Object} m - 影片对象
- */
-async function onFav(m) { await store.toggleFav(m.id) }
 
 /**
  * 批量删除选中影片

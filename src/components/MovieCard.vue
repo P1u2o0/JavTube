@@ -37,24 +37,12 @@
                 stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </div>
-      <!-- 更多操作按钮（三点菜单） -->
-      <button class="more-btn" @click.stop="toggleMenu" aria-label="更多操作">
-        <AppIcon name="more" :size="16" />
-      </button>
-      <!-- 更多操作菜单（纯 CSS 入场动画，避免帧回调阻塞导致菜单无法消失） -->
-      <div v-if="menuOpen" class="ctx-menu menu-anim" @click.stop>
-          <button class="ctx-item" @click="onEdit">
-            <AppIcon name="edit" :size="15" />
-            <span>编辑</span>
-          </button>
-          <button class="ctx-item" :class="{ 'ctx-fav-on': isFav }" @click="onFav">
-            <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="15" />
-            <span>{{ isFav ? '取消喜欢' : '喜欢' }}</span>
-          </button>
-          <button class="ctx-item ctx-del" @click="onDel">
-            <AppIcon name="trash" :size="15" />
-            <span>删除</span>
-          </button>
+      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
+      <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
+        <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+          <path d="M5 12.5 10 17.5 19 7" fill="none" stroke="#fff" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
       </div>
     </div>
     <!-- 影片信息区域：番号 + 标题 -->
@@ -67,7 +55,7 @@
 
 <script setup>
 // 引入 Vue 的响应式 API、计算属性、侦听器和生命周期钩子
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch } from 'vue'
 // 引入封面解析工具和数据目录引用
 import { resolveCover, dataDirRef } from '@/utils/global'
 // 引入统一图标组件
@@ -83,17 +71,12 @@ const props = defineProps({
 // 定义 emit 事件：
 // - click: 卡片点击事件
 // - play: 播放影片
-// - edit: 编辑影片
-// - delete: 删除影片
-// - fav: 切换收藏状态
 // - toggle: 多选模式下切换选中状态
-// （detail 事件已移除：卡片从未发出过此事件，详情跳转由父组件 click 处理器决定）
-const emit = defineEmits(['click', 'play', 'edit', 'delete', 'fav', 'toggle'])
+// （edit/delete/fav 事件已随三点菜单移除：这些操作在影片详情页进行）
+const emit = defineEmits(['click', 'play', 'toggle'])
 
 // 封面图片是否加载出错
 const errd = ref(false)
-// 更多操作菜单是否展开
-const menuOpen = ref(false)
 
 // 图片加载出错时的处理函数
 function onErr() { errd.value = true }
@@ -111,24 +94,6 @@ const coverUrl = computed(() => {
 watch(() => props.m.cover, () => { errd.value = false })
 // 侦听数据目录变化，重置错误状态（数据目录变更后重新尝试加载封面）
 watch(dataDirRef, () => { errd.value = false })
-
-// 切换更多操作菜单的显示/隐藏
-function toggleMenu() { menuOpen.value = !menuOpen.value }
-// 点击编辑：关闭菜单并触发 edit 事件
-function onEdit() { menuOpen.value = false; emit('edit') }
-// 点击喜欢：关闭菜单并触发 fav 事件
-function onFav() { menuOpen.value = false; emit('fav') }
-// 点击删除：关闭菜单并触发 delete 事件
-function onDel() { menuOpen.value = false; emit('delete') }
-
-// 点击页面其他区域时关闭菜单
-function closeMenu(e) {
-  if (menuOpen.value) menuOpen.value = false
-}
-// 组件挂载时注册全局点击监听，用于关闭菜单
-onMounted(() => document.addEventListener('click', closeMenu))
-// 组件卸载前移除全局点击监听，防止内存泄漏
-onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 </script>
 
 <style scoped>
@@ -201,8 +166,6 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
-.more-btn { z-index: 10; }
-.ctx-menu { z-index: 20; }
 /* 已收藏角标：右上角朱柿红心形 */
 .fav-badge {
   position: absolute; top: 8px; right: 8px;
@@ -230,54 +193,6 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 .check.checked {
   background: #d2401e;
   border-color: #d2401e;
-}
-/* 更多操作按钮（三点菜单） */
-.more-btn {
-  position: absolute; bottom: 8px; right: 8px;
-  width: 30px; height: 30px;
-  border: none; border-radius: 50%;
-  background: rgba(29, 28, 26, 0.55);
-  color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: background var(--dur-fast) ease;
-  backdrop-filter: blur(4px);
-}
-.more-btn:hover { background: rgba(29, 28, 26, 0.8); }
-/* 更多操作菜单 */
-.ctx-menu {
-  position: absolute; bottom: 42px; right: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  box-shadow: var(--sh-2);
-  padding: 4px;
-  z-index: 100;
-  min-width: 128px;
-}
-/* 菜单项 */
-.ctx-item {
-  display: flex; align-items: center; gap: 9px;
-  width: 100%; padding: 8px 12px;
-  border: none; background: transparent;
-  border-radius: 6px;
-  font-size: 13px; color: var(--text-2);
-  cursor: pointer; text-align: left;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
-}
-.ctx-item:hover { background: var(--surface-2); color: var(--text); }
-.ctx-item .app-icon { opacity: 0.75; }
-/* 已收藏状态下心形用强调色 */
-.ctx-fav-on .app-icon { color: var(--accent); opacity: 1; }
-/* 删除菜单项：危险色 */
-.ctx-del { color: var(--danger); }
-.ctx-del .app-icon { opacity: 1; }
-.ctx-del:hover { background: var(--danger-soft); color: var(--danger); }
-/* 菜单入场动画：纯 CSS animation，不依赖帧回调，避免在低帧率环境下菜单卡住无法消失 */
-.menu-anim { animation: menu-in 0.14s var(--ease-out) both; }
-@keyframes menu-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: none; }
 }
 /* 信息区域 */
 .info { padding: 10px 12px 12px; }

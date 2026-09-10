@@ -31,8 +31,6 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
-      @delete="onDelete"
-      @fav="onFav"
       @toggle="onToggle"
     />
   </div>
@@ -84,19 +82,6 @@ async function onPlay(m) {
  * 删除影片（带二次确认）
  * @param {Object} m - 影片对象
  */
-async function onDelete(m) {
-  try {
-    await ElMessageBox.confirm('确定删除？'); const ok = await store.deleteMovie(m.id)
-    if (ok) { ElMessage.success('已删除') }
-  } catch {}
-}
-
-/**
- * 切换收藏状态后刷新列表
- * @param {Object} m - 影片对象
- */
-async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
-
 /**
  * 批量删除选中影片
  */

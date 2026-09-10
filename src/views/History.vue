@@ -31,14 +31,9 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
-      @edit="onEdit"
-      @delete="onDelete"
-      @fav="onFav"
       @toggle="onToggle"
       @click="onCardClick"
     />
-    <!-- 编辑影片对话框 -->
-    <EditMovieDialog v-model="showEdit" :movie="editMovie" @saved="onEditSaved" />
   </div>
 </template>
 
@@ -50,7 +45,6 @@ import { safeCall } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
-import EditMovieDialog from '@/components/EditMovieDialog.vue'
 
 // Pinia store 实例
 const store = useMoviesStore()
@@ -59,9 +53,6 @@ const { onToggle, onPageChange, onDetail } = useMovieList(store, {
   buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true } })
 })
 
-// 编辑对话框控制
-const showEdit = ref(false)    // 对话框显示状态
-const editMovie = ref(null)    // 当前编辑的影片对象
 
 /**
  * 加载观看历史列表
@@ -101,34 +92,7 @@ async function onPlay(m) {
  */
 function onCardClick(m) { onDetail(m) }
 
-/**
- * 打开编辑对话框
- * @param {Object} m - 要编辑的影片对象
- */
-function onEdit(m) { editMovie.value = m; showEdit.value = true }
 
-/**
- * 编辑保存后的回调，重新加载历史列表并刷新标签
- */
-async function onEditSaved() { await loadHistory(); await store.loadAllDbTags() }
-
-/**
- * 删除影片（带二次确认）
- * @param {Object} m - 影片对象
- */
-async function onDelete(m) {
-  try {
-    await ElMessageBox.confirm(`确定删除 ${m.ph || m.pm}？`, '提示', { type: 'warning' })
-    const ok = await store.deleteMovie(m.id)
-    if (ok) { ElMessage.success('已删除'); await loadHistory() }
-  } catch {}
-}
-
-/**
- * 切换收藏状态
- * @param {Object} m - 影片对象
- */
-async function onFav(m) { await store.toggleFav(m.id) }
 
 /**
  * 批量删除选中影片
