@@ -26,17 +26,12 @@
           <AppIcon name="play" :size="18" />
         </button>
       </div>
-      <!-- 已收藏角标：朱柿红小心形 -->
-      <div v-if="isFav" class="fav-badge" title="已收藏">
-        <AppIcon name="heart-filled" :size="13" />
-      </div>
-      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
-      <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
-        <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-          <path d="M5 12.5 10 17.5 19 7" fill="none" stroke="#fff" stroke-width="3"
-                stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </div>
+      <!-- 右上角喜欢按钮：可点击切换喜欢（白底圆 + 心形，选中态朱柿红实心心） -->
+      <button class="fav-btn" :class="{ active: isFav }"
+              :title="isFav ? '取消喜欢' : '喜欢'"
+              @click.stop="$emit('fav')">
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" />
+      </button>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -71,9 +66,9 @@ const props = defineProps({
 // 定义 emit 事件：
 // - click: 卡片点击事件
 // - play: 播放影片
+// - fav: 切换喜欢状态（右上角喜欢按钮）
 // - toggle: 多选模式下切换选中状态
-// （edit/delete/fav 事件已随三点菜单移除：这些操作在影片详情页进行）
-const emit = defineEmits(['click', 'play', 'toggle'])
+const emit = defineEmits(['click', 'play', 'fav', 'toggle'])
 
 // 封面图片是否加载出错
 const errd = ref(false)
@@ -166,17 +161,21 @@ watch(dataDirRef, () => { errd.value = false })
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
-/* 已收藏角标：右上角朱柿红心形 */
-.fav-badge {
+/* 右上角喜欢按钮：白底圆形 + 心形，可点击切换喜欢。
+   未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 心形与底色向朱柿红过渡 */
+.fav-btn {
   position: absolute; top: 8px; right: 8px;
-  width: 24px; height: 24px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--accent);
+  width: 26px; height: 26px;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--muted);
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--sh-1);
-  pointer-events: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
 }
+.fav-btn:hover { color: var(--accent); transform: scale(1.12); }
+.fav-btn.active { color: var(--accent); }
 /* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
    选中底色写死朱柿红 #d2401e（与 --accent 同值），不依赖 CSS 变量解析 */
 .check {

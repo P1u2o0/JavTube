@@ -40,6 +40,7 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
+      @fav="onFav"
       @toggle="onToggle"
       @click="onCardClick"
     />
@@ -147,6 +148,12 @@ function onCardClick(m) {
   if (action === 'play') onPlay(m)
   else onDetail(m)
 }
+
+/**
+ * 切换喜欢状态（卡片右上角喜欢按钮，实时生效）
+ * @param {Object} m - 影片对象
+ */
+async function onFav(m) { await store.toggleFav(m.id) }
 
 /**
  * 批量删除选中影片
