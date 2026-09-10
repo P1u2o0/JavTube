@@ -95,10 +95,6 @@
             </div>
             <span class="g-tip" v-if="showTips">刮削到的标签命中原标签时自动替换；新标签留空则删除该标签</span>
           </div>
-          <!-- 保存按钮 -->
-          <div class="g-control">
-            <span class="g-tip" v-if="showTips">保存时自动补齐至 9 大类</span>
-          </div>
         </div>
       </el-tab-pane>
 
