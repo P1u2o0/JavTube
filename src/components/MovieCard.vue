@@ -64,9 +64,9 @@ const props = defineProps({
 // 定义 emit 事件：
 // - click: 卡片点击事件
 // - play: 播放影片
-// - fav: 切换喜欢状态（右上角喜欢按钮）
 // - toggle: 多选模式下切换选中状态
-const emit = defineEmits(['click', 'play', 'fav', 'toggle'])
+// （edit/delete/fav 事件已随三点菜单移除：这些操作在影片详情页进行）
+const emit = defineEmits(['click', 'play', 'toggle'])
 
 // 封面图片是否加载出错
 const errd = ref(false)
@@ -76,8 +76,6 @@ function onErr() { errd.value = true }
 
 // 是否已收藏（cl 字段为 'y' 表示已收藏）
 const isFav = computed(() => props.m.cl === 'y')
-
-}
 
 // 封面 URL 计算属性：出错时返回空，否则解析封面路径
 const coverUrl = computed(() => {
