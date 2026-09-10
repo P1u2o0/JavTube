@@ -15,6 +15,13 @@
 const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
 // db 层通用工具（查询结果转换 / 时间格式 / 落盘收口）
 const { rows, firstRow, firstScalar, nowLocal, persist } = require('./util')
+
+/**
+ * 延迟持久化：立即返回不阻塞 IPC（整库同步导出会阻塞主进程事件循环，
+ * 拖慢并发请求与交互响应），落盘推迟到本轮事件循环之后执行。
+ * 崩溃窗口为毫秒级，交换来的交互流畅度值得。
+ */
+const persistSoon = (db) => persistSoon(db)
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -200,7 +207,7 @@ function registerMovieIpc(ipcMain, db) {
       db.run(INSERT_MOVIE_SQL, buildMovieInsertParams(d))
       // 获取自增主键 ID
       const id = firstScalar(db.exec('SELECT last_insert_rowid()')[0])
-      persist(db)  // 立即持久化
+      persistSoon(db)
       return { ok: true, id: Number(id) }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -219,7 +226,7 @@ function registerMovieIpc(ipcMain, db) {
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
       // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
       db.run(UPDATE_MOVIE_SQL, buildMovieUpdateParams(d, id))
-      persist(db)  // 立即持久化
+      persistSoon(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -227,7 +234,7 @@ function registerMovieIpc(ipcMain, db) {
   // IPC: movies:delete — 渲染进程 → 主进程
   // 删除单条影片
   ipcMain.handle(IPC.MOVIES_DELETE, (_e, id) => {
-    try { db.run('DELETE FROM movies WHERE id=?', [Number(id)]); persist(db); return { ok: true } }
+    try { db.run('DELETE FROM movies WHERE id=?', [Number(id)]); persistSoon(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -236,7 +243,7 @@ function registerMovieIpc(ipcMain, db) {
   ipcMain.handle(IPC.MOVIES_DELETE_MANY, (_e, ids) => {
     try {
       for (const id of (ids||[])) db.run('DELETE FROM movies WHERE id=?', [Number(id)])
-      persist(db); return { ok: true }
+      persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -246,7 +253,7 @@ function registerMovieIpc(ipcMain, db) {
     try {
       const val = isFav ? FAV_Y : FAV_N
       for (const id of (ids||[])) db.run('UPDATE movies SET cl=? WHERE id=?', [val, Number(id)])
-      persist(db); return { ok: true }
+      persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -268,7 +275,7 @@ function registerMovieIpc(ipcMain, db) {
         const newBq = Array.from(existing).join(TAG_DELIM)
         db.run('UPDATE movies SET bq=? WHERE id=?', [newBq, Number(id)])
       }
-      persist(db); return { ok: true }
+      persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -303,7 +310,7 @@ function registerMovieIpc(ipcMain, db) {
       // 拖慢并发的播放请求（播放窗口弹出延迟）。计数属低敏感数据，可接受延迟落盘。
       db.run('UPDATE movies SET play_time = ?, play_count = COALESCE(play_count, 0) + 1 WHERE id = ?',
         [nowLocal(), Number(id)])
-      setImmediate(() => { try { persist(db) } catch {} })
+      persistSoon(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
