@@ -28,11 +28,6 @@
             </div>
             <span class="g-tip" v-if="showTips">播放影片时优先使用此播放器</span>
           </div>
-          <!-- 显示注释开关（控制所有选项说明小字的显隐） -->
-          <div class="g-label">显示注释</div>
-          <div class="g-control">
-            <el-switch v-model="st.show_tips" active-value="y" inactive-value="n" />
-          </div>
           <!-- 点击卡片默认动作 -->
           <div class="g-label">点击卡片动作</div>
           <div class="g-control">
@@ -53,6 +48,11 @@
           <div class="g-control">
             <el-input-number v-model="pageSizeN" :min="10" :max="200" :step="10" />
             <span class="g-tip" v-if="showTips">每页影片数量（10 - 200）</span>
+          </div>
+          <!-- 显示注释开关（控制所有选项说明小字的显隐，置于本类最后一项） -->
+          <div class="g-label">显示注释</div>
+          <div class="g-control">
+            <el-switch v-model="st.show_tips" active-value="y" inactive-value="n" />
           </div>
         </div>
       </el-tab-pane>
@@ -426,7 +426,7 @@ async function clearDb() {
 }
 
 /* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排 */
-.player-row { display: flex; gap: 10px; width: 100%; }
+.player-row { display: flex; gap: 10px; width: 100%; max-width: 340px; }
 .player-input { flex: 1; }
 
 /* 标签类别 / 标签映射行 */
@@ -435,7 +435,7 @@ async function clearDb() {
 .cat-name-input { width: 170px; flex-shrink: 0; }
 .cat-tags-input { flex: 1; }
 .map-row-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
-.map-input { flex: 1; max-width: 250px; }
+.map-input { flex: 1; }
 .map-arrow { color: var(--muted); font-size: 12px; flex-shrink: 0; }
 /* 行删除按钮 */
 .row-del {
