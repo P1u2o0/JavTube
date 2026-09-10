@@ -486,10 +486,10 @@ onMounted(async () => {
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
 /* 绿：大图展示区：自适应尺寸——容器贴合图片，图片按原始比例显示
-   （高度上限 740px、宽度上限 60% 区域），无上下空白 */
+   （高度上限 78vh、宽度上限 64% 区域，随窗口大小伸缩），无上下空白 */
 .main-image {
   width: fit-content;
-  max-width: 60%;
+  max-width: 64%;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
@@ -501,7 +501,7 @@ onMounted(async () => {
 .main-image img {
   display: block;
   max-width: 100%;
-  max-height: 740px;
+  max-height: 78vh;
   width: auto; height: auto;
 }
 /* 横图：等比放大填满整个框（无上下空白，超出部分裁切） */
