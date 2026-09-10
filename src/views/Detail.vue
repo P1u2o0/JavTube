@@ -483,10 +483,13 @@ onMounted(async () => {
 
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右） */
 .main-row { display: flex; gap: 20px; align-items: flex-start; }
-/* 绿：大图展示区：固定 3:4 框——图片更换时框体尺寸不变，格局稳定 */
+/* 绿：大图展示区：恢复自适应尺寸——海报以原始大小填满区域；
+   竖版图片（海报/竖预览图）高度统一对齐（max-height 620），
+   横版预览图按自身比例显示，容器贴合内容、无上下空白 */
 .main-image {
-  width: 400px;
-  aspect-ratio: 3 / 4;
+  width: fit-content;
+  min-height: 420px;
+  max-width: 52%;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
@@ -495,8 +498,13 @@ onMounted(async () => {
   display: flex; align-items: center; justify-content: center;
   position: relative;
 }
-/* 图片在固定框内等比缩放居中（竖版海报/横版预览图都不改变框体） */
-.main-image img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+/* 图片按自身比例显示：高度上限 620px（海报/竖图一致），宽度上限 52% 区域 */
+.main-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 620px;
+  width: auto; height: auto;
+}
 /* 悬停遮罩：海报变暗 + 中央播放按钮（样式/过渡与片库卡片完全一致） */
 .main-hover {
   position: absolute; inset: 0;
