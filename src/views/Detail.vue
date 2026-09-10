@@ -549,10 +549,10 @@ onMounted(async () => {
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
 /* 绿：大图展示区：自适应尺寸——容器贴合图片，图片按原始比例显示
-   （高度上限 84vh、宽度上限 68% 区域，随窗口大小伸缩），无上下空白 */
+   （高度上限 92vh、宽度上限 75% 区域，随窗口大小伸缩），无上下空白 */
 .main-image {
   width: fit-content;
-  max-width: 68%;
+  max-width: 75%;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
@@ -564,7 +564,7 @@ onMounted(async () => {
 .main-image img {
   display: block;
   max-width: 100%;
-  max-height: 84vh;
+  max-height: 92vh;
   width: auto; height: auto;
 }
 /* 横图：等比放大填满整个框（无上下空白，超出部分裁切） */
@@ -698,7 +698,7 @@ onMounted(async () => {
 .lb-fade-enter-from, .lb-fade-leave-to { opacity: 0; }
 /* 当前图片：初始 contain 于视口内（约 82% 宽 / 84% 高），滚轮缩放经 transform 生效 */
 .lb-img {
-  max-width: 82vw; max-height: 84vh;
+  max-width: 82vw; max-height: 92vh;
   width: auto; height: auto;
   border-radius: var(--r-sm);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
