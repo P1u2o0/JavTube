@@ -40,7 +40,6 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
-      @fav="onFav"
       @toggle="onToggle"
       @click="onCardClick"
     />
@@ -154,12 +153,6 @@ function onCardClick(m) {
  * 写库后显式替换数组元素，强制该卡片重渲染（绕过响应性引用问题）
  * @param {Object} m - 影片对象
  */
-async function onFav(m) {
-  await store.toggleFav(m.id)
-  const idx = store.movies.findIndex(x => x.id === m.id)
-  if (idx >= 0) store.movies.splice(idx, 1, { ...store.movies[idx] })
-}
-
 /**
  * 批量删除选中影片
  */

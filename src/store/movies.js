@@ -216,12 +216,8 @@ export const useMoviesStore = defineStore('movies', {
       const m = this.movies.find(x => x.id === id)
       if (!m) return
       const val = m.cl === 'y' ? 'n' : 'y'
-      // 乐观更新：先翻转本地状态（UI/动画立即响应），写入失败再回滚——
-      // updateMovie 内部 persist 为整库同步导出，等待它完成会让点击动画明显延迟
-      const prev = m.cl
-      m.cl = val
       const r = await window.api.updateMovie(id, { cl: val })
-      if (!r.ok) m.cl = prev
+      if (r.ok) m.cl = val
     }
   }
 })
