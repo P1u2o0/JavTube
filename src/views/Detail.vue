@@ -94,13 +94,13 @@
             <span class="score-num">{{ Number(m.score).toFixed(1) }}</span>
           </div>
         </div>
-        <!-- 类别（影片标签，可点击筛选） -->
-        <div class="info-line" v-if="tags.length">
-          <span class="info-label">类别</span>
-          <div class="info-value tag-list">
-            <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
+          <!-- 类别（影片标签，可点击筛选）——分配更大高度，标签多时自动扩展 -->
+          <div class="info-line tag-line" v-if="tags.length">
+            <span class="info-label">类别</span>
+            <div class="info-value tag-list">
+              <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
+            </div>
           </div>
-        </div>
         <!-- 热度（想看/看过人数，来源 JAVDB） -->
         <div class="info-line" v-if="m.want || m.watched">
           <span class="info-label">热度</span>
@@ -117,19 +117,19 @@
           </div>
         </div>
         </div>
-        <!-- 操作按钮：喜欢 / 刮削 / 编辑 / 删除（移到信息卡底部） -->
-        <div class="card-actions">
-          <el-button class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
-            <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
+          <!-- 操作按钮：喜欢 / 刮削 / 编辑 / 删除（large 尺寸，与放大的信息文字协调） -->
+          <div class="card-actions">
+          <el-button size="large" class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
+            <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="15" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
           </el-button>
-          <el-button class="act-scrape" @click="onScrape" :loading="scraping">
-            <AppIcon v-if="!scraping" name="globe" :size="14" style="margin-right:5px" />刮削
+          <el-button size="large" class="act-scrape" @click="onScrape" :loading="scraping">
+            <AppIcon v-if="!scraping" name="globe" :size="15" style="margin-right:5px" />刮削
           </el-button>
-          <el-button @click="editShow = true">
-            <AppIcon name="edit" :size="14" style="margin-right:5px" />编辑
+          <el-button size="large" @click="editShow = true">
+            <AppIcon name="edit" :size="15" style="margin-right:5px" />编辑
           </el-button>
-          <el-button class="act-del" @click="onDel">
-            <AppIcon name="trash" :size="14" style="margin-right:5px" />删除
+          <el-button size="large" class="act-del" @click="onDel">
+            <AppIcon name="trash" :size="15" style="margin-right:5px" />删除
           </el-button>
         </div>
       </div>
@@ -553,13 +553,12 @@ onMounted(async () => {
 
 /* 红：标题行（圆形返回 + 番号 + 标题） */
 .title-row {
-  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin-bottom: 14px;
 }
 /* 圆形返回按钮：描边圆钮，与软件按钮体系一致 */
 .round-back {
   width: 34px; height: 34px;
-  align-self: center;
   flex-shrink: 0;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
@@ -575,11 +574,11 @@ onMounted(async () => {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 18px;
+  font-weight: 700; font-size: 20px;
   letter-spacing: 0.02em;
 }
 /* 标题样式：与番号同行，长标题自动换行 */
-.title-text { font-size: 17px; font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
+.title-text { font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
 
 /* 主行：海报区（左，尺寸按海报比例放大）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
@@ -642,11 +641,11 @@ onMounted(async () => {
   display: flex; flex-direction: column;
   overflow: hidden;
 }
-/* 信息行容器：均匀分布填满卡片高度（不含底部按钮区） */
+/* 信息行容器：信息行均分卡片高度（不含底部按钮区），
+   每行上下间距严格一致；行内容多时该行自动扩展、其余行压缩 */
 .info-body {
   flex: 1;
   display: flex; flex-direction: column;
-  justify-content: space-evenly;
   min-height: 0;
 }
 /* 番号行：番号文字 + 复制按钮 */
@@ -655,7 +654,7 @@ onMounted(async () => {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 15px;
+  font-weight: 700; font-size: 17px;
   letter-spacing: 0.02em;
 }
 /* 复制按钮：小型圆形弱化按钮，hover 强调色 */
@@ -684,21 +683,23 @@ onMounted(async () => {
 .stats-line { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .stats-line > span { display: inline-flex; align-items: center; gap: 5px; }
 .stats-line .app-icon { color: var(--muted); }
-/* 信息行：固定宽标签 + 内容，行间细虚线分隔 */
+/* 信息行：所有行均分高度（行距严格一致），内容垂直居中于行内，
+   即内容到上下虚线的距离相等；标签行分配 1.6 倍比例 */
 .info-line {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex; gap: 14px;
-  padding: 6px 0;
   align-items: center;
 }
 .info-line + .info-line { border-top: 1px dashed var(--border); }
+.info-line.tag-line { flex: 1.6 1 0; }
 .info-label {
   width: 60px; flex-shrink: 0;
-  color: var(--muted); font-size: 13.5px;
-  line-height: 1.6;
+  color: var(--muted); font-size: 14.5px;
 }
 .info-value {
   flex: 1; min-width: 0;
-  color: var(--text); font-size: 14.5px;
+  color: var(--text); font-size: 15.5px;
   line-height: 1.7;
   word-break: break-all;
 }
