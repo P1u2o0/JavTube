@@ -147,25 +147,28 @@
 
     <!-- ====== 灯箱查看器：点击预览图后全屏弹出（背景渐暗）， ====== -->
     <!-- ====== 滚轮缩放、左右按钮/方向键切换、Esc 或点击空白关闭 ====== -->
-    <transition name="lb-fade">
-      <div v-if="lightboxShow" class="lightbox" @click.self="closeLightbox" @wheel.prevent="onWheel">
-        <!-- 关闭按钮（右上角） -->
-        <button class="lb-close" aria-label="关闭" @click="closeLightbox">
-          <AppIcon name="close" :size="20" />
-        </button>
-        <!-- 左右切换按钮 -->
-        <button class="lb-arrow lb-prev" aria-label="上一张" @click.stop="stepLightbox(-1)">
-          <AppIcon name="back" :size="22" />
-        </button>
-        <!-- 当前图片 -->
-        <img class="lb-img" :src="galleryImages[lightboxIdx]" :style="{ transform: `scale(${zoom})` }" @click.stop />
-        <button class="lb-arrow lb-next" aria-label="下一张" @click.stop="stepLightbox(1)">
-          <AppIcon name="back" :size="22" class="flip-x" />
-        </button>
-        <!-- 页码指示 -->
-        <div class="lb-count">{{ lightboxIdx + 1 }} / {{ galleryImages.length }}</div>
-      </div>
-    </transition>
+    <!-- Teleport 到 body：脱离滚动容器，遮罩在最大化/滚动任何状态下都严格全屏 -->
+    <Teleport to="body">
+      <transition name="lb-fade">
+        <div v-if="lightboxShow" class="lightbox" @click.self="closeLightbox" @wheel.prevent="onWheel">
+          <!-- 关闭按钮（右上角） -->
+          <button class="lb-close" aria-label="关闭" @click="closeLightbox">
+            <AppIcon name="close" :size="20" />
+          </button>
+          <!-- 左右切换按钮 -->
+          <button class="lb-arrow lb-prev" aria-label="上一张" @click.stop="stepLightbox(-1)">
+            <AppIcon name="back" :size="22" />
+          </button>
+          <!-- 当前图片 -->
+          <img class="lb-img" :src="galleryImages[lightboxIdx]" :style="{ transform: `scale(${zoom})` }" @click.stop />
+          <button class="lb-arrow lb-next" aria-label="下一张" @click.stop="stepLightbox(1)">
+            <AppIcon name="back" :size="22" class="flip-x" />
+          </button>
+          <!-- 页码指示 -->
+          <div class="lb-count">{{ lightboxIdx + 1 }} / {{ galleryImages.length }}</div>
+        </div>
+      </transition>
+    </Teleport>
 
     <!-- 编辑对话框 - 复用 ManualForm 手动录入表单 -->
     <el-dialog v-model="editShow" title="编辑影片" width="820px" destroy-on-close>
@@ -546,10 +549,10 @@ onMounted(async () => {
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
 /* 绿：大图展示区：自适应尺寸——容器贴合图片，图片按原始比例显示
-   （高度上限 78vh、宽度上限 64% 区域，随窗口大小伸缩），无上下空白 */
+   （高度上限 84vh、宽度上限 68% 区域，随窗口大小伸缩），无上下空白 */
 .main-image {
   width: fit-content;
-  max-width: 64%;
+  max-width: 68%;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
@@ -561,7 +564,7 @@ onMounted(async () => {
 .main-image img {
   display: block;
   max-width: 100%;
-  max-height: 78vh;
+  max-height: 84vh;
   width: auto; height: auto;
 }
 /* 横图：等比放大填满整个框（无上下空白，超出部分裁切） */
