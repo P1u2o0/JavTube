@@ -26,10 +26,10 @@
 
     <!-- 主行：绿=大图展示区（左，固定尺寸） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：大图展示区：框体尺寸由海报图决定（海报多大框多大），切换预览图时框不变。
-           横图缩放填满（cover）、竖图完整显示（contain）。
+      <!-- 绿：大图展示区：固定尺寸（413×620，即改版前海报区域的显示大小），
+           切换预览图时框不变。横图缩放填满（cover）、竖图完整显示（contain）。
            鼠标悬停时海报变暗 + 中央播放按钮（样式/过渡与片库卡片一致），点击播放 -->
-      <div class="main-image" :style="{ width: boxW + 'px', height: boxH + 'px' }">
+      <div class="main-image">
         <img v-if="displayImage && !imgErr" :src="displayImage" :class="mainImgCover ? 'img-cover' : 'img-contain'"
              @load="onImgLoad" @error="imgErr = true" />
         <div v-if="!displayImage || imgErr" class="no-cover">暂无封面</div>
@@ -183,31 +183,17 @@ const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 大图加载失败标志
 const activeIdx = ref(0)       // 当前大图在画廊中的索引（0 = 海报）
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
-// 当前大图是否为横图（横图 cover 填满海报框，竖图 contain 完整显示）
+// 当前大图是否为横图（横图 cover 填满固定框，竖图 contain 完整显示）
 const mainImgCover = ref(false)
-// 海报框尺寸：由海报图的显示尺寸决定（海报多大框多大），切换预览图时保持不变。
-// 默认 2:3 竖版比例（620 高上限），海报加载后按真实比例重算
-const boxW = ref(413)
-const boxH = ref(620)
 
 /**
- * 大图加载完成回调。
- * 显示海报（索引 0）时：按海报真实比例计算框尺寸（高上限 620 / 宽上限 460，
- * 不放大小图），框贴合海报显示尺寸；此后切换预览图框保持不变。
- * 显示预览图时：横图 → cover 填满海报框；竖图 → contain 完整显示。
+ * 大图加载完成回调：按图片真实比例判断填充模式。
+ * 横图（宽 > 高）→ cover 等比放大填满固定框（无上下空白，左右轻微裁切）；
+ * 竖图/方图 → contain 完整显示（高度撑满与海报对齐，宽度按比例居中）。
  */
 function onImgLoad(e) {
   const img = e.target
-  if (activeIdx.value === 0) {
-    const nw = img.naturalWidth || 800
-    const nh = img.naturalHeight || 1200
-    const scale = Math.min(620 / nh, 460 / nw)
-    boxW.value = Math.round(nw * scale)
-    boxH.value = Math.round(nh * scale)
-    mainImgCover.value = false
-  } else {
-    mainImgCover.value = img.naturalWidth > img.naturalHeight
-  }
+  mainImgCover.value = img.naturalWidth > img.naturalHeight
 }
 
 /**
@@ -513,9 +499,11 @@ onMounted(async () => {
 
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
-/* 绿：大图展示区：框体尺寸由海报图决定（通过 :style 绑定 boxW/boxH），
-   切换预览图时框保持海报尺寸不变 */
+/* 绿：大图展示区：固定尺寸 413×620——即改版前海报在页面上的显示大小
+   （高 620 上限 × 2:3 海报比例），切换预览图时框保持不变 */
 .main-image {
+  width: 413px;
+  height: 620px;
   flex-shrink: 0;
   border-radius: var(--r-md);
   background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
