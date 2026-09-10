@@ -52,6 +52,34 @@
         <AppIcon name="import" :size="16" />
         <span>导入</span>
       </button>
+      <!-- 刮削进度铃铛：角标显示进行中数量，点击展开进度面板 -->
+      <div class="bell-wrap" v-if="scrape.tasks.length || bellOpen">
+        <button class="bell-btn" :class="{ 'has-task': scrape.runningCount }" @click="bellOpen = !bellOpen" aria-label="刮削进度">
+          <AppIcon name="bell" :size="18" />
+          <span v-if="scrape.runningCount" class="bell-badge">{{ scrape.runningCount }}</span>
+        </button>
+        <!-- 刮削进度下拉面板 -->
+        <transition name="bell-pop">
+          <div v-if="bellOpen" class="bell-panel">
+            <div class="bp-head">
+              <span>刮削进度</span>
+              <button v-if="scrape.tasks.length" class="bp-clear" @click="scrape.clear()">清除已完成</button>
+            </div>
+            <div class="bp-list">
+              <div v-for="t in scrape.tasks" :key="t.key" class="bp-item">
+                <span class="bp-dot" :class="t.status"></span>
+                <div class="bp-main">
+                  <div class="bp-title">{{ t.ph }}<template v-if="t.pm"> · {{ t.pm }}</template></div>
+                  <div class="bp-sub" v-if="t.status === 'running'">刮削中…</div>
+                  <div class="bp-sub bp-fail" v-else-if="t.status === 'fail'">{{ t.error || '刮削失败' }}</div>
+                  <div class="bp-sub bp-ok" v-else>刮削成功</div>
+                </div>
+              </div>
+              <div v-if="!scrape.tasks.length" class="bp-empty">暂无刮削任务</div>
+            </div>
+          </div>
+        </transition>
+      </div>
       <!-- 设置按钮，点击弹出设置对话框 -->
       <el-tooltip content="设置" placement="bottom">
         <button class="settings-btn" @click="showSettings = true" aria-label="设置">
@@ -70,13 +98,14 @@
 
 <script setup>
 // 引入 Vue 的响应式 API
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 // 引入 Vue Router 的路由实例和当前路由信息
 import { useRouter, useRoute } from 'vue-router'
 // 引入 Element Plus 的消息提示组件
 import { ElMessage } from 'element-plus'
 // 引入影片数据仓库（Pinia store）
 import { useMoviesStore } from '@/store/movies'
+import { useScrapeStore } from '@/store/scrape'
 // 引入添加影片对话框组件
 import AddMovieDialog from '@/components/AddMovieDialog.vue'
 // 引入设置对话框组件
@@ -97,6 +126,17 @@ const q = ref('')
 const showAdd = ref(false)
 // 控制设置对话框的显示/隐藏状态
 const showSettings = ref(false)
+// 刮削进度面板显隐
+const bellOpen = ref(false)
+// 刮削任务 store（角标与面板数据源）
+const scrape = useScrapeStore()
+
+// 点击面板外部时收起进度面板
+function onDocClick(e) {
+  if (bellOpen.value && !e.target.closest('.bell-wrap')) bellOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onDocClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 // 跳转到片库页面
 function goLibrary() { router.push('/library') }
@@ -207,6 +247,91 @@ function onSearch() {
 .add-btn:hover { background: var(--primary-hover); }
 .add-btn:active { transform: scale(0.97); }
 /* 设置按钮：圆形描边 */
+/* ====== 刮削进度铃铛 ====== */
+.bell-wrap { position: relative; }
+.bell-btn {
+  position: relative;
+  width: 38px; height: 38px;
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  background: var(--surface); color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: all var(--dur-fast) ease;
+}
+.bell-btn:hover { background: var(--surface-2); color: var(--text); }
+.bell-btn.has-task { color: var(--accent); border-color: var(--accent); }
+/* 红色圆形角标：进行中的刮削数量 */
+.bell-badge {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 17px; height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px; font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--sh-1);
+}
+/* 进度面板：铃铛下方右对齐弹出 */
+.bell-panel {
+  position: absolute; top: 46px; right: 0;
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-3);
+  overflow: hidden;
+  z-index: 100;
+}
+.bp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.bp-clear {
+  border: none; background: transparent;
+  color: var(--muted); font-size: 12px;
+  cursor: pointer;
+}
+.bp-clear:hover { color: var(--accent); }
+.bp-list { max-height: 320px; overflow-y: auto; }
+.bp-item {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 9px 14px;
+  border-bottom: 1px dashed var(--border);
+}
+.bp-item:last-child { border-bottom: none; }
+/* 状态圆点：进行中朱柿红呼吸 / 成功绿 / 失败红 */
+.bp-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.bp-dot.running { background: var(--accent); animation: bp-pulse 1.2s ease-in-out infinite; }
+.bp-dot.ok { background: #4caf6d; }
+.bp-dot.fail { background: var(--danger); }
+@keyframes bp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.bp-main { min-width: 0; }
+.bp-title {
+  color: var(--text); font-size: 13px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bp-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.bp-fail { color: var(--danger); word-break: break-all; }
+.bp-ok { color: #4caf6d; }
+.bp-empty { padding: 22px 0; text-align: center; color: var(--muted); font-size: 12.5px; }
+/* 面板弹出过渡：向下展开 + 淡入 */
+.bell-pop-enter-active, .bell-pop-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.bell-pop-enter-from, .bell-pop-leave-to { opacity: 0; transform: translateY(-6px); }
+
 .settings-btn {
   width: 38px; height: 38px;
   border: 1px solid var(--border-strong); border-radius: 50%;

@@ -87,9 +87,10 @@ async function onSortChange() {
  * 播放影片并记录播放
  * @param {Object} m - 影片对象，需包含 py（视频路径）和 id
  */
-function onPlay(m) {
+async function onPlay(m) {
   if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  safeCall(window.api.playVideo(m.py))
+  const r = await window.api.playVideo(m.py).catch(() => null)
+  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
   safeCall(window.api.recordPlay(m.id))
 }
 

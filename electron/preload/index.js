@@ -183,6 +183,13 @@ contextBridge.exposeInMainWorld('api', {
   updateSetting: (k, v) => ipcRenderer.invoke(IPC.SETTINGS_UPDATE, { key: k, value: v }),
 
   /**
+   * 批量更新设置（2026-09-10 新增）：一次事务写入多条、只持久化一次，保存不再卡顿
+   * @param {Object} obj - { 键: 值 } 映射
+   * @returns {Promise<Object>} { ok, error? }
+   */
+  updateSettingsBatch: (obj) => ipcRenderer.invoke(IPC.SETTINGS_UPDATE_BATCH, obj),
+
+  /**
    * 备份数据库到指定路径
    * @param {string} targetPath - 备份文件路径
    * @returns {Promise<Object>} { ok }

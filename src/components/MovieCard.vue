@@ -23,7 +23,7 @@
       <div class="hover-overlay">
         <!-- 仅当有视频路径时显示播放按钮 -->
         <button v-if="m.py" class="play-btn" @click.stop="$emit('play')" aria-label="播放">
-          <AppIcon name="play" :size="20" />
+          <AppIcon name="play" :size="18" />
         </button>
       </div>
       <!-- 已收藏角标：朱柿红小心形 -->
@@ -191,16 +191,16 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 }
 /* 播放按钮：圆形白底墨黑图标 */
 .play-btn {
-  width: 52px; height: 52px;
+  width: 44px; height: 44px;
   border: none; border-radius: 50%;
   background: rgba(255, 255, 255, 0.94);
   color: var(--primary);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; padding: 0 0 0 3px; /* 视觉居中补偿 */
+  cursor: pointer;
   box-shadow: var(--sh-2);
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
-.play-btn:hover { transform: scale(1.1); background: #fff; }
+.play-btn:hover { transform: scale(1.06); background: #fff; }
 .more-btn { z-index: 10; }
 .ctx-menu { z-index: 20; }
 /* 已收藏角标：右上角朱柿红心形 */

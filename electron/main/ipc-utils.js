@@ -31,6 +31,10 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 渲染进程 → 主进程：根据设置中的自定义播放器路径播放视频，否则用系统默认程序打开
   ipcMain.handle(IPC.UTILS_PLAY_VIDEO, async (_e, filePath) => {
     try {
+      // 先校验视频文件存在——不存在时明确报错（此前静默失败，用户以为「点击无反应」）
+      if (!filePath || !fs.existsSync(filePath)) {
+        return { ok: false, error: '视频文件不存在，请检查影片的视频路径设置' }
+      }
       // 查找自定义播放器路径（从数据库 settings 表读取）
       let custom = ''
       try {

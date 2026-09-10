@@ -296,10 +296,12 @@ function registerMovieIpc(ipcMain, db) {
   // 两种格式字符串排序规则不同，混排会导致观看记录排序偏差）
   ipcMain.handle(IPC.MOVIES_RECORD_PLAY, (_e, id) => {
     try {
-      // play_time 更新最近播放时间；play_count 累加观看次数（供「观看次数」排序）
+      // play_time 更新最近播放时间；play_count 累加观看次数（供「观看次数」排序）。
+      // persist 延迟到本轮事件循环之后执行：同步整库导出会阻塞主进程，
+      // 拖慢并发的播放请求（播放窗口弹出延迟）。计数属低敏感数据，可接受延迟落盘。
       db.run('UPDATE movies SET play_time = ?, play_count = COALESCE(play_count, 0) + 1 WHERE id = ?',
         [nowLocal(), Number(id)])
-      persist(db)
+      setImmediate(() => { try { persist(db) } catch {} })
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })

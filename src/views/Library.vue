@@ -54,10 +54,11 @@
 <script setup>
 import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { buildScrapeUpdate, safeCall } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
+import { useScrapeStore } from '@/store/scrape'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
@@ -66,6 +67,8 @@ import AppIcon from '@/components/AppIcon.vue'
 
 // Pinia store 实例，管理影片数据、筛选、排序等状态
 const store = useMoviesStore()
+// 刮削任务 store（批量刮削进度，顶栏铃铛面板展示）
+const scrapeStore = useScrapeStore()
 // 当前路由信息，用于读取 query 参数
 const route = useRoute()
 // 公共列表交互：批量选中切换 / 翻页 / 详情跳转（翻页时携带路由筛选参数不丢条件）
@@ -150,9 +153,10 @@ async function onEditSaved() {
  * 播放影片
  * @param {Object} m - 影片对象，需包含 py（视频文件路径）和 id
  */
-function onPlay(m) {
+async function onPlay(m) {
   if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  safeCall(window.api.playVideo(m.py))
+  const r = await window.api.playVideo(m.py).catch(() => null)
+  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
   safeCall(window.api.recordPlay(m.id))
 }
 
@@ -221,14 +225,10 @@ async function onBatchScrape() {
   const ids = [...store.selectedIds]
   const selected = store.movies.filter(m => ids.includes(m.id))
   if (!selected.length) return
-  // 创建不自动关闭的通知，显示刮削进度
-  const notif = ElNotification({
-    title: '批量刮削', message: `开始刮削 0/${selected.length} ...`, duration: 0, type: 'info'
-  })
+  // 批量刮削进度走顶栏铃铛面板（取代 ElNotification 右上角弹窗）
   let ok = 0, fail = 0
-  for (let i = 0; i < selected.length; i++) {
-    const m = selected[i]
-    notif.message = `正在刮削 ${i + 1}/${selected.length}：${m.ph || m.pm}`
+  for (const m of selected) {
+    const key = scrapeStore.start(m.ph, m.pm)
     try {
       const r = await window.api.scrapeMovie(m.ph, 'auto')
       if (r.ok && r.data) {
@@ -238,14 +238,23 @@ async function onBatchScrape() {
         if (saveR.ok) {
           const idx = store.movies.findIndex(x => x.id === m.id)
           if (idx >= 0) store.movies[idx] = { ...store.movies[idx], ...update }
+          scrapeStore.done(key, true)
           ok++
-        } else fail++
-      } else fail++
-    } catch { fail++ }
+        } else {
+          scrapeStore.done(key, false, saveR.error || '入库失败')
+          fail++
+        }
+      } else {
+        scrapeStore.done(key, false, r.error || '刮削失败')
+        fail++
+      }
+    } catch (e) {
+      scrapeStore.done(key, false, e.message)
+      fail++
+    }
   }
-  notif.close()
   if (fail === 0) ElMessage.success(`批量刮削完成，成功 ${ok} 部`)
-  else ElMessage.warning(`刮削完成：成功 ${ok} 部，失败 ${fail} 部`)
+  else ElMessage.warning(`刮削完成：成功 ${ok} 部，失败 ${fail} 部（详情见顶栏铃铛）`)
   await store.loadAllDbTags()
 }
 

@@ -312,7 +312,7 @@ function addMap() {
  */
 async function saveAll() {
   if (!window.api) return
-  // 基础 + 刮削设置（数字项转字符串入库）
+  // 基础 + 刮削设置（数字项转字符串入库）——批量更新：一次事务 + 一次持久化，不再卡顿
   st.page_size = String(pageSizeN.value)
   st.cols_per_row = String(colsPerRowN.value)
   st.preview_count = String(previewCountN.value)
@@ -321,9 +321,10 @@ async function saveAll() {
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
     'proxy_enabled', 'proxy_url'
   ]
-  for (const k of kvKeys) {
-    await window.api.updateSetting(k, String(st[k] ?? ''))
-  }
+  const batch = {}
+  for (const k of kvKeys) batch[k] = String(st[k] ?? '')
+  const rb = await window.api.updateSettingsBatch(batch)
+  if (!rb.ok) return ElMessage.error(rb.error)
   // 标签类别（补齐 9 大类）
   const cats = catRows.value
     .map(r => ({ cat: (r.cat || '').trim(), tags: (r.tags || '').split(/[，,]/).map(s => s.trim()).filter(Boolean) }))

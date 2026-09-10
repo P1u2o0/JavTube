@@ -40,6 +40,7 @@ module.exports = {
   // === 设置 ===
   SETTINGS_GET: 'settings:get',
   SETTINGS_UPDATE: 'settings:update',
+  SETTINGS_UPDATE_BATCH: 'settings:updateBatch',
   SETTINGS_GET_TAG_CATS: 'settings:getTagCats',
   SETTINGS_SAVE_TAG_CATS: 'settings:saveTagCats',
   SETTINGS_BACKUP: 'settings:backup',

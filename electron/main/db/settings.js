@@ -103,6 +103,25 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
+  // IPC: settings:updateBatch — 渲染进程 → 主进程（2026-09-10 新增）
+  // 批量更新设置项：一次事务写入多条、只做一次整库持久化。
+  // 此前渲染端逐键调用 SETTINGS_UPDATE（每键一次 persist），保存时明显卡顿。
+  ipcMain.handle(IPC.SETTINGS_UPDATE_BATCH, (_e, obj) => {
+    try {
+      const entries = Object.entries(obj || {})
+      if (!entries.length) return { ok: true }
+      let proxyChanged = false
+      for (const [key, value] of entries) {
+        db.run(`INSERT INTO settings(key,value) VALUES (?,?)
+          ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
+        if (String(key).startsWith('proxy_')) proxyChanged = true
+      }
+      persist(db)  // 全部写完后只持久化一次
+      if (proxyChanged) applyProxySettings(db)
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
   // IPC: settings:getTagCats — 渲染进程 → 主进程
   // 获取标签分类列表（从 JSON 文件读取）
   ipcMain.handle(IPC.SETTINGS_GET_TAG_CATS, () => {

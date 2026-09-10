@@ -33,7 +33,7 @@
         <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
         <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
-            <AppIcon name="play" :size="22" />
+            <AppIcon name="play" :size="18" />
           </button>
         </div>
       </div>
@@ -179,6 +179,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
+import { useScrapeStore } from '@/store/scrape'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
@@ -188,6 +189,8 @@ import { resolveCover, buildScrapeUpdate, safeCall } from '@/utils/global'
 const route = useRoute()
 const router = useRouter()
 const store = useMoviesStore()
+// 刮削任务 store（单部刮削进度，顶栏铃铛面板展示）
+const scrapeStore = useScrapeStore()
 
 // 响应式状态
 const m = ref(null)            // 当前影片数据对象
@@ -420,19 +423,26 @@ async function onScrape() {
   if (!m.value || !window.api) return
   if (!m.value.ph) return ElMessage.warning('该影片没有番号，无法刮削')
   scraping.value = true
+  const key = scrapeStore.start(m.value.ph, m.value.pm)
   try {
     const r = await window.api.scrapeMovie(m.value.ph, store.settings.scrape_source || 'auto')
     if (r.ok && r.data) {
       const ur = await window.api.updateMovie(m.value.id, buildScrapeUpdate(r.data))
       if (ur.ok) {
+        scrapeStore.done(key, true)
         ElMessage.success(`刮削成功（来源: ${r.data.source}）`)
         store.dirty = true
         await load(m.value.id)
-      } else ElMessage.error('更新失败：' + ur.error)
+      } else {
+        scrapeStore.done(key, false, ur.error)
+        ElMessage.error('更新失败：' + ur.error)
+      }
     } else {
+      scrapeStore.done(key, false, r.error || '未找到')
       ElMessage.error('刮削失败：' + (r.error || '未找到'))
     }
   } catch (e) {
+    scrapeStore.done(key, false, e.message)
     ElMessage.error('刮削出错：' + e.message)
   } finally {
     scraping.value = false
@@ -571,16 +581,16 @@ onMounted(async () => {
 .main-image:hover .main-hover.playable { opacity: 1; pointer-events: auto; }
 /* 播放按钮：圆形白底墨黑图标（复刻片库卡片 .play-btn） */
 .play-btn {
-  width: 52px; height: 52px;
+  width: 44px; height: 44px;
   border: none; border-radius: 50%;
   background: rgba(255, 255, 255, 0.94);
   color: var(--primary);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; padding: 0 0 0 3px; /* 视觉居中补偿 */
+  cursor: pointer;
   box-shadow: var(--sh-2);
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
-.play-btn:hover { transform: scale(1.1); background: #fff; }
+.play-btn:hover { transform: scale(1.06); background: #fff; }
 /* 无图占位块 */
 .no-cover {
   width: 300px; aspect-ratio: 3/2;
@@ -646,19 +656,18 @@ onMounted(async () => {
 .info-line {
   display: flex; gap: 14px;
   padding: 6px 0;
-  align-items: flex-start;
+  align-items: center;
 }
 .info-line + .info-line { border-top: 1px dashed var(--border); }
 .info-label {
   width: 60px; flex-shrink: 0;
-  color: var(--muted); font-size: 12.5px;
-  line-height: 26px;
+  color: var(--muted); font-size: 13.5px;
+  line-height: 1.6;
 }
 .info-value {
   flex: 1; min-width: 0;
-  color: var(--text); font-size: 13.5px;
+  color: var(--text); font-size: 14.5px;
   line-height: 1.7;
-  padding-top: 3px;
   word-break: break-all;
 }
 /* 标签列表：自动换行排列 */
