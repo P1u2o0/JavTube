@@ -87,7 +87,16 @@ async function onPlay(m) {
  * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开
  * @param {Object} m - 影片对象
  */
-async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
+/**
+ * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开
+ * @param {Object} m - 影片对象
+ */
+async function onFav(m) {
+  await store.toggleFav(m.id)
+  const idx = store.movies.findIndex(x => x.id === m.id)
+  if (idx >= 0) store.movies.splice(idx, 1, { ...store.movies[idx] })
+  onRefresh()
+}
 
 /**
  * 批量删除选中影片
