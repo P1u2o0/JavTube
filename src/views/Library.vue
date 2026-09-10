@@ -294,12 +294,11 @@ onMounted(async () => {
   const tagsP = store.loadAllDbTags()
   // 优先处理从详情页跳转来的筛选 query
   if (!await applyRouteFilter(route.query)) {
-    // 无筛选条件时，仅在数据为空或有变动标记时才加载
-    if (store.dirty || store.movies.length === 0) {
-      store.page = 1
-      store.dirty = false
-      await store.loadMovies({ append: false })
-    }
+    // 无筛选条件时也必须重新加载全量列表：store.movies 是三个视图共享的，
+    // 切到喜欢/历史页后它已被替换为子集数据，不重载会导致片库影片「消失」
+    store.page = 1
+    store.dirty = false
+    await store.loadMovies({ append: false, extraFilter: routeExtra() })
   }
   await tagsP
 })
