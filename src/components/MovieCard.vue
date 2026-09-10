@@ -29,7 +29,7 @@
       <!-- 右上角喜欢按钮：可点击切换喜欢（白底圆 + 心形，选中态朱柿红实心心） -->
       <button class="fav-btn" :class="{ active: isFav }"
               :title="isFav ? '取消喜欢' : '喜欢'"
-              @click.stop="$emit('fav')">
+              @click.stop="onFavClick">
         <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" />
       </button>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
@@ -78,6 +78,23 @@ function onErr() { errd.value = true }
 
 // 是否已收藏（cl 字段为 'y' 表示已收藏）
 const isFav = computed(() => props.m.cl === 'y')
+
+/**
+ * 喜欢按钮点击：先用 Web Animations API 播放弹跳（与 class/状态完全解耦，
+ * 确定性播放），再触发 fav 事件由父级写库。
+ */
+function onFavClick(e) {
+  e.currentTarget?.animate?.(
+    [
+      { transform: 'scale(1)' },
+      { transform: 'scale(0.78)', offset: 0.3 },
+      { transform: 'scale(1.18)', offset: 0.65 },
+      { transform: 'scale(1)' }
+    ],
+    { duration: 280, easing: 'ease-out' }
+  )
+  emit('fav')
+}
 
 // 封面 URL 计算属性：出错时返回空，否则解析封面路径
 const coverUrl = computed(() => {
@@ -176,23 +193,7 @@ watch(dataDirRef, () => { errd.value = false })
 }
 .fav-btn:hover { color: var(--accent); transform: scale(1.12); }
 .fav-btn.active { color: var(--accent); }
-/* 点赞动画：切换为已喜欢时按钮与心形轻微弹跳（幅度收敛，取消喜欢时不播放） */
-.fav-btn.active {
-  animation: fav-btn-pop 0.25s ease-out;
-}
-.fav-btn.active .app-icon {
-  animation: fav-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-@keyframes fav-btn-pop {
-  0% { transform: scale(0.96); }
-  60% { transform: scale(1.06); }
-  100% { transform: scale(1); }
-}
-@keyframes fav-pop {
-  0% { transform: scale(0.7); }
-  60% { transform: scale(1.18); }
-  100% { transform: scale(1); }
-}
+
 /* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
    选中底色写死朱柿红 #d2401e（与 --accent 同值），不依赖 CSS 变量解析 */
 .check {
