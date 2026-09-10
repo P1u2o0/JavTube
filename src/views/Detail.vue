@@ -27,7 +27,7 @@
     <!-- 主行：绿=海报展示区（左） + 蓝=影片信息卡（右） -->
     <div class="main-row">
       <!-- 绿：海报展示区：框体大小按海报比例计算并强制放大到窗口的 92vh/75vw
-           （小分辨率海报同样放大显示）。悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
+           （小分辨率海报按此系数适度放大）。悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
       <div class="main-image" :style="{ width: boxW + 'px', height: boxH + 'px' }">
         <img v-if="cover && !imgErr" :src="cover" @load="onPosterLoad" @error="imgErr = true" />
         <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
@@ -202,7 +202,7 @@ const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 海报加载失败标志
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
 // 海报框尺寸：按海报原始比例计算并强制放大——目标为窗口的 92vh 高 / 75vw 宽
-// （小分辨率海报同样放大显示），窗口 resize 时重算。默认 2:3 兜底。
+// （小分辨率海报按此系数适度放大），窗口 resize 时重算。默认 2:3 兜底。
 const boxW = ref(413)
 const boxH = ref(620)
 const posterNatural = ref(null)  // 海报原始像素尺寸 { w, h }
@@ -215,8 +215,8 @@ function computeBox() {
   if (!posterNatural.value) return
   const { w, h } = posterNatural.value
   const scale = Math.min(
-    (window.innerHeight * 0.92) / h,
-    (window.innerWidth * 0.75) / w
+    (window.innerHeight * 0.80) / h,
+    (window.innerWidth * 0.60) / w
   )
   boxW.value = Math.round(w * scale)
   boxH.value = Math.round(h * scale)
@@ -584,7 +584,7 @@ onMounted(async () => {
 /* 主行：海报区（左，尺寸按海报比例放大）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
 /* 绿：海报展示区：框体尺寸由 JS 按海报原始比例计算（:style 绑定 boxW/boxH），
-   强制放大到窗口的 92vh / 75vw——小分辨率海报同样放大显示，
+   放大到窗口的 80vh / 60vw——小分辨率海报同样放大显示，
    窗口 resize 时重算。海报 contain 贴合框体，无空白 */
 .main-image {
   flex-shrink: 0;
