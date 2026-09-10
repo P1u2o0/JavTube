@@ -499,10 +499,10 @@ onMounted(async () => {
 
 /* 主行：大图区（左，固定尺寸）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
-/* 绿：大图展示区：固定尺寸 413×620——即改版前海报在页面上的显示大小
-   （高 620 上限 × 2:3 海报比例），切换预览图时框保持不变 */
+/* 绿：大图展示区：固定尺寸 437×620——即此前自适应版本下典型海报
+   （800×1136 比例、高 620 上限）的实际显示大小，切换预览图时框保持不变 */
 .main-image {
-  width: 413px;
+  width: 437px;
   height: 620px;
   flex-shrink: 0;
   border-radius: var(--r-md);
