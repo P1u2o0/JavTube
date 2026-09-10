@@ -176,6 +176,23 @@ watch(dataDirRef, () => { errd.value = false })
 }
 .fav-btn:hover { color: var(--accent); transform: scale(1.12); }
 .fav-btn.active { color: var(--accent); }
+/* 点赞动画：切换为已喜欢时按钮与心形弹性弹跳（回弹曲线），取消喜欢时不播放 */
+.fav-btn.active {
+  animation: fav-btn-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fav-btn.active .app-icon {
+  animation: fav-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes fav-btn-pop {
+  0% { transform: scale(0.85); }
+  55% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes fav-pop {
+  0% { transform: scale(0.3); }
+  60% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
 /* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
    选中底色写死朱柿红 #d2401e（与 --accent 同值），不依赖 CSS 变量解析 */
 .check {
