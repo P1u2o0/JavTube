@@ -93,18 +93,14 @@ async function onPlay(m) {
 function onCardClick(m) { onDetail(m) }
 
 /**
- * 切换喜欢状态（卡片右上角喜欢按钮）
- * @param {Object} m - 影片对象
- */
-
-
-/**
  * 批量删除选中影片
  */
 async function onBatchDelete() {
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${store.selectedIds.length} 项？`, '批量删除', { type: 'warning' })
-    await store.batchDelete()
+    const r = await window.api.deleteMovies([...store.selectedIds])
+    if (!r.ok) return ElMessage.error(r.error)
+    store.selectedIds = []
     ElMessage.success('已删除')
     await loadHistory()
   } catch {}

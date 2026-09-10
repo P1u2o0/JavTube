@@ -159,8 +159,11 @@ function onCardClick(m) {
 async function onBatchDelete() {
   try {
     await ElMessageBox.confirm(`确定删除选中的 ${store.selectedIds.length} 项？`, '批量删除', { type: 'warning' })
-    await store.batchDelete()
+    const r = await window.api.deleteMovies([...store.selectedIds])
+    if (!r.ok) return ElMessage.error(r.error)
+    store.selectedIds = []
     ElMessage.success('已删除')
+    await onRefresh()
   } catch {}
 }
 

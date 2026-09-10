@@ -183,31 +183,6 @@ export const useMoviesStore = defineStore('movies', {
     },
 
     /**
-     * 删除单部影片
-     * @param {number} id - 影片 ID
-     * @returns {Promise<boolean>} 是否删除成功
-     */
-    async deleteMovie(id) {
-      if (!window.api) return
-      const r = await window.api.deleteMovie(id)
-      if (r.ok) { await this.loadMovies(); await this.loadAllDbTags() }
-      return r.ok
-    },
-
-    /**
-     * 批量删除选中影片
-     */
-    async batchDelete() {
-      if (!this.selectedIds.length || !window.api) return
-      const r = await window.api.deleteMovies([...this.selectedIds])
-      if (r.ok) {
-        this.selectedIds = []
-        await this.loadMovies()
-        await this.loadAllDbTags()
-      }
-    },
-
-    /**
      * 切换影片收藏状态
      * @param {number} id - 影片 ID
      */

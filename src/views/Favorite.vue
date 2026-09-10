@@ -79,20 +79,16 @@ async function onPlay(m) {
 }
 
 /**
- * 删除影片（带二次确认）
- * @param {Object} m - 影片对象
- */
-/**
- * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开
- * @param {Object} m - 影片对象
- */
-/**
  * 批量删除选中影片
  */
 async function onBatchDelete() {
   try {
     await ElMessageBox.confirm(`删除 ${store.selectedIds.length} 项？`)
-    await store.batchDelete()
+    const r = await window.api.deleteMovies([...store.selectedIds])
+    if (!r.ok) return ElMessage.error(r.error)
+    store.selectedIds = []
+    ElMessage.success('已删除')
+    await onRefresh()
   } catch {}
 }
 

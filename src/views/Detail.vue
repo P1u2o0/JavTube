@@ -410,19 +410,22 @@ async function load(id) {
  */
 async function onPlay() {
   if (!m.value?.py) return ElMessage.warning('未设置视频路径')
-  safeCall(window.api.playVideo(m.value.py))
+  const r = await window.api.playVideo(m.value.py).catch(() => null)
+  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
   safeCall(window.api.recordPlay(m.value.id))
   store.dirty = true
 }
 
 /**
- * 切换收藏状态
+ * 切换收藏状态（乐观更新：先翻转界面状态，写入失败回滚）
  */
 async function toggleFav() {
   if (!m.value || !window.api) return
   const v = isFav.value ? 'n' : 'y'
+  const prev = m.value.cl
+  m.value.cl = v
   const r = await window.api.updateMovie(m.value.id, { cl: v })
-  if (r.ok) m.value.cl = v
+  if (!r.ok) m.value.cl = prev
 }
 
 /**
