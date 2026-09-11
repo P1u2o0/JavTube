@@ -12,7 +12,7 @@ const fs = require('fs')
 const path = require('path')
 const { session } = require('electron')
 // db 层通用工具（落盘收口）
-const { persist } = require('./util')
+const { persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -96,7 +96,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       // 如果 key 不存在则插入，已存在则更新 value
       db.run(`INSERT INTO settings(key,value) VALUES (?,?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
-      persist(db)  // 立即持久化
+      persistSoon(db)
       // 代理相关设置变更时，即时应用到 Electron session（异步执行不阻塞返回）
       if (String(key).startsWith('proxy_')) applyProxySettings(db)
       return { ok: true }
@@ -116,7 +116,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
           ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
         if (String(key).startsWith('proxy_')) proxyChanged = true
       }
-      persist(db)  // 全部写完后只持久化一次
+      persistSoon(db)  // 全部写完后只持久化一次（延迟落盘）
       if (proxyChanged) applyProxySettings(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
@@ -143,7 +143,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
     try {
       if (!targetPath || !db._dbPath) return { ok: false, error: 'invalid path' }
       // 先强制保存内存数据库到磁盘，确保数据最新
-      persist(db)
+      persistSoon(db)
       // 复制数据库文件到目标路径
       fs.copyFileSync(db._dbPath, targetPath)
       return { ok: true }
@@ -172,7 +172,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       db.run('DELETE FROM movies')   // 清空影片表
       db.run('DELETE FROM actress')  // 清空女优表
       db.run('DELETE FROM websites') // 清空网址表
-      persist(db)  // 立即持久化
+      persistSoon(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })

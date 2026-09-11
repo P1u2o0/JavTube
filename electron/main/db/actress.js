@@ -10,7 +10,7 @@
  */
 
 // db 层通用工具（查询结果转换 / 落盘收口）
-const { rows, firstRow, firstScalar, persist } = require('./util')
+const { rows, firstRow, firstScalar, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -64,7 +64,7 @@ function registerActressIpc(ipcMain, db) {
         d.zb||'', d.birthday||'', d.debut||'', d.remark||''
       ])
       const id = Number(firstScalar(db.exec('SELECT last_insert_rowid()')[0]))
-      persist(db); return { ok: true, id }
+      persistSoon(db); return { ok: true, id }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -78,7 +78,7 @@ function registerActressIpc(ipcMain, db) {
         Number(d.height||0), Number(d.bust||0), Number(d.waist||0), Number(d.hip||0),
         d.zb||'', d.birthday||'', d.debut||'', d.remark||'', Number(id)
       ])
-      persist(db); return { ok: true }
+      persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -86,7 +86,7 @@ function registerActressIpc(ipcMain, db) {
   // 删除女优
   ipcMain.handle(IPC.ACTRESS_DELETE, (_e, id) => {
     try { db.run('DELETE FROM actress WHERE id=?', [Number(id)])
-      persist(db); return { ok: true } }
+      persistSoon(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 }

@@ -60,4 +60,16 @@ function persist(db) {
   if (db._forceSave) db._forceSave()
 }
 
-module.exports = { rows, firstRow, firstScalar, nowLocal, persist }
+/**
+ * 延迟持久化（2026-09-11 从 movies.js 提升为公共工具）。
+ * persist 内部的 db.export() 是整库同步导出，在 IPC handler 内同步执行会
+ * 阻塞主进程事件循环，拖慢并发请求与交互响应（表现为播放/点击卡顿）。
+ * persistSoon 立即返回、把落盘推迟到本轮事件循环之后；崩溃窗口为毫秒级，
+ * 且 init.js 的 10 秒定时持久化可兜底。
+ * @param {Object} db - sql.js 数据库实例
+ */
+function persistSoon(db) {
+  setImmediate(() => { try { persist(db) } catch {} })
+}
+
+module.exports = { rows, firstRow, firstScalar, nowLocal, persist, persistSoon }

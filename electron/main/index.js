@@ -170,8 +170,10 @@ function createWindow() {
       mainWindow.setAlwaysOnTop(true)   // 短暂置顶
       mainWindow.setAlwaysOnTop(false)  // 立即取消置顶，使窗口弹到最前但不固定置顶
       mainWindow.moveTop()
-      // 调试模式自动打开 DevTools，便于排查渲染端问题
-      mainWindow.webContents.openDevTools({ mode: 'detach' })
+      // 仅开发模式自动打开 DevTools（生产打包后不弹出，避免用户困惑）
+      if (process.env.VITE_DEV_SERVER_URL) {
+        mainWindow.webContents.openDevTools({ mode: 'detach' })
+      }
     })
     // 窗口关闭时清理引用
     mainWindow.on('closed', () => { console.log('[main] window closed'); mainWindow = null })

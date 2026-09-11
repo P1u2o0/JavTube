@@ -64,7 +64,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useWebStore } from '@/store/settings'
+import { useWebStore } from '@/store/website'
 import AppIcon from '@/components/AppIcon.vue'
 
 // 网址 store 实例

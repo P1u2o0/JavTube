@@ -9,7 +9,7 @@
  */
 
 // db 层通用工具（查询结果转换 / 落盘收口）
-const { rows, firstScalar, persist } = require('./util')
+const { rows, firstScalar, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -34,7 +34,7 @@ function registerWebsitesIpc(ipcMain, db) {
       d = d || {}
       db.run(`INSERT INTO websites (name,url,grp,img) VALUES (?,?,?,?)`, [d.name||'', d.url||'', d.grp||'', d.img||''])
       const id = Number(firstScalar(db.exec('SELECT last_insert_rowid()')[0]))
-      persist(db); return { ok: true, id }
+      persistSoon(db); return { ok: true, id }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -45,7 +45,7 @@ function registerWebsitesIpc(ipcMain, db) {
       const d = data || {}
       db.run(`UPDATE websites SET name=?,url=?,grp=?,img=? WHERE id=?`,
         [d.name||'', d.url||'', d.grp||'', d.img||'', Number(id)])
-      persist(db); return { ok: true }
+      persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -53,7 +53,7 @@ function registerWebsitesIpc(ipcMain, db) {
   // 删除网址
   ipcMain.handle(IPC.WEBSITES_DELETE, (_e, id) => {
     try { db.run('DELETE FROM websites WHERE id=?', [Number(id)])
-      persist(db); return { ok: true } }
+      persistSoon(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
 }

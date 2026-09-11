@@ -106,7 +106,7 @@
 import { onMounted, reactive, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useActressStore } from '@/store/settings'
+import { useActressStore } from '@/store/actress'
 import AppIcon from '@/components/AppIcon.vue'
 import { resolveCover } from '@/utils/global'
 
@@ -154,10 +154,9 @@ async function remove(a) {
  * @param {Object} a - 女优对象
  */
 async function showDetail(a) {
-  if (!window.api) return
-  const r = await window.api.getActress(a.id)
-  if (r.ok) { detail.value = r.data; detailShow.value = true }
-  else ElMessage.warning(r.error)
+  const d = await s.getOne(a.id)
+  if (d) { detail.value = d; detailShow.value = true }
+  else ElMessage.warning('获取女优详情失败')
 }
 
 /**

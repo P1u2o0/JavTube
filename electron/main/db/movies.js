@@ -13,15 +13,8 @@
 
 // 标签分隔符、收藏标记等共享常量（集中定义于 constants.js）
 const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
-// db 层通用工具（查询结果转换 / 时间格式 / 落盘收口）
-const { rows, firstRow, firstScalar, nowLocal, persist } = require('./util')
-
-/**
- * 延迟持久化：立即返回不阻塞 IPC（整库同步导出会阻塞主进程事件循环，
- * 拖慢并发请求与交互响应），落盘推迟到本轮事件循环之后执行。
- * 崩溃窗口为毫秒级，交换来的交互流畅度值得。
- */
-const persistSoon = (db) => persistSoon(db)
+// db 层通用工具（查询结果转换 / 时间格式 / 落盘收口 persistSoon 等）
+const { rows, firstRow, firstScalar, nowLocal, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -65,7 +58,8 @@ const MOVIE_COLUMNS = [
   ['tjrq',  d => d.tjrq || nowLocal()],
   ['dx',    N('dx')],
   ['dy',    S('dy')],
-  ['sc',    S('sc')],
+  // 注：旧字段 sc（时长·秒）已于 2026-09-11 移除——全库无写入也无读取，
+  // 时长统一使用 duration（分钟）。DB 列保留不动，仅不再参与读写。
   ['ps',    S('ps')],
   ['fx',    S('fx')],
   ['xl',    S('xl')],

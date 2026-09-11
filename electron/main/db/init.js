@@ -19,15 +19,12 @@ let SQL = null
 /**
  * 查找 sql.js 的 WASM 文件路径。
  * WASM 文件是 sql.js 运行所需的核心二进制模块。
- * @param {string} cwdBase - 查找的基准目录（默认为当前工作目录）
+ * @param {string} [cwdBase] - 查找的基准目录（默认为当前工作目录）
  * @returns {string} WASM 文件路径，找不到返回空字符串
  */
 function findWasm(cwdBase) {
-  const candidates = [
-    path.join(cwdBase || process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
-  ]
-  for (const c of candidates) if (fs.existsSync(c)) return c
-  return ''
+  const p = path.join(cwdBase || process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+  return fs.existsSync(p) ? p : ''
 }
 
 /**
