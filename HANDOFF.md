@@ -1,235 +1,185 @@
 # JavTube 项目交接书（HANDOFF）
 
-> 给"换模型后接手 javtube 的人"看的精简速查。**配合 `PROJECT_BRIEF.md` 一起读**——本文是"现在到哪了 + 别踩这些坑"，BRIEF 是"项目是什么 + 历史"。
+> 给「换模型/新会话后接手 javtube 的人」看的精简速查。**本文是唯一权威接力入口**。
+> 批次级开发历史见 `接续工作小结.md`，项目背景档案见 `PROJECT_BRIEF.md`。
 >
-> 维护：每次切换模型/会话前由当前模型重写本文件。
+> 维护：每次切换模型/会话前由当前 AI 重写本文件（更新快照与批次摘要）。
 
 ---
 
 ## 0. 一句话
 
-`javtube_dev` 是 Electron 30 + Vue 3 + sql.js 写的**纯本地**影视库管理软件。9/7 已恢复到 WorkBuddy 工作区，9/8 期间处理了封面加载 bug 和一次"删除所有 GitHub 引用"的整理。当前 13 个 commit，工作区 clean，无 git 远端。
+`javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
+**纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **53 个 commit**，工作区 clean，无 git 远端。
 
 ---
 
-## 1. 当前状态（2026-09-08 18:05 快照）
+## 1. 当前状态快照（2026-09-11）
 
 | 项 | 值 |
 |---|---|
-| 工作区 | `<用户目录>\WorkBuddy\2026-09-07-21-10-26\` |
-| 项目根 | `…\javtube_dev\` |
-| 大小 | 600M（含 595M `node_modules`） |
-| 源文件数 | 37 个（`electron/` + `src/` 下 js/vue/css，含本 HANDOFF.md） |
-| git 分支 | `main`（16 个 commit，8 轮工程重构已完成） |
-| git 远端 | **无**（已 `git remote remove origin`，用户决定不再用代码托管） |
-| dev 服务 | **已停止**（Electron 进程已退出，需要时手动 `npm run dev`） |
-| 数据目录 | `node_modules\electron\dist\data\`（开发模式默认位置） |
-| 用户数据库 | `…\data\app.db`（含 `SSNI-888` 影片 1 条） |
-| 封面 | `…\data\covers\SSNI-888.jpg`（已修复可正常显示） |
+| 项目根 | `<项目根目录>\` |
+| git | `main` 分支，53 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
+| 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-2\`，用绝对路径调用） |
+| dev 服务 | **已停止**，需要时手动启动（见 §2） |
+| 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
+| 离线备份 | 工作区上级 `javtube_backup_20260910_v2.bundle`（git bundle 全历史）+ 同名 `.tar.gz` 源码快照 |
+| 测试数据 | 2 部影片（SSNI-888 / MNGS-067），含封面与预览图 |
 
-### 工程 refactor 批次（9/8，自旧向新）
-
-```
-16ddd75 refactor(8): 渲染层公共逻辑收敛 + 配置与杂项清理
-3a0d8de refactor(7): index.js 拆分 + 写盘原子性加固 + 播放时间格式统一
-3ba65c6 refactor(6): 删减 NFO 导入功能 + 清理死文件 + 修 B2（收藏页播放记历史）
-5c8b687 refactor(5/5): 渲染层刮削映射提取为公共函数
-37d5364 refactor(4/5): IPC 通道名常量化（preload 与 main 共享唯一来源）
-a6ac842 refactor(3/3): db/movies.js 按领域拆分为三个模块
-65d4c9c refactor(2/3): db 工具提取 + INSERT/UPDATE 字段清单去重
-976d2c9 refactor(1/3): 修正表注释 + 新建 constants.js 收拢共享常量
-```
-**重要**：轮次 4 曾引入 require 路径错误（'./common/...' 应为 '../common/...'），
-node --check 与 vite build 均查不出，靠 dev 冒烟才发现并已在轮次 6 修复。
-**凡涉及模块加载的改动，必须跑一次 `npm run dev` 冒烟验证。**
-
-回滚备份：git tag `backup-20260908-pre-round6`（重构前）/
-`backup-20260908-post-round8`（重构后）；
-工作区根有 `javtube_backup_20260908.bundle`（完整 git 仓）与
-`javtube_src_backup_20260908.tar.gz`（源码快照）。
-
-### 更早的 13 个 commit
-```
-c3a590e docs: 彻底移除所有 GitHub 相关引用              ← 9/8
-6f780e1 docs: 移除「推送到 GitHub」相关待办                ← 9/8
-6ecbc54 docs: 更新日志回填 9/8 commit hash                ← 9/8
-7d46dbb docs: HANDOFF.md 换模型交接书                     ← 9/8
-425cf5f docs: 更新日志回填真实 commit hash                ← 9/7
-cf0084a docs: 项目档案——补充 9/7 两条更新记录            ← 9/7
-e6482f9 fix: 封面图片加载——注册 javtube-cover privileged scheme  ★ 9/7 关键
-2f04f79 perf: 优化页面切换卡顿                            ← 原始末位
-3837053 feat: 添加影片仅保留两种方式 + 修复关于页图标裁剪
-13854fe fix: 修复路由切换后页面空白（过渡动画死锁）
-07a8c1c refactor: 代码梳理与冗余清理
-5cd25d1 docs: 新增 README
-639e669 feat: UI 全面重绘——统一设计令牌、图标体系与配色
-```
-
-最近 6 个 commit（`e6482f9` 及之后）都是这次会话里做的。`639e669`~`2f04f79` 是项目原始作者留下的 6 个 commit。
-
----
-
-## 2. 启动与运行
+### 一键启动（dev）
 
 ```bash
-# 依赖已装好（595M node_modules 已在），直接：
 cd "<项目根目录>"
 "<工具目录>\binaries\node\versions\22.22.2-2\npm.cmd" run dev
-# Vite 5173 + Electron 窗口（dev 时 dataDir 默认在 node_modules/electron/dist/data/）
-# DevTools 自动 detached 打开
+```
 
-# 验证构建
-"<工具目录>\binaries\node\versions\22.22.2-2\npx.cmd" vite build
+### 常用命令
 
+```bash
+# 构建验证（~6s，改完必跑）
+npx vite build
+# 语法检查（主进程文件）
+node --check electron/main/db/movies.js
+# IPC 通道配平检查：invoke 与 handle 应 40/40
 # 打包 Win 安装包
-"<工具目录>\binaries\node\versions\22.22.2-2\npm.cmd" run build:win
-
-# GPU 驱动异常降级
+npm run build:win
+# GPU 驱动异常降级调试
 set JAVTUBE_DISABLE_GPU=1 && npm run dev
 ```
 
-**重要**：
-- 托管 Node 路径用绝对路径（`<工具目录>\binaries\node\…`），不要用裸 `npm`/`node`
-- **没有 git 远端**。`git push` / `git fetch` 都会报错。如果用户改主意用代码托管，需要他自己在终端 `git remote add origin <url>`
+---
+
+## 2. 必读文档地图（按顺序）
+
+1. **本文件** —— 现状 + 架构 + 机制 + 坑
+2. **`接续工作小结.md`** —— 全部开发批次详细记录（每个 commit 改了什么、为什么，§1.x）
+3. **`PROJECT_BRIEF.md`** —— 项目背景档案与早期历史（第 10 节更新日志）
+4. **`README.md`** —— 面向使用者的功能介绍
+
+> ⚠️ `开发文档.md` / `快速开始.md` / `项目说明.md` 已删除（2026-09-11 整理：内容过时且与上述文档重叠）。
 
 ---
 
-## 3. 文件速查
+## 3. 架构速查
 
-### 入口
-- `package.json` — `name: javtube`, `main: electron/main/index.js`, `build`: electron-builder（无 `repository` 字段）
-- `index.html` — 唯一 HTML，含 CSP meta（**`img-src` 已加 `javtube-cover:`**）
-- `vite.config.js` — Vue 插件 + `start-electron-after-vite` 自定义插件
-- `start.bat` — 老启动脚本（路径写死 `c:\Users\<用户名>\Documents\<旧目录>\<旧项目名>\app` 已过期，仅历史遗留）
+```
+javtube_dev/
+├─ electron/
+│  ├─ main/
+│  │  ├─ index.js            # 主进程入口：启动序列 / 窗口 / javtube-cover 封面协议注册
+│  │  ├─ ipc-utils.js        # 工具 IPC：playVideo(含文件存在校验)、扫描目录、readDuration 等
+│  │  ├─ scraper.js          # 在线刮削：JAVBUS / JAVDB 解析（唯一出处，550+ 行待拆分）
+│  │  ├─ video-meta.js       # 纯 Node MP4 mvhd 时长解析（AVI/MKV 返回 0）
+│  │  └─ db/
+│  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移
+│  │     ├─ movies.js        # 影片 CRUD / 分页查询 / 批量操作（全部写操作用 persistSoon）
+│  │     ├─ settings.js      # 设置读写 + updateBatch 批量保存 + 标签类别 JSON
+│  │     ├─ actress.js       # 女优表
+│  │     └─ websites.js      # 网址表
+│  ├─ preload/index.js       # contextBridge 暴露 window.api（40 个通道，与 main 一一配对）
+│  └─ common/ipc-channels.js # IPC 通道名常量（main/preload 共享唯一来源）
+└─ src/
+   ├─ router/index.js        # 静态引入全部页面（性能优化，勿改回懒加载）
+   ├─ views/                 # 7 个页面：Library(片库) Favorite(喜欢) History(历史)
+   │                         #   Detail(详情) Actress(女优) Website(网址) Home(占位 TODO)
+   │                         #   ManualForm.vue / ScanDirForm.vue —— 添加影片的子表单
+   ├─ components/            # MovieCard / MovieGrid / TagFilter / StatusBar / TopNav /
+   │                         #   AppIcon(自绘 SVG 图标库) / SettingsDialog(设置弹窗) /
+   │                         #   AddMovieDialog.vue + AddMovieDialog/(添加影片表单)
+   ├─ store/movies.js        # Pinia：列表/分页/排序/筛选/批量选择（片库/喜欢/历史三视图共享！）
+   ├─ store/scrape.js        # 刮削任务进度（顶栏铃铛面板）
+   └─ composables/useMovieList.js  # 列表页公共交互（onToggle/onPageChange/onDetail）
+```
 
-### 主进程
-- `electron/main/index.js` — 窗口/IPC/迁移/数据目录；**`registerCoverProtocol()` 在这**
-- `electron/main/scraper.js` — JavDB/JavBUS/FC2PPVDB/AVSOX 刮削（基于 AS3 JavTag 移植）
-- `electron/main/db/init.js` — sql.js 初始化 + WASM 定位 + 5 秒脏标记自动 save
-- `electron/main/db/movies.js` — 影片 CRUD + 搜索 + 分页 + 标签筛选
-- `electron/main/db/actress.js` — 女优 CRUD
-- `electron/main/db/settings.js` — 设置 + 标签分类 JSON + 备份/恢复/清空
-
-### 预加载（contextBridge → `window.api`）
-- `electron/preload/index.js` — 暴露 `api.getMovies/getMovie/createMovie/updateMovie/...` 等 20+ 方法
-
-### 渲染层
-- `src/main.js` — `createApp` + Pinia + ElementPlus + zhCn + 全局注册 Element Plus 图标
-- `src/App.vue` — TopNav + `<router-view>`；**用 CSS keyframe 做路由入场，不用 `<transition mode="out-in">`**
-- `src/router/index.js` — **静态引入**全部 8 个页面（性能优化后不要改回懒加载）
-- `src/store/{movies,settings}.js` — Pinia
-- `src/styles/global.css` — **设计令牌层**（颜色/圆角/阴影/动画/字体），别硬编码十六进制
-- `src/utils/global.js` — `resolveCover()`（已切到 javtube-cover 协议）、`extractCode()`、`dataDirRef`
-- `src/components/AppIcon.vue` — **统一 SVG 图标库**（30+），别再加 emoji
-
-### 页面（8 个）
-- `src/views/Home.vue` — 当前是功能引导占位（**未接真实数据**，是个 TODO）
-- `src/views/Library.vue` — 主片库（卡片网格 + 标签筛选 + 批量操作）
-- `src/views/Detail.vue` — 详情（封面大图 + 标签 + 操作按钮）
-- `src/views/Favorite.vue` — 收藏
-- `src/views/History.vue` — 观看记录
-- `src/views/Actress.vue` — 女优管理
-- `src/views/Website.vue` — 网址导航
-- `src/views/Settings.vue` — 设置（基础 / 标签类别 / 辅助 / 关于 4 tab）
-
-### 通用组件
-- `src/components/{TopNav,MovieCard,MovieGrid,SortBar,StatusBar,TagChip,TagFilter}.vue`
-- `src/components/{AddMovieDialog,EditMovieDialog}.vue`
-- `src/components/AddMovieDialog/{ScanDirForm,NfoForm,ManualForm,ScrapeForm,SingleForm}.vue`
-  - **当前未引用**：`ScrapeForm.vue`、`SingleForm.vue`（被禁用但保留文件）
-  - **仅 EditMovieDialog 引用**：`ManualForm.vue`
-
-### 文档
-- `PROJECT_BRIEF.md` — 项目档案（必读，第 10 节是更新日志）
-- `HANDOFF.md` — 本文档
-- `README.md` — 项目说明
-- `开发文档.md` / `快速开始.md` / `项目说明.md` — 历史文档，与代码偶有出入（比如 better-sqlite3 vs sql.js 实际是 sql.js）
-- `replace_icon.py` + `rcedit.exe` — 给打包后的 exe 替换图标（用 pefile 改 PE 资源）
+**已删除**：`EditMovieDialog.vue`（三点菜单移除后零引用）、`Settings.vue` + `/settings` 路由（设置改弹窗）、
+`开发文档.md` / `快速开始.md` / `项目说明.md`（文档整理）。
 
 ---
 
-## 4. 设计约束（**违反会破坏一致性，不要这样做**）
+## 4. 关键机制（改代码前必读）
 
-1. **颜色/圆角/阴影一律用 CSS 变量**：`var(--bg)` / `var(--r-md)` / `var(--sh-1)` 等。检查硬编码：`grep -rE '#[0-9a-fA-F]{6}' src/`
-2. **图标用 `AppIcon` 库**：不要新加 emoji；需要新图标先在 `AppIcon.vue` 注册
-3. **不用 `<transition mode="out-in">` 做路由过渡**：Electron `--disable-gpu` 时帧回调会被节流，过渡未结束新页面永挂载，表现为空白页。改用纯 CSS `@keyframes route-anim`
-4. **数据库是 sql.js，不是 better-sqlite3**：所有 SQL 走主进程 `window.api.db.*` 异步 API，不在渲染进程直接调用
-5. **Tab 分隔符用中文逗号「，」**：项目约定
-6. **IPC 返回格式**：`{ ok: boolean, data, error }`
-7. **不要在 vite.config.js 追加 `--disable-software-rasterizer`**：会禁 SwiftShader，大窗口动画掉帧
-8. **不要自己算 Unix 时间戳**：用 `date` / PowerShell `[DateTimeOffset]`
-9. **写新 UI 前先看 `src/styles/global.css` + `AppIcon.vue`**，把现有令牌复用而不是新加
-10. **不要在文档里提任何"代码托管/远端仓库"相关措辞**（用户 9/8 决策）
-
----
-
-## 5. ★ 关键修复 `e6482f9`：封面协议
-
-**问题**：刮削后的本地封面 `file:///C:/.../covers/SSNI-888.jpg` 加载不出来，DevTools 报 `Not allowed to load local resource`。
-
-**修法**：在主进程注册 `javtube-cover://` privileged scheme（不在渲染层去 `file://` 硬拼）。
-
-**坑（换模型的人务必看一眼）**：
-- **必须 `protocol.registerSchemesAsPrivileged` 在 app ready 之前调用**——这是 Electron 文档里非常容易遗漏的硬性要求
-- 第一次写 `javtube-cover:///<base64url>`（三个斜杠）但 base64url 字符 `[A-Za-z0-9-_]` 是合法 hostname 字符，**Chromium 把整串当 host，pathname 只剩 `/`**，主进程拿到空字符串返回 400。**修法是用固定占位 host '0'** → `javtube-cover://0/<base64url>`
-- CSP `img-src` 必须加 `javtube-cover:`
-- 安全：白名单扩展名（仅图片）+ 白名单根目录（dataDir/cwd/exe 同级/tmpdir），用 `path.relative` + 不以 `..` 开头判断，不能用正则
-
-**涉及文件**：
-- `electron/main/index.js` — `registerSchemesAsPrivileged`（文件顶部）+ `registerCoverProtocol()`（getDataDir 之后定义）
-- `src/utils/global.js` — `resolveCover()` 全部改用 base64url 编码 + 固定 host '0'
-- `index.html` — CSP `img-src` 加 `javtube-cover:`
+| 机制 | 说明 |
+|---|---|
+| **persistSoon** | sql.js 的 `persist` 是整库同步导出（阻塞主进程）。`db/movies.js` 全部写操作统一 `persistSoon(db)`（setImmediate 延迟落盘）。**新增写操作必须用它**；settings.js/actress.js 仍是同步 persist（暂未迁移） |
+| **稳定分页** | 所有 `ORDER BY` 必须追加唯一 tie-breaker（`, id DESC`），否则同值行跨 LIMIT/OFFSET 查询顺序不保证 → 影片在页间跳动 |
+| **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
+| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。当前 40/40 配对，返回格式 `{ ok, data?, error? }` |
+| **三视图共享 store** | 片库/喜欢/历史共用 `store.movies`——各视图挂载时必须重新加载自己视图的全量语义（片库=全量、喜欢=onlyFavorite、历史=historyOnly） |
+| **刮削进度** | 顶栏铃铛按钮（`useScrapeStore`：start/done/clear），红色角标=进行中数量；单个与批量刮削都接入 |
+| **灯箱查看器** | Detail.vue 点击预览小图 → `<Teleport to="body">` 全屏遮罩（0.3s 渐暗）+ 滚轮缩放 0.5-5x + 左右按钮/方向键循环 + Esc 关闭 |
+| **详情页海报区** | 框尺寸 JS 计算：`min((视口高-300px)/海报高, 视口宽×0.56/海报宽)`，小分辨率海报强制放大；窗口 resize 重算；海报 contain 贴合框体 |
+| **封面协议** | `javtube-cover://0/<base64url>` 自定义 privileged scheme（`resolveCover`，详见 PROJECT_BRIEF §5） |
+| **乐观更新** | 交互路径写库已延迟落盘，UI 侧可乐观翻转、失败回滚（Detail.toggleFav 与三视图 onPlay 是范例） |
 
 ---
 
-## 6. 已知 TODO（按优先级）
+## 5. 已知坑（血的教训，勿重蹈）
 
-### P1（用户会问的）
-- **Home.vue 未接真实数据**：现在是功能引导占位页（"导入影片 / 浏览片库 / 收藏"三个按钮）。可接：统计（总影片/收藏/观看数）、最近添加、最近观看、随机推荐。**结构很适合做 Dashboard**
-
-### P2（清理类）
-- **未引用文件**：`ScrapeForm.vue`、`SingleForm.vue` 当前没被引用（被禁用但保留）。可清理
-- **`ManualForm.vue` 仅 EditMovieDialog 引用**，可考虑挪到 EditMovieDialog/ 下
-- **vite.config.js 旧注释**："已改为静态引入"——但 router 已经静态引入，注释可清理
-- **老 `start.bat`** 路径写死 <旧目录>，过期
-
-### P3（优化类）
-- **sql.js 持久化**：没有 WAL 模式，靠设置里的「备份」手动 export；可考虑自动备份或检测退出信号
-- **scrape 失败的容错**：目前是单次 try/catch，可加重试 + 多源 fallback
-- **Home.vue 真实数据**接入后，可考虑做 skeleton loading
+1. **分页 ORDER BY 必须带唯一 tie-breaker**（`, id DESC`）——同值行跨查询顺序不保证 → 影片"页间跳动/消失"
+2. **三视图共享 store.movies**——挂载时必须无条件重载自己视图的全量语义；"dirty 才加载"的优化对共享数据是错误优化
+3. **IPC 结构化克隆数据的深层属性修改响应性不可靠**——关键 UI 更新用 `splice(idx, 1, {...m})` 元素替换强制触发
+4. **el-dialog 根样式作用不到 scoped**——dialog 根的尺寸/居中样式须放非 scoped 块；固定高度用根 `height + flex column`（max-height 不够）
+5. **el-dialog 强制居中**用 `.el-overlay-dialog:has(.xxx-dialog) { display:flex }` 比 align-center 可靠
+6. **AppIcon 图标名写错会渲染空 svg 占位**（不报错）——按钮出现神秘空白先查图标名
+7. **sql.js persist 整库同步导出是交互卡顿总根源**——永远不要在 IPC handler 内同步执行
+8. **凡涉及模块加载的改动必须跑 `npm run dev` 冒烟**——node --check 与 vite build 查不出 require 路径错误（轮次 4 教训）
+9. **封面协议三坑**：`registerSchemesAsPrivileged` 必须在 app ready 前；base64url 必须配占位 host `0`；CSP `img-src` 必须加 `javtube-cover:`（详见 PROJECT_BRIEF §5）
+10. **路由过渡不要用 `<transition mode="out-in">`**——`--disable-gpu` 时帧回调节流导致空白页，用纯 CSS `@keyframes`
+11. **回滚/脚本分段替换文件后必须 grep 验证 + build**——部分应用状态（残留大括号/emits）会导致编译错误
 
 ---
 
-## 7. 测试/调试指南
+## 6. 设计约束（违反会破坏一致性）
 
-- 启动 `npm run dev` 后 DevTools 自动打开（detached 模式）
-- 主进程日志全部带 `[main]` 前缀；渲染进程 console 通过 DevTools 看
-- 性能问题：路由首次切换应 ≤20ms（静态引入），若变慢说明有人改回懒加载
-- 调试 GPU 问题：先 `set JAVTUBE_DISABLE_GPU=1 && npm run dev` 排除
-- 数据清空测试：Settings → 关于 → 清空数据库（二次确认）
-
----
-
-## 8. 用户偏好（从历史对话归纳）
-
-- **设计敏感**：改 UI 时必须保留原始字体（Outfit 拉丁 + Noto Sans SC 中文）、配色（暖纸白 + 墨黑 + 朱柿红 #d2401e）、版面（卡片错峰入场、4 级圆角 8/12/16/pill）
-- **喜欢 SVG 矢量透明背景导出**（用于设计资产跨软件集成）
-- **要求设计+工程一体化**：交付物要工程可用，不是纯展示稿
-- **常在 WorkBuddy 中工作**，习惯把"项目档案" `PROJECT_BRIEF.md` 放在项目根
-- **9/8 决策**：不再使用任何代码托管平台（git 远端已删除）。文档里不再提"推送到 X"
-- **9/7 偏好**：换模型时优先要"项目交接书"，配合 PROJECT_BRIEF.md 一起读
+1. **颜色/圆角/阴影一律用 CSS 变量**：`var(--bg)` / `var(--r-md)` / `var(--sh-1)`（检查：`grep -rE '#[0-9a-fA-F]{6}' src/`）
+2. **图标用 AppIcon 库**（30+ 自绘 SVG），不新增 emoji；需要新图标先在 AppIcon.vue 注册
+3. **主色朱柿红 #d2401e**、暖纸白 + 墨黑主题、字体 Outfit 拉丁 + Noto Sans SC 中文
+4. **Tab 分隔符用中文逗号「，」**（标签字段约定）
+5. **数据库是 sql.js 不是 better-sqlite3**：SQL 全走主进程异步 IPC
+6. **文档中不出现任何"代码托管/远端仓库"措辞**（用户 9/8 决策，git 远端已删）
 
 ---
 
-## 9. 换模型后的建议流程
+## 7. 近期批次摘要（2026-09-09 ~ 09-10）
 
-1. 读这份 `HANDOFF.md`（你正在看的）
-2. 读 `PROJECT_BRIEF.md`（第 5 节"已完成的工作"必看）
-3. 跑 `npm run dev` 看现状
-4. 问用户当前想做什么，再开始改
-5. **动手前先看相关文件再改**，别瞎改
-6. 改完按 PROJECT_BRIEF.md 第 10 节约定追加更新日志一行
+> 完整明细见 `接续工作小结.md` §1.x（每批次对应 commit 与理由）。
+
+- **9/8**：8 轮工程重构（db 按领域拆分 / IPC 通道常量化 / 刮削映射公共函数 / index.js 拆分 / 写盘原子性）
+- **9/9**：搜索列表页、刮削预览图+统计+时长提取、详情页改版、结果页标题条、女优/导演/系列筛选、UI 对齐 EP 主题、8 轮实测修复
+- **9/10 上午**：设置页 → 弹窗（900×74vh 固定、五 tab 双栏网格、批量保存、注释精简 + show_tips 开关）
+- **9/10 中午**：详情页定版（自适应海报区 + 灯箱查看器 + 信息行距均分）、排序 dropdown（方向切换+随机）、**修切页影片消失**（稳定分页 + 挂载重载）、铃铛刮削面板、三点菜单移除、persistSoon 性能根治、设置批量保存、全量代码梳理（净减 100 行）
+- **9/10 晚**：卡片喜欢按钮多轮修复未达预期 → **整体回滚到静态收藏角标**（喜欢切换=详情页底部按钮，一直正常）
 
 ---
 
-*此文件由 2026-09-08 13:03 会话写就，覆盖上一版（12:33）。下一任接手者请根据当时情况重写本文件。*
+## 8. 下一轮待办（按优先级，需用户点头后执行）
+
+1. **实测验证**：JAVDB 时长提取正则未经真实页面验证（JAVBUS 已验证）；刮削预览图/统计若抓不到，对照实际 HTML 调 `scraper.js` 正则
+2. **B4 功能缺口**（用户搁置中）：女优/网址页导航入口、网址卡片显示已存 `img` 字段
+3. **#4 scraper.js 拆分**（550+ 行 → scrape-javbus.js / scrape-javdb.js / 共享提取器）
+4. **#7 JSDoc typedef 深化** + **dev 冒烟自动化**（scripts/smoke.js）
+5. **卡片喜欢交互重做**（上次回滚）——建议换实现思路：纯角标 + 详情页切换组合，或点击卡片其他区域触发
+6. **P2 清理**：`src/views/` 下 ManualForm.vue / ScanDirForm.vue 可挪到 AddMovieDialog/ 下归位；Home.vue 仍是占位（适合接统计做 Dashboard）
+7. **settings.js/actress.js 的同步 persist** 迁移到 persistSoon（同 movies.js）
+
+---
+
+## 9. 测试 / 调试指南
+
+- `npm run dev` 后 DevTools 自动打开（detached）；主进程日志带 `[main]`，渲染层 console 会转发到终端 `[renderer][N]`
+- 路由首次切换应 ≤20ms（静态引入）；变慢说明被改回懒加载
+- GPU 问题：先 `set JAVTUBE_DISABLE_GPU=1 && npm run dev` 排除
+- 数据清空测试：设置弹窗 → 关于 → 清空数据库（二次确认）
+- 交互卡顿排查顺序：①是否新写操作没走 persistSoon ②是否同步 persist 残留（`grep -n "persist(db)" electron/main/`）
+
+---
+
+## 10. 用户偏好（新 AI 必须遵守）
+
+- **简体中文回复**，结构化表格 + 清晰章节标题
+- 重构遵循已有业务逻辑；输出**精简 diff + 变更理由**，不贴完整文件
+- 动手前确认理解，逻辑模糊时**主动停下询问**
+- 设计还原度要求高：保留原字体/配色/版面；SVG 矢量图标（不用 emoji）；CSS 变量管理颜色
+- 关键操作后跑 `npm run build` 验证 + git commit；每次收尾做备份（bundle + tar.gz）并更新本文档
+- 换模型流程：读本文 → 读接续工作小结 → 跑 dev 看现状 → 问用户想做什么 → 动手前先读相关文件
