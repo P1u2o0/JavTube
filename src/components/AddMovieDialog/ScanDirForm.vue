@@ -102,10 +102,11 @@ function selectAll(v) {
 }
 
 // 导入已选文件的处理函数
-// 遍历选中文件，调用后端 API 逐条创建影片记录
+// 遍历选中文件，调用后端 API 逐条创建影片记录。
+// 已存在同番号记录时：库中视频路径为空/失效则自动回填，路径有效则跳过。
 // 触发时机：用户点击"导入已选"按钮
 async function onImport() {
-  let ok = 0
+  let ok = 0, filled = 0, skipped = 0
   for (let i = 0; i < sel.value.length; i++) {
     const row = sel.value[i]
     // 获取当前行对应的提取番号
@@ -116,9 +117,16 @@ async function onImport() {
       pm: row.name.replace(/\.[^.]+$/, ''), // 标题（去除文件扩展名）
       py: row.path                         // 视频路径
     })
-    if (r.ok) ok++
+    if (r.ok) {
+      if (r.updated) filled++        // 已有记录但路径失效 → 已回填
+      else if (r.skipped) skipped++  // 已有记录且路径有效 → 跳过
+      else ok++                      // 新建成功
+    }
   }
-  ElMessage.success(`已导入 ${ok} 条记录，请到详情页补充元数据`)
+  const parts = [`已导入 ${ok} 条`]
+  if (filled) parts.push(`回填视频路径 ${filled} 条`)
+  if (skipped) parts.push(`跳过已存在 ${skipped} 条`)
+  ElMessage.success(parts.join('，') + '；请到详情页补充元数据')
   emit('selected', {})
 }
 

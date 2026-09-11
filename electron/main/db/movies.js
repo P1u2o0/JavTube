@@ -13,6 +13,8 @@
 
 // 标签分隔符、收藏标记等共享常量（集中定义于 constants.js）
 const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
+// Node 文件系统：导入去重时校验已有视频路径是否仍有效（失效则回填）
+const fs = require('fs')
 // db 层通用工具（查询结果转换 / 时间格式 / 落盘收口 persistSoon 等）
 const { rows, firstRow, firstScalar, nowLocal, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
@@ -189,12 +191,22 @@ function registerMovieIpc(ipcMain, db) {
       const d = data || {}
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
-      // 番号去重：已存在则跳过，返回已有 ID
+      // 番号去重：已存在时不重复新建。但若本次传入了有效的视频路径，
+      // 而库中该记录的路径为空或文件已失效（移动/改名/换盘），则回填路径——
+      // 修复「扫描导入后播放提示路径不对、需手动到编辑里重选视频文件」的问题
       if (d.ph) {
-        const exist = db.exec('SELECT id FROM movies WHERE ph=?', [d.ph])
-        const existId = exist[0] ? firstScalar(exist[0]) : null
-        if (existId) {
-          return { ok: true, id: Number(existId), skipped: true }
+        const exist = db.exec('SELECT id, py FROM movies WHERE ph=?', [d.ph])
+        const existRow = exist[0]?.values?.[0]
+        if (existRow) {
+          const existId = Number(existRow[0])
+          const oldPy = existRow[1] || ''
+          const newPy = d.py || ''
+          if (newPy && (!oldPy || !fs.existsSync(oldPy))) {
+            db.run('UPDATE movies SET py=? WHERE id=?', [newPy, existId])
+            persistSoon(db)
+            return { ok: true, id: existId, updated: true }  // 已回填视频路径
+          }
+          return { ok: true, id: existId, skipped: true }    // 路径有效，无需处理
         }
       }
       // 插入新记录（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 缺省时由取值器写入当前时间）

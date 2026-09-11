@@ -77,7 +77,7 @@ javtube_dev/
 │  │  ├─ scraper.js          # 在线刮削：JAVBUS / JAVDB 解析（唯一出处，550+ 行待拆分）
 │  │  ├─ video-meta.js       # 纯 Node MP4 mvhd 时长解析（AVI/MKV 返回 0）
 │  │  └─ db/
-│  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移
+│  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移（4 张表：movies / actress / websites / settings）
 │  │     ├─ movies.js        # 影片 CRUD / 分页查询 / 批量操作（全部写操作用 persistSoon）
 │  │     ├─ settings.js      # 设置读写 + updateBatch 批量保存 + 标签类别 JSON
 │  │     ├─ actress.js       # 女优表
