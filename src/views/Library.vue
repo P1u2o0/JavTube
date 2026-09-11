@@ -40,6 +40,7 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
+      @fav="onFav"
       @toggle="onToggle"
       @click="onCardClick"
     />
@@ -153,6 +154,13 @@ function onCardClick(m) {
  * 写库后显式替换数组元素，强制该卡片重渲染（绕过响应性引用问题）
  * @param {Object} m - 影片对象
  */
+/**
+ * 切换喜欢状态（卡片右上角喜欢按钮）
+ * store.toggleFav 内部乐观更新：界面即时变色，写库失败自动回滚
+ * @param {Object} m - 影片对象
+ */
+async function onFav(m) { await store.toggleFav(m.id) }
+
 /**
  * 批量删除选中影片
  */

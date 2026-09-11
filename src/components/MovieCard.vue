@@ -2,12 +2,12 @@
   文件名：MovieCard.vue
   所属模块：公共组件 / 影片卡片
   功能描述：单个影片的卡片展示组件，显示封面图片、番号和标题。
-           悬停浮现播放按钮；已喜欢时右上角显示朱柿红心形角标；
+           悬停浮现播放按钮；右上角喜欢按钮（已喜欢为朱柿红实心心）；
            多选模式下显示勾选框。
            通过 emit 向父组件传递点击、播放、选中切换事件
-           （编辑/喜欢/删除操作统一在影片详情页进行）。
+           （编辑/删除操作统一在影片详情页进行）。
   视觉规范：图标统一使用 AppIcon；番号使用拉丁展示字 + 等宽数字；
-           卡片带错峰入场动画（--i 由 MovieGrid 注入）。
+           卡片带错峰入场动画（--i 由 MovieGrid 注入）；右上角喜欢按钮可切换喜欢。
 -->
 <template>
   <!-- 影片卡片主体，点击时触发 click 事件 -->
@@ -28,10 +28,13 @@
           <AppIcon name="play" :size="18" />
         </button>
       </div>
-      <!-- 已收藏角标：朱柿红小心形 -->
-      <div v-if="isFav" class="fav-badge" title="已喜欢">
-        <AppIcon name="heart-filled" :size="13" />
-      </div>
+      <!-- 右上角喜欢按钮：可点击切换喜欢（白底圆 + 心形，已喜欢为朱柿红实心）。
+           事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） -->
+      <button class="fav-btn" :class="{ active: isFav }"
+              :title="isFav ? '取消喜欢' : '喜欢'"
+              @click.stop="onFavClick">
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" />
+      </button>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -66,9 +69,9 @@ const props = defineProps({
 // 定义 emit 事件：
 // - click: 卡片点击事件
 // - play: 播放影片
+// - fav: 切换喜欢状态（右上角喜欢按钮）
 // - toggle: 多选模式下切换选中状态
-// （edit/delete/fav 事件已随三点菜单移除：这些操作在影片详情页进行）
-const emit = defineEmits(['click', 'play', 'toggle'])
+const emit = defineEmits(['click', 'play', 'fav', 'toggle'])
 
 // 封面图片是否加载出错
 const errd = ref(false)
@@ -78,6 +81,24 @@ function onErr() { errd.value = true }
 
 // 是否已收藏（cl 字段为 'y' 表示已收藏）
 const isFav = computed(() => props.m.cl === 'y')
+
+/**
+ * 喜欢按钮点击：用 Web Animations API 播放轻微弹跳（与状态解耦、确定性播放），
+ * 再触发 fav 事件由父级写库（父级乐观更新，界面即时响应）
+ * @param {MouseEvent} e - 点击事件
+ */
+function onFavClick(e) {
+  e.currentTarget?.animate?.(
+    [
+      { transform: 'scale(1)' },
+      { transform: 'scale(0.85)', offset: 0.3 },
+      { transform: 'scale(1.12)', offset: 0.65 },
+      { transform: 'scale(1)' }
+    ],
+    { duration: 260, easing: 'ease-out' }
+  )
+  emit('fav')
+}
 
 // 封面 URL 计算属性：出错时返回空，否则解析封面路径
 const coverUrl = computed(() => {
@@ -161,17 +182,21 @@ watch(dataDirRef, () => { errd.value = false })
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
-/* 已收藏角标：右上角朱柿红心形 */
-.fav-badge {
+/* 右上角喜欢按钮：白底圆形 + 心形，可点击切换喜欢。
+   未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 心形变朱柿红并微放大 */
+.fav-btn {
   position: absolute; top: 8px; right: 8px;
-  width: 24px; height: 24px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--accent);
+  width: 26px; height: 26px;
+  border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--muted);
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--sh-1);
-  pointer-events: none;
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
 }
+.fav-btn:hover { color: var(--accent); transform: scale(1.12); }
+.fav-btn.active { color: var(--accent); }
 
 /* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
    选中底色与描边使用设计令牌（--accent / --border-strong） */

@@ -24,6 +24,7 @@
 
 
 
+        @fav="$emit('fav', m)"
         @toggle="$emit('toggle', m)"
       />
     </div>
@@ -63,7 +64,7 @@ const props = defineProps({
 // - page: 分页切换事件，参数为目标页码
 // - click/play/edit/delete/fav/toggle: 透传 MovieCard 的对应事件
 // （detail 事件已移除：MovieCard 从不发出此事件，透传监听为死绑定）
-const emit = defineEmits(['page', 'click', 'play', 'toggle'])
+const emit = defineEmits(['page', 'click', 'play', 'fav', 'toggle'])
 
 // 分页器页码变化处理函数
 // 参数 p: 用户选择的目标页码

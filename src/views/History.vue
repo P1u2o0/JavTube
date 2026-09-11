@@ -31,6 +31,7 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
+      @fav="onFav"
       @toggle="onToggle"
       @click="onCardClick"
     />
@@ -91,6 +92,12 @@ async function onPlay(m) {
  * @param {Object} m - 影片对象
  */
 function onCardClick(m) { onDetail(m) }
+
+/**
+ * 切换喜欢状态（卡片右上角喜欢按钮，乐观更新即时变色）
+ * @param {Object} m - 影片对象
+ */
+async function onFav(m) { await store.toggleFav(m.id) }
 
 /**
  * 批量删除选中影片

@@ -31,6 +31,7 @@
       :selectedIds="store.selectedIds"
       @page="onPageChange"
       @play="onPlay"
+      @fav="onFav"
       @toggle="onToggle"
     />
   </div>
@@ -77,6 +78,12 @@ async function onPlay(m) {
   if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
   safeCall(window.api.recordPlay(m.id))
 }
+
+/**
+ * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开
+ * @param {Object} m - 影片对象
+ */
+async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
 
 /**
  * 批量删除选中影片
