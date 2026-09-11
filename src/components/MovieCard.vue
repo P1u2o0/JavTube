@@ -174,11 +174,11 @@ watch(dataDirRef, () => { errd.value = false })
 }
 
 /* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
-   选中底色写死朱柿红 #d2401e（与 --accent 同值），不依赖 CSS 变量解析 */
+   选中底色与描边使用设计令牌（--accent / --border-strong） */
 .check {
   position: absolute; top: 8px; left: 8px;
   background: rgba(255, 255, 255, 0.94);
-  border: 1.5px solid #d8d4cb;
+  border: 1.5px solid var(--border-strong);
   border-radius: 50%;
   width: 24px; height: 24px;
   display: flex; align-items: center; justify-content: center;

@@ -313,7 +313,7 @@ function onSearch() {
   background: var(--muted);
 }
 .bp-dot.running { background: var(--accent); animation: bp-pulse 1.2s ease-in-out infinite; }
-.bp-dot.ok { background: #4caf6d; }
+.bp-dot.ok { background: var(--success); }
 .bp-dot.fail { background: var(--danger); }
 @keyframes bp-pulse {
   0%, 100% { opacity: 1; }
@@ -326,7 +326,7 @@ function onSearch() {
 }
 .bp-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .bp-fail { color: var(--danger); word-break: break-all; }
-.bp-ok { color: #4caf6d; }
+.bp-ok { color: var(--success); }
 .bp-empty { padding: 22px 0; text-align: center; color: var(--muted); font-size: 12.5px; }
 /* 面板弹出过渡：向下展开 + 淡入 */
 .bell-pop-enter-active, .bell-pop-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }

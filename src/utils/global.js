@@ -121,5 +121,3 @@ export function buildScrapeUpdate(d) {
   return update
 }
 
-// 全局分隔符常量（中文逗号）
-export const DELIM = '，'
