@@ -128,23 +128,24 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 刮削选项（预览图下载开关/数量、统计开关）从 settings 表读取，前端无需逐次传递
   ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir }) => {
     try {
-      const sget = (k) => {
-        try {
-          const r = db.exec('SELECT value FROM settings WHERE key = ?', [k])[0]
-          return r?.values?.[0]?.[0]
-        } catch { return undefined }
-      }
+      // 一次性取出全部刮削相关设置（原实现逐键 6 次 db.exec，合并为单次 IN 查询）
+      const settings = {}
+      try {
+        const rs = db.exec(`SELECT key, value FROM settings WHERE key IN
+          ('tag_mapping','scrape_previews','preview_count','scrape_stats')`)
+        for (const row of (rs[0]?.values || [])) settings[row[0]] = row[1]
+      } catch {}
       // 标签映射规则（settings.tag_mapping 为 JSON 数组 [[原标签,新标签],...]）
       let tagMapping = []
-      try { tagMapping = JSON.parse(sget('tag_mapping') || '[]') } catch { tagMapping = [] }
+      try { tagMapping = JSON.parse(settings.tag_mapping || '[]') } catch { tagMapping = [] }
       if (!Array.isArray(tagMapping)) tagMapping = []
       const r = await scrapeMovie(ph, {
         source: source || 'auto',
         coverDir: coverDir || COVER_DIR,
         dataDir,
-        downloadPreviews: sget('scrape_previews') === 'y',
-        previewCount: Number(sget('preview_count') || 0),
-        fetchStats: sget('scrape_stats') !== 'n',
+        downloadPreviews: settings.scrape_previews === 'y',
+        previewCount: Number(settings.preview_count || 0),
+        fetchStats: settings.scrape_stats !== 'n',
         tagMapping
       })
       return r
