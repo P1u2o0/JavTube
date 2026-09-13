@@ -46,6 +46,8 @@ unset ELECTRON_RUN_AS_NODE          # ← 关键，否则 Electron 变纯 Node �
 npx vite build
 # 主进程「调用但未定义」静态检查（改 electron/ 代码后必跑，见 §5 坑 14）
 npm run check:undefined
+# 刮削全链路冒烟（脱离 Electron 直接跑 scrapeMovie，改 scraper/net-curl 后必跑）
+npm run scrape:test            # 默认 WAAA-661；可传番号：npm run scrape:test -- NPJS-268
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 # IPC 通道配平检查：invoke 与 handle 应 40/40
@@ -76,7 +78,9 @@ javtube_dev/
 │  ├─ main/
 │  │  ├─ index.js            # 主进程入口：启动序列 / 窗口 / javtube-cover 封面协议注册
 │  │  ├─ ipc-utils.js        # 工具 IPC：playVideo(含文件存在校验)、扫描目录、readDuration 等
-│  │  ├─ scraper.js          # 在线刮削：JAVBUS / JAVDB 解析（唯一出处，550+ 行待拆分）
+│  │  ├─ scraper.js          # 在线刮削：JAVBUS / JAVDB 解析（唯一出处）
+│  │  ├─ net-curl.js         # 刮削网络层：基于系统 curl（Cloudflare 按 TLS 指纹放行 curl，
+│  │  │                      #   而 Electron/Node 的指纹被拦——见 §5 坑 17）
 │  │  ├─ video-meta.js       # 纯 Node MP4 mvhd 时长解析（AVI/MKV 返回 0）
 │  │  └─ db/
 │  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移（4 张表：movies / actress / websites / settings）
@@ -119,6 +123,7 @@ javtube_dev/
 | **灯箱查看器** | Detail.vue 点击预览小图 → `<Teleport to="body">` 全屏遮罩（0.3s 渐暗）+ 滚轮缩放 0.5-5x + 左右按钮/方向键循环 + Esc 关闭 |
 | **详情页海报区** | 框尺寸 JS 计算：`min((视口高-300px)/海报高, 视口宽×0.56/海报宽)`，小分辨率海报强制放大；窗口 resize 重算；海报 contain 贴合框体 |
 | **封面协议** | `javtube-cover://0/<base64url>` 自定义 privileged scheme（`resolveCover`，详见 PROJECT_BRIEF §5） |
+| **刮削网络层** | 走系统 curl（`net-curl.js`，Windows 10 1803+ 内置）：页面请求按设置走代理并携带用户 Cookie；图片按域名决定优先级（主站图走代理优先、第三方图床直连优先，另一种兜底）；**不加 `-L`**（JAVBUS 302 到反爬页但响应体仍是有效详情页） |
 | **乐观更新** | 交互路径写库已延迟落盘，UI 侧可乐观翻转、失败回滚（Detail.toggleFav 与三视图 onPlay 是范例） |
 
 ---
@@ -140,7 +145,9 @@ javtube_dev/
 13. **WorkBuddy 会话注入 `ELECTRON_RUN_AS_NODE=1`**——会让 Electron 退化为纯 Node，启动即崩（详见 §1 启动说明）
 14. **★ 脚本按区间替换代码时，必须确认区间内是否夹带其他函数定义**——2026-09-13 一次替换把 `throttleByHost`、`assertJavdbNotBlocked` 两个定义连带删除，`node --check` 只查语法查不出未定义引用，直到运行时才报 `xxx is not defined`。**改主进程代码后必跑 `npm run check:undefined`**（`scripts/check-undefined.js`：静态列出「调用了但找不到定义」的候选，本次即靠它复查出第二个被删函数）
 15. **Electron `net.fetch` 不能手动设置 Cookie 头**——Fetch 标准把 Cookie 列为 forbidden header，`headers.Cookie = ...` 会被 Chromium **静默丢弃**（表现为「配置了 Cookie 仍 403」）。必须用 `session.cookies.set()` 注入，请求在 `credentials: 'include'` 下自动携带（见 scraper.js `applyCookieString`）
-16. **刮削图片必须走直连会话**——DMM 图床（awsimgsrc/pics.dmm.co.jp）经代理连接失败、直连正常，而 JAVDB/JAVBUS 主站必须走代理，故图片用独立 `setProxy({mode:'direct'})` 会话 + 代理会话兜底（见 `downloadImage`）
+16. **刮削图片的网络路径按域名区分**——DMM 图床（awsimgsrc/pics.dmm.co.jp）经代理连接失败、直连正常；而 JAVBUS/JAVDB 主站图必须走代理。`downloadImage` 按域名决定优先顺序、另一种兜底
+17. **★ Cloudflare 与图床按客户端 TLS 指纹放行**——2026-09-13 实测（同一代理/同一 Cookie/同一时刻）：curl 全部 200，而 Electron `net.fetch`（JAVDB 403 / DMM 连接被关闭）与 Node `https`（JAVDB 403）都被拦。**因此刮削网络层改用系统 curl**（`net-curl.js`）。改 scraper 网络相关代码前先读该文件头注释；回归用 `npm run scrape:test`
+18. **JAVBUS 反爬态：返回 302 + 有效响应体**——不能加 `curl -L`（会跟随到 `/doc/driver-verify` 验证页，拿到无效内容）；按 200/302 都读响应体、由内容判定有效性
 
 ---
 
