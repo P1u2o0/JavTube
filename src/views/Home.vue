@@ -20,17 +20,19 @@
     <!-- ===== ① 轮播：封面流（中心大图 + 两侧半幅递减） ===== -->
     <section v-if="hero.length" class="hero">
       <div class="flow-wrap">
-        <!-- TransitionGroup：视野外海报「拖入」屏内、离场海报「拖出」屏外（方向跟随切换方向） -->
-        <TransitionGroup tag="div" class="flow" name="slot">
-          <!-- 影片槽：只渲染视野内（|d|<=2）的影片，其余按需进出 -->
-          <div v-for="{ m, i } in visibleHero" :key="m.id" class="slot" :style="slotStyle(i)">
-            <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
-          </div>
-          <!-- 空位槽：该位置没有影片时显示淡红色空白占位图（数量不足即留空） -->
-          <div v-for="d in SLOTS" :key="`ph-${d}`" class="slot" :style="phStyle(d)">
-            <div v-if="!slotMovie(d)" class="slot-ph"></div>
-          </div>
-        </TransitionGroup>
+        <!-- 传送带模式（业界标准）：单一 belt 元素整体平移，所有海报刚性同步移动；
+             海报 left 按自身索引固定，切换只动 belt → 运动完全均匀自然 -->
+        <div class="flow">
+          <TransitionGroup tag="div" class="belt" name="slot" :style="beltStyle">
+            <div v-for="{ m, i } in visibleHero" :key="m.id" class="slot" :style="slotStyle(i)">
+              <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
+            </div>
+            <!-- 空位槽：视野内没有影片的索引显示淡红色空白占位图 -->
+            <div v-for="pi in visiblePh" :key="`ph-${pi}`" class="slot" :style="slotStyle(pi, true)">
+              <div class="slot-ph"></div>
+            </div>
+          </TransitionGroup>
+        </div>
         <!-- 左右切换 -->
         <button v-if="hero.length > 1" class="flow-nav prev" aria-label="上一部" @click="step(-1)">
           <AppIcon name="back" :size="18" />
@@ -101,7 +103,7 @@ const arrivals = ref([])     // 近期上新
 const active = ref(0)
 let timer = null
 const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
-const SLOTS = [-2, -1, 0, 1, 2]  // 固定 5 个封面流槽位（0 为中心）
+const PITCH = 300            // 传送带步距：相邻海报中心间距（px），均匀间距 → 运动均匀
 const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
 
 /** 封面 URL 解析（无封面时返回空串） */
@@ -109,63 +111,42 @@ function coverOf(m) {
   return resolveCover(m?.cover) || ''
 }
 
-/** 取某个槽位对应的影片（越界返回 null → 该槽位留空，不循环重复） */
-function slotMovie(d) {
-  return hero.value[active.value + d] || null
-}
+/** 传送带位移：把当前项对到正中（单一元素过渡 → 所有海报刚性同步移动） */
+const beltStyle = computed(() => ({
+  transform: `translate3d(${-active.value * PITCH}px, 0, 0)`
+}))
 
-/** 视野内的影片（|i - active| <= 2）——视野外的由 TransitionGroup 拖入/拖出 */
+/** 视野内的影片（|i - active| <= 2），视野外的按需进出（淡入淡出） */
 const visibleHero = computed(() =>
   hero.value
     .map((m, i) => ({ m, i }))
     .filter(({ i }) => Math.abs(i - active.value) <= 2)
 )
 
-/**
- * 槽位样式：中心最大，两侧按距离依次缩小并向外偏移（露出半幅由容器裁切实现）
- * @param {number} d - 槽位偏移（-2..2）
- * @returns {Object} 内联样式
- */
-/**
- * 某个相对位置（-2..2）的几何参数：
- * 中心海报占满区域高度（600×400，3:2），两侧依次缩小并向外偏移，
- * 偏移量略小于「半幅相接」的临界值 → 侧边被中心遮住约一半（露出半幅）。
- * @param {number} d - 相对当前项的偏移
- * @returns {{offset:number, scale:number, opacity:number, z:number}}
- */
-function posOf(d) {
-  const abs = Math.abs(d)
-  const offset = abs === 0 ? 0 : abs === 1 ? 380 : 600
-  const scale = abs === 0 ? 1 : abs === 1 ? 0.66 : 0.44
-  // 透明度梯度拉大：离场海报明显淡出、进场海报明显淡入（交叉淡化）
-  const opacity = abs === 0 ? 1 : abs === 1 ? 0.55 : 0.22
-  return { offset, scale, opacity, z: 10 - abs }
-}
-
-/**
- * 影片槽样式（索引 → 相对当前项的距离）；|d|>2 的移到远处并隐藏，
- * 进入视野时从屏外平滑滑入，避免突现。
- */
-function slotStyle(i) {
-  const d = i - active.value
-  const p = posOf(d)
-  const tx = d < 0 ? '-900px' : '900px'   // 拖入/拖出方向：左侧的海报从左屏外进出，右侧同理
-  return {
-    transform: `translate3d(-50%, -50%, 0) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
-    opacity: p.opacity,
-    zIndex: p.z,
-    '--tx-from': tx,
-    '--tx-to': tx
+/** 视野内没有影片的索引（数组两端越界 → 显示淡红色空白占位图） */
+const visiblePh = computed(() => {
+  const out = []
+  for (let i = active.value - 2; i <= active.value + 2; i++) {
+    if (i < 0 || i >= hero.value.length) out.push(i)
   }
-}
+  return out
+})
 
-/** 空位槽样式：与同位置影片槽对齐，层级略低 */
-function phStyle(d) {
-  const p = posOf(d)
+/**
+ * 槽位样式：left 按影片自身索引固定（不随切换变化，位移全靠 belt），
+ * 仅缩放/透明度/层级随相对距离渐变——切换时海报只做「长大/缩小 + 淡化」。
+ * @param {number} i - 影片（或空位）索引
+ * @param {boolean} [ph] - 是否空位占位（层级略低、稍淡）
+ */
+function slotStyle(i, ph = false) {
+  const abs = Math.min(Math.abs(i - active.value), 2)
+  const scale = abs === 0 ? 1 : abs === 1 ? 0.66 : 0.44
+  const opacity = abs === 0 ? 1 : abs === 1 ? 0.55 : 0.22
   return {
-    transform: `translate3d(-50%, -50%, 0) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
-    opacity: p.opacity * 0.9,
-    zIndex: p.z - 1
+    left: `calc(50% + ${i * PITCH}px)`,
+    transform: `translate(-50%, -50%) scale(${scale})`,
+    opacity: ph ? opacity * 0.9 : opacity,
+    zIndex: 10 - abs - (ph ? 1 : 0)
   }
 }
 
@@ -245,17 +226,22 @@ onBeforeUnmount(stopTimer)
 .flow {
   position: absolute; inset: 0;
 }
-/* 槽位：基准尺寸 = 横向海报 480×320（3:2），缩放由内联 transform 控制 */
+/* 传送带：唯一做水平位移的元素（单元素过渡 → 所有海报刚性同步、速度完全一致）。
+   曲线为业界推荐：cubic-bezier(.25,.1,.25,1)（缓入缓出，类 iOS 滑动） */
+.belt {
+  position: absolute; inset: 0;
+  transition: transform 480ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  will-change: transform;
+}
+/* 槽位：基准尺寸 = 横向海报 600×400（3:2）；left 按自身索引固定（内联），位移全靠 belt。
+   缩放/淡化比传送带慢半拍起步（follow-through 滞后感，更自然） */
 .slot {
-  position: absolute; left: 50%; top: 50%;
-  /* 中心海报占满区域高度：区域 430 - 上下各 15 = 400 高，3:2 → 600 宽 */
+  position: absolute; top: 50%;
   width: 600px; height: 400px;
   transform-origin: center center;
-  backface-visibility: hidden;   /* + translate3d：强制独立合成层，动画期间零重绘 */
-  /* 轮换动画：位移 750ms 长缓出；透明度独立交叉淡化（进淡出更明显） */
-  transition: transform 750ms cubic-bezier(0.3, 1, 0.35, 1),
-              opacity 620ms cubic-bezier(0.4, 0, 0.6, 1) 80ms;
-  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transition: transform 340ms ease-out 70ms,
+              opacity 320ms ease-out 70ms;
 }
 .slot img {
   width: 100%; height: 100%; object-fit: cover; display: block;
@@ -265,16 +251,9 @@ onBeforeUnmount(stopTimer)
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .slot img:hover { transform: translateY(-3px); }
-/* 拖入：新进视野的海报从屏外滑入（方向由 --tx-from 决定，!important 覆盖内联终态） */
-.slot-enter-from {
-  transform: translate3d(-50%, -50%, 0) translateX(var(--tx-from, 900px)) scale(0.3) !important;
-  opacity: 0 !important;
-}
-/* 拖出：离场海报滑出屏外（沿用离场前的 --tx-to 方向） */
-.slot-leave-to {
-  transform: translate3d(-50%, -50%, 0) translateX(var(--tx-to, 900px)) scale(0.3) !important;
-  opacity: 0 !important;
-}
+/* 拖入/拖出：视野边缘海报的位移由传送带完成，这里只做淡入淡出配合 */
+.slot-enter-from { opacity: 0 !important; }
+.slot-leave-to { opacity: 0 !important; }
 .slot-leave-active { pointer-events: none; }
 /* 缺失影片的槽位：淡红色空白占位图 */
 .slot-ph {
