@@ -80,22 +80,22 @@ function inteHandler(orStr, staStr, endStr, arr) {
   return newStr
 }
 
-// 站点的会话 Cookie 缓存（key = 站点 origin）
-// 背景（2026-09-13 实测）：JAVDB 前置 Cloudflare，对「无 Cookie 的新会话」直接
-// 返回 403（同一代理下 curl 连续请求均 200，故非限流而是会话特征判定）。
-// 策略：请求内容页前先访问一次站点首页获取 Set-Cookie 并复用，使会话具备
-// 浏览器般的「先访问首页再翻页」特征，规避 403。
-const sessionCookies = new Map()
+// 站点会话预热记录（key = 站点 origin，避免重复预热）
+// 背景（2026-09-13 实测）：JAVDB 前置 Cloudflare，对无 Cookie 的新会话可能 403。
+// 策略：请求内容页前先访问一次站点首页（credentials:'include'，Chromium 会自动
+// 保存响应中的 Set-Cookie 到默认会话），使会话具备浏览器般的访问特征。
+const warmedOrigins = new Set()
 
 /**
- * 预热站点会话：GET 站点首页，缓存 Set-Cookie 供后续请求复用。
- * 失败静默（不阻断刮削），已有缓存则跳过。
+ * 预热站点会话：GET 站点首页一次（Set-Cookie 由 Chromium 自动存入默认会话）。
+ * 失败静默（不阻断刮削），同一 origin 只执行一次。
  * @param {string} origin - 站点 origin（如 https://javdb.com）
  */
 async function warmupSession(origin) {
-  if (sessionCookies.has(origin)) return
+  if (warmedOrigins.has(origin)) return
+  warmedOrigins.add(origin)
   try {
-    const resp = await net.fetch(origin + '/', {
+    await net.fetch(origin + '/', {
       headers: {
         'User-Agent': USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -110,74 +110,43 @@ async function warmupSession(origin) {
       credentials: 'include',
       signal: AbortSignal.timeout(30000)
     })
-    // net.fetch 的 Headers 对 set-cookie 需用 getSetCookie 展开
-    const list = typeof resp.headers.getSetCookie === 'function' ? resp.headers.getSetCookie() : []
-    const pairs = list.map(c => c.split(';')[0]).filter(Boolean)
-    if (pairs.length) sessionCookies.set(origin, pairs.join('; '))
   } catch (e) {
     console.warn('[scrape] 会话预热失败:', origin, e.message)
   }
 }
 
 /**
- * 使用 Electron net.fetch 获取网页 HTML 内容。
- * @param {string} url - 请求的 URL
- * @param {Object} [opts] - 可选参数
- * @param {string} [opts.referer] - Referer 头，用于模拟从某页面跳转
- * @param {string} [opts.cookie] - Cookie 头，用于携带会话信息
- * @returns {Promise<string>} 网页 HTML 文本
- * @throws {Error} HTTP 请求失败时抛出异常
+ * 把「k=v; k2=v2」形式的 Cookie 串写入默认会话（归属目标站点域）。
+ *
+ * ★ 2026-09-13 关键修复：Fetch 标准将 Cookie 列为 forbidden header，
+ *   通过 headers.Cookie 手动设置的 Cookie 会被 Chromium 静默丢弃——
+ *   这正是「设置里填了 JAVDB Cookie 但仍然 403」的真正原因。
+ *   必须用 session.cookies.set 注入，请求在 credentials:'include' 下才会携带。
+ *   使用默认会话（而非独立分区）以保留应用已配置的本机代理。
+ * @param {string} url - 目标站点地址（Cookie 域取该地址的 origin）
+ * @param {string} cookieStr - Cookie 串
  */
-/**
- * JAVDB 拦截识别（2026-09-13，判定逻辑参考 mdcx）：
- * 把 Cloudflare 5 秒盾 / IP 封禁 / 版权限制三类拦截转为可操作的中文错误。
- * @param {string} html - 响应 HTML
- * @param {string} url - 请求地址（便于用户核对）
- * @param {boolean} hasCookie - 本次请求是否携带了用户配置的 Cookie
- * @throws {Error} 命中拦截特征时抛出（调用方 catch 后作为刮削失败原因返回 UI）
- */
-function assertJavdbNotBlocked(html, url, hasCookie) {
-  if (html.includes('The owner of this website has banned your access based')) {
-    throw new Error(`JAVDB 因请求过多临时封禁了当前 IP，请稍后重试或更换代理节点（${url}）`)
+async function applyCookieString(url, cookieStr) {
+  if (!cookieStr) return
+  let origin = ''
+  try { origin = new URL(url).origin } catch { return }
+  let ok = 0
+  for (const pair of String(cookieStr).split(';')) {
+    const i = pair.indexOf('=')
+    if (i <= 0) continue
+    const name = pair.slice(0, i).trim()
+    const value = pair.slice(i + 1).trim()
+    if (!name) continue
+    try {
+      await session.defaultSession.cookies.set({ url: origin, name, value })
+      ok++
+    } catch (e) {
+      console.warn('[scrape] Cookie 写入失败:', name, e.message)
+    }
   }
-  if (html.includes('Due to copyright restrictions')) {
-    throw new Error('JAVDB 禁止日本 IP 访问，请将代理节点切换到日本以外的地区')
-  }
-  if (html.includes('ray-id') || html.includes('Just a moment')) {
-    throw new Error(hasCookie
-      ? 'JAVDB 被 Cloudflare 拦截：设置中的 JAVDB Cookie 已失效，请重新登录 javdb.com 复制新 Cookie'
-      : 'JAVDB 被 Cloudflare 拦截（5 秒盾）：请在 设置 → 刮削 中填入 JAVDB Cookie')
-  }
+  console.log('[scrape] 已注入会话 Cookie 条数:', ok, '域:', origin)
 }
 
-// 请求限速（2026-09-13 新增，思路参考 amane 的 RateLimiters）：
-// 同一 host 的连续请求保持最小间隔——突发请求极易触发站点反爬
-// （JAVDB 的 Cloudflare 会直接 403）。批量刮削时会连续命中同一站点，
-// 因此按 host 维护「上次请求时间」，不足最小间隔则等待补足。
-const lastReqAt = new Map()   // host → 上次请求时间戳
-const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 req/s）
-
-/**
- * 按 host 限速：距上次请求不足 MIN_REQ_INTERVAL 则等待补足。
- * @param {string} url - 即将请求的地址
- */
-async function throttleByHost(url) {
-  let host = ''
-  try { host = new URL(url).host } catch { return }
-  const wait = MIN_REQ_INTERVAL - (Date.now() - (lastReqAt.get(host) || 0))
-  if (wait > 0) await new Promise(r => setTimeout(r, wait))
-  lastReqAt.set(host, Date.now())
-}
-
-/**
- * 使用 Electron net.fetch 获取网页 HTML 内容（内置同 host 限速）。
- * @param {string} url - 请求的 URL
- * @param {Object} [opts] - 可选参数
- * @param {string} [opts.referer] - Referer 头，用于模拟从某页面跳转
- * @param {string} [opts.cookie] - Cookie 头，用于携带会话信息
- * @returns {Promise<string>} 网页 HTML 文本
- * @throws {Error} HTTP 请求失败时抛出异常
- */
 async function fetchHtml(url, { referer, cookie } = {}) {
   await throttleByHost(url)
   const headers = {
@@ -190,9 +159,8 @@ async function fetchHtml(url, { referer, cookie } = {}) {
     'Sec-Fetch-Site': referer ? 'same-origin' : 'none'
   }
   if (referer) headers.Referer = referer  // 设置来源页面
-  // Cookie 优先级：显式传入 > 站点会话缓存（warmupSession 预热所得）
-  const ck = cookie || sessionCookies.get(new URL(url).origin)
-  if (ck) headers.Cookie = ck
+  // 用户 Cookie 经会话注入（手动 headers.Cookie 会被 Fetch 规范丢弃，见 applyCookieString）
+  if (cookie) await applyCookieString(url, cookie)
 
   // 使用 Electron net.fetch 发起请求，跟随重定向，30 秒超时
   const resp = await net.fetch(url, { headers, redirect: 'follow', credentials: 'include', signal: AbortSignal.timeout(30000) })
@@ -237,16 +205,27 @@ async function downloadImage(url, savePath, referer) {
   const headers = { 'User-Agent': USER_AGENT, Referer: referer || (parsed.origin + '/') }
   const baseInit = { headers, redirect: 'follow', signal: AbortSignal.timeout(30000) }
   let resp = null
+  let directInfo = 'skipped'
   // 1) 直连优先
   const directSession = getImageDirectSession()
   if (directSession) {
-    try { resp = await net.fetch(url, { ...baseInit, session: directSession }) } catch { resp = null }
+    try {
+      resp = await net.fetch(url, { ...baseInit, session: directSession })
+      directInfo = String(resp.status)
+    } catch (e) { resp = null; directInfo = 'err:' + (e?.message || e) }
   }
   // 2) 直连失败则回退默认会话（走应用代理）
+  let proxyInfo = 'skipped'
   if (!resp || !resp.ok) {
-    try { resp = await net.fetch(url, baseInit) } catch { resp = null }
+    try {
+      resp = await net.fetch(url, baseInit)
+      proxyInfo = String(resp.status)
+    } catch (e) { resp = null; proxyInfo = 'err:' + (e?.message || e) }
   }
-  if (!resp || !resp.ok) throw new Error(`Image HTTP ${resp ? resp.status : 'network error'}`)
+  if (!resp || !resp.ok) {
+    console.warn(`[scrape] 图片下载失败 直连=${directInfo} 代理=${proxyInfo} url=${url.slice(0, 70)}`)
+    throw new Error(`Image HTTP ${resp ? resp.status : 'network error'}`)
+  }
   const buf = Buffer.from(await resp.arrayBuffer())
   fs.writeFileSync(savePath, buf)
   return savePath
