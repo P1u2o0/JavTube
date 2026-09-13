@@ -132,7 +132,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       const settings = {}
       try {
         const rs = db.exec(`SELECT key, value FROM settings WHERE key IN
-          ('tag_mapping','scrape_previews','preview_count','scrape_stats')`)
+          ('tag_mapping','scrape_previews','preview_count','scrape_stats','javdb_cookie')`)
         for (const row of (rs[0]?.values || [])) settings[row[0]] = row[1]
       } catch {}
       // 标签映射规则（settings.tag_mapping 为 JSON 数组 [[原标签,新标签],...]）
@@ -146,6 +146,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
         downloadPreviews: settings.scrape_previews === 'y',
         previewCount: Number(settings.preview_count || 0),
         fetchStats: settings.scrape_stats !== 'n',
+        javdbCookie: settings.javdb_cookie || '',
         tagMapping
       })
       return r

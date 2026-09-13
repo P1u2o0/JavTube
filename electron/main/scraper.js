@@ -80,6 +80,45 @@ function inteHandler(orStr, staStr, endStr, arr) {
   return newStr
 }
 
+// 站点的会话 Cookie 缓存（key = 站点 origin）
+// 背景（2026-09-13 实测）：JAVDB 前置 Cloudflare，对「无 Cookie 的新会话」直接
+// 返回 403（同一代理下 curl 连续请求均 200，故非限流而是会话特征判定）。
+// 策略：请求内容页前先访问一次站点首页获取 Set-Cookie 并复用，使会话具备
+// 浏览器般的「先访问首页再翻页」特征，规避 403。
+const sessionCookies = new Map()
+
+/**
+ * 预热站点会话：GET 站点首页，缓存 Set-Cookie 供后续请求复用。
+ * 失败静默（不阻断刮削），已有缓存则跳过。
+ * @param {string} origin - 站点 origin（如 https://javdb.com）
+ */
+async function warmupSession(origin) {
+  if (sessionCookies.has(origin)) return
+  try {
+    const resp = await net.fetch(origin + '/', {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1'
+      },
+      redirect: 'follow',
+      credentials: 'include',
+      signal: AbortSignal.timeout(30000)
+    })
+    // net.fetch 的 Headers 对 set-cookie 需用 getSetCookie 展开
+    const list = typeof resp.headers.getSetCookie === 'function' ? resp.headers.getSetCookie() : []
+    const pairs = list.map(c => c.split(';')[0]).filter(Boolean)
+    if (pairs.length) sessionCookies.set(origin, pairs.join('; '))
+  } catch (e) {
+    console.warn('[scrape] 会话预热失败:', origin, e.message)
+  }
+}
+
 /**
  * 使用 Electron net.fetch 获取网页 HTML 内容。
  * @param {string} url - 请求的 URL
@@ -89,17 +128,45 @@ function inteHandler(orStr, staStr, endStr, arr) {
  * @returns {Promise<string>} 网页 HTML 文本
  * @throws {Error} HTTP 请求失败时抛出异常
  */
+/**
+ * JAVDB 拦截识别（2026-09-13，判定逻辑参考 mdcx）：
+ * 把 Cloudflare 5 秒盾 / IP 封禁 / 版权限制三类拦截转为可操作的中文错误。
+ * @param {string} html - 响应 HTML
+ * @param {string} url - 请求地址（便于用户核对）
+ * @param {boolean} hasCookie - 本次请求是否携带了用户配置的 Cookie
+ * @throws {Error} 命中拦截特征时抛出（调用方 catch 后作为刮削失败原因返回 UI）
+ */
+function assertJavdbNotBlocked(html, url, hasCookie) {
+  if (html.includes('The owner of this website has banned your access based')) {
+    throw new Error(`JAVDB 因请求过多临时封禁了当前 IP，请稍后重试或更换代理节点（${url}）`)
+  }
+  if (html.includes('Due to copyright restrictions')) {
+    throw new Error('JAVDB 禁止日本 IP 访问，请将代理节点切换到日本以外的地区')
+  }
+  if (html.includes('ray-id') || html.includes('Just a moment')) {
+    throw new Error(hasCookie
+      ? 'JAVDB 被 Cloudflare 拦截：设置中的 JAVDB Cookie 已失效，请重新登录 javdb.com 复制新 Cookie'
+      : 'JAVDB 被 Cloudflare 拦截（5 秒盾）：请在 设置 → 刮削 中填入 JAVDB Cookie')
+  }
+}
+
 async function fetchHtml(url, { referer, cookie } = {}) {
   const headers = {
     'User-Agent': USER_AGENT,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': referer ? 'same-origin' : 'none'
   }
   if (referer) headers.Referer = referer  // 设置来源页面
-  if (cookie) headers.Cookie = cookie     // 设置 Cookie
+  // Cookie 优先级：显式传入 > 站点会话缓存（warmupSession 预热所得）
+  const ck = cookie || sessionCookies.get(new URL(url).origin)
+  if (ck) headers.Cookie = ck
 
   // 使用 Electron net.fetch 发起请求，跟随重定向，30 秒超时
-  const resp = await net.fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(30000) })
+  const resp = await net.fetch(url, { headers, redirect: 'follow', credentials: 'include', signal: AbortSignal.timeout(30000) })
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
   return await resp.text()
 }
@@ -108,12 +175,14 @@ async function fetchHtml(url, { referer, cookie } = {}) {
  * 下载图片并保存到本地文件。
  * @param {string} url - 图片的 URL
  * @param {string} savePath - 本地保存路径
+ * @param {string} [referer] - 请求来源页（部分图床校验 Referer，如 javbus 图需
+ *   https://www.javbus.com/；不传时回退为图片自身 origin）
  * @returns {Promise<string>} 保存成功后返回保存路径
  * @throws {Error} 下载失败时抛出异常
  */
-async function downloadImage(url, savePath) {
+async function downloadImage(url, savePath, referer) {
   const parsed = new URL(url)
-  const headers = { 'User-Agent': USER_AGENT, Referer: parsed.origin }
+  const headers = { 'User-Agent': USER_AGENT, Referer: referer || (parsed.origin + '/') }
   const resp = await net.fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(30000) })
   if (!resp.ok) throw new Error(`Image HTTP ${resp.status}`)
   const buf = Buffer.from(await resp.arrayBuffer())
@@ -247,12 +316,17 @@ async function scrapeJavBus(ph, type) {
  */
 async function scrapeJavDb(ph, type, opts = {}) {
   const fetchStats = opts.fetchStats !== false  // 默认开启
+  // 用户配置的 JAVDB Cookie（绕 Cloudflare 5 秒盾；见设置 → 刮削）
+  const userCookie = opts.cookie || ''
   const baseUrl = 'https://javdb.com'
   // 构建搜索 URL，对番号进行 URL 编码
   const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(ph)}&f=all`
 
-  // 请求搜索结果页面
-  const searchHtml = await fetchHtml(searchUrl, { referer: baseUrl })
+  // 无用户 Cookie 时先预热站点会话（取首页 Cookie），有一定概率规避 5 秒盾
+  if (!userCookie) await warmupSession(baseUrl)
+  // 请求搜索结果页面（携带用户 Cookie 时优先使用）
+  const searchHtml = await fetchHtml(searchUrl, { referer: baseUrl, cookie: userCookie || undefined })
+  assertJavdbNotBlocked(searchHtml, searchUrl, !!userCookie)
   let data = deleteSpace(searchHtml)
 
   // 提取搜索结果列表
@@ -290,7 +364,8 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 拼接完整详情页 URL
   const fullDetailUrl = baseUrl + detailUrl
   // 请求详情页 HTML
-  const detailHtml = await fetchHtml(fullDetailUrl, { referer: searchUrl })
+  const detailHtml = await fetchHtml(fullDetailUrl, { referer: searchUrl, cookie: userCookie || undefined })
+  assertJavdbNotBlocked(detailHtml, fullDetailUrl, !!userCookie)
   data = deleteSpace(detailHtml)
 
   // 提取详情区块
@@ -371,10 +446,12 @@ async function scrapeJavDb(ph, type, opts = {}) {
   const lenM = lenStr.match(/(\d+)/)
   if (lenM) duration = Number(lenM[1])
 
-  // 提取预览图 URL 列表（2026-09-09 新增）
-  // JAVDB 详情页 preview-images 区块：<div class="preview-images"><a ...><img src="https://...jpg"></a>...</div>
+  // 提取预览图 URL 列表（2026-09-09 新增；2026-09-13 兼容新版页面结构）
+  // 实测 JAVDB 现行页面为：<div class="tile-images preview-images">…<img src="https://...jpg">
+  // （旧实现只找 '<div class="preview-images">'，页面加 tile-images 类后恒失配 → 预览图恒空）
   const previews = []
-  const previewBlock = inteHandler(data, '<div class="preview-images">', '</div>', [0, 0, 0])
+  let previewBlock = inteHandler(data, 'class="tile-images preview-images"', '</div>', [0, 0, 0])
+  if (!previewBlock) previewBlock = inteHandler(data, '<div class="preview-images">', '</div>', [0, 0, 0])
   if (previewBlock) {
     const imgRe = /<img[^>]*src="([^"]+)"/g
     let im
@@ -479,7 +556,8 @@ function applyTagMapping(bq, mapping) {
  */
 async function scrapeMovie(ph, {
   source = 'auto', coverDir = COVER_DIR, dataDir = '',
-  downloadPreviews = false, previewCount = 0, fetchStats = true, tagMapping = []
+  downloadPreviews = false, previewCount = 0, fetchStats = true, tagMapping = [],
+  javdbCookie = ''
 } = {}) {
   const cleanPh = ph.trim()
   if (!cleanPh) return { ok: false, error: '番号不能为空' }
@@ -509,10 +587,12 @@ async function scrapeMovie(ph, {
       let result = null
       // 根据来源名称调用对应的刮削函数
       if (src.name === 'JAVDB') {
-        result = await scrapeJavDb(cleanPh, type, { fetchStats })
+        result = await scrapeJavDb(cleanPh, type, { fetchStats, cookie: javdbCookie })
       } else if (src.name === 'JAVBUS') {
         result = await scrapeJavBus(cleanPh, type)
       }
+      // 诊断日志：便于定位「某源请求失败/解析失配」类问题（此前 catch 静默导致无从排查）
+      console.log(`[scrape] ${cleanPh} ← ${src.name}: ${result ? 'ok' : 'null(未匹配)'}`)
       if (result) {
         // 跨源兜底补全（2026-09-13）：auto/默认模式按 JAVBUS → JAVDB 顺序，
         // 第一个成功的源整体返回，不再自动补其他字段。而 JAVBUS 缺少
@@ -522,7 +602,8 @@ async function scrapeMovie(ph, {
         // 失败忽略——不影响主体数据与刮削结果。
         if (src.name === 'JAVBUS' && (fetchStats || downloadPreviews)) {
           try {
-            const jd = await scrapeJavDb(cleanPh, type, { fetchStats })
+            const jd = await scrapeJavDb(cleanPh, type, { fetchStats, cookie: javdbCookie })
+            console.log(`[scrape] ${cleanPh} ← JAVDB补全: ${jd ? `ok want=${jd.want || 0} watched=${jd.watched || 0} score=${jd.score || 0} previews=${(jd.previews || []).length}` : 'null(未匹配)'}`)
             if (jd) {
               // 标量字段兜底：仅填补 JAVBUS 结果中的空值
               for (const k of ['pm', 'fl', 'fxrq', 'dy', 'ps', 'fx', 'xl', 'yy', 'bq', 'cover', 'vr', 'duration']) {
@@ -537,17 +618,20 @@ async function scrapeMovie(ph, {
               if (jd.watched) result.watched = jd.watched
               if (jd.score) result.score = jd.score
             }
-          } catch {}
+          } catch (e) { console.warn(`[scrape] ${cleanPh} ← JAVDB补全失败: ${e.message}`) }
         }
         // 如果有封面图且指定了数据目录，下载封面到本地
-        if (result.cover && dataDir) {
+        // 按源指定图片 Referer（部分图床校验来源页；参考 mdcx 的按源 Referer 策略）
+      const imgReferer = src.name === 'JAVBUS' ? 'https://www.javbus.com/'
+        : src.name === 'JAVDB' ? 'https://javdb.com/' : ''
+      if (result.cover && dataDir) {
           const coversDir = path.join(dataDir, coverDir || COVER_DIR)
           if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true })
           // 从 URL 提取图片扩展名
           const ext = result.cover.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg'
           const savePath = path.join(coversDir, cleanPh + ext)
           try {
-            await downloadImage(result.cover, savePath)
+            await downloadImage(result.cover, savePath, imgReferer)
             // 将封面路径改为相对路径（相对于 dataDir）
             result.cover = path.join(coverDir || COVER_DIR, cleanPh + ext)
           } catch (e) {
@@ -564,7 +648,7 @@ async function scrapeMovie(ph, {
             const pExt = list[i].match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
             const relPath = path.join(coverDir || COVER_DIR, 'previews', `${cleanPh}-${i + 1}${pExt}`)
             try {
-              await downloadImage(list[i], path.join(dataDir, relPath))
+              await downloadImage(list[i], path.join(dataDir, relPath), imgReferer)
               localPreviews.push(relPath.replace(/\\/g, '/'))
             } catch (e2) {
               // 单张预览图下载失败跳过，不影响其余
@@ -572,6 +656,7 @@ async function scrapeMovie(ph, {
           }
           if (localPreviews.length) result.previews = localPreviews
           else delete result.previews  // 全部失败则不入库
+          console.log(`[scrape] ${cleanPh} 预览图: 待下载${list.length} 成功${localPreviews.length}`)
         } else {
           // 未开启下载：移除远程 URL，避免把外链入库（离线时无法显示）
           delete result.previews
@@ -582,6 +667,7 @@ async function scrapeMovie(ph, {
       }
     } catch (e) {
       lastError = `${src.name}: ${e.message}`
+      console.warn(`[scrape] ${cleanPh} ← ${src.name} 失败: ${e.message}`)
     }
   }
 

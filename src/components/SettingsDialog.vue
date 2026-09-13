@@ -141,6 +141,18 @@
             <el-input v-model="st.proxy_url" placeholder="http://127.0.0.1:7890" style="max-width: 320px;" />
             <span class="g-tip" v-if="showTips">如 Clash: 7890、v2rayN: 10809</span>
           </div>
+          <!-- JAVDB Cookie（绕过 Cloudflare 5 秒盾） -->
+          <div class="g-label">JAVDB Cookie</div>
+          <div class="g-control">
+            <el-input v-model="st.javdb_cookie" type="textarea" :rows="2"
+                      placeholder="浏览器登录 javdb.com 后复制 Cookie 粘贴到这里（可留空，但会被 Cloudflare 拦截）"
+                      style="max-width: 460px;" />
+            <span class="g-tip" v-if="showTips">
+              JAVDB 有 Cloudflare 5 秒盾：不带 Cookie 会返回 403，导致想看/看过/评分与 JAVDB 数据抓不到。
+              获取方法：浏览器登录 javdb.com → F12 开发者工具 → Network → 刷新页面 → 任一请求的
+              Cookie 请求头，整段复制粘贴（形如 __cf_bm=...; _jdb_session=...）。
+            </span>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -216,7 +228,7 @@ const tab = ref('basic')
 const st = reactive({
   player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
   scrape_source: 'auto', scrape_previews: 'n', scrape_stats: 'y',
-  proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890',
+  proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890', javdb_cookie: '',
   show_tips: 'y'
 })
 // 注释开关（计算属性）：控制所有选项说明小字的显示（基础设置内可切换）
@@ -319,7 +331,7 @@ async function saveAll() {
   const kvKeys = [
     'player_path', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
-    'proxy_enabled', 'proxy_url'
+    'proxy_enabled', 'proxy_url', 'javdb_cookie'
   ]
   const batch = {}
   for (const k of kvKeys) batch[k] = String(st[k] ?? '')
