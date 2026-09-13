@@ -204,7 +204,7 @@ onBeforeUnmount(stopTimer)
   height: 430px;                                    /* 板块加大 */
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
-  background: var(--surface-2);                     /* 纯色底（不用玻璃/模糊背景） */
+  background: var(--surface);                       /* 白色底 */
   overflow: hidden;   /* 两侧海报被裁切 → 呈现「半幅」效果 */
 }
 .flow {
