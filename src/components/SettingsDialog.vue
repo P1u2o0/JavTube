@@ -60,42 +60,38 @@
       <!-- ============ 标签设置 ============ -->
       <el-tab-pane label="标签设置" name="cats">
         <div class="set-grid">
-          <!-- 标签类别：右列为行列表，加号与第一行并排（右侧） -->
+          <!-- 标签类别：加号固定在第一行 × 号后面 -->
           <div class="g-label">标签类别</div>
           <div class="g-control">
-            <div class="rows-wrap">
-              <div class="row-list">
-                <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
-                  <el-input v-model="row.cat" placeholder="类别名（如：主题）" class="cat-name-input" />
-                  <el-input v-model="row.tags" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
-                  <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
-                    <AppIcon name="close" :size="14" />
-                  </button>
-                </div>
+            <div class="row-list">
+              <div v-for="(row, idx) in catRows" :key="row._key" class="cat-row-item">
+                <el-input v-model="row.cat" placeholder="类别名（如：主题）" class="cat-name-input" />
+                <el-input v-model="row.tags" placeholder="标签1，标签2，标签3" class="cat-tags-input" />
+                <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
+                  <AppIcon name="close" :size="14" />
+                </button>
+                <el-button v-if="idx === 0" class="add-btn" title="添加类别" @click="addCat">
+                  <AppIcon name="plus" :size="15" />
+                </el-button>
               </div>
-              <el-button class="add-btn" title="添加类别" @click="addCat">
-                <AppIcon name="plus" :size="15" />
-              </el-button>
             </div>
             <span class="g-tip" v-if="showTips">标签用中文逗号「，」分隔；未使用的类别不显示在片库</span>
           </div>
-          <!-- 标签映射 -->
+          <!-- 标签映射：加号固定在第一行 × 号后面 -->
           <div class="g-label">标签映射</div>
           <div class="g-control">
-            <div class="rows-wrap">
-              <div class="row-list">
-                <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
-                  <el-input v-model="row.from" placeholder="原标签（如：偶像术人）" class="map-input" />
-                  <span class="map-arrow">映射为</span>
-                  <el-input v-model="row.to" placeholder="新标签（如：偶像）" class="map-input" />
-                  <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
-                    <AppIcon name="close" :size="14" />
-                  </button>
-                </div>
+            <div class="row-list">
+              <div v-for="(row, idx) in mapRows" :key="row._key" class="map-row-item">
+                <el-input v-model="row.from" placeholder="原标签（如：偶像术人）" class="map-input" />
+                <span class="map-arrow">映射为</span>
+                <el-input v-model="row.to" placeholder="新标签（如：偶像）" class="map-input" />
+                <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
+                  <AppIcon name="close" :size="14" />
+                </button>
+                <el-button v-if="idx === 0" class="add-btn" title="添加映射" @click="addMap">
+                  <AppIcon name="plus" :size="15" />
+                </el-button>
               </div>
-              <el-button class="add-btn" title="添加映射" @click="addMap">
-                <AppIcon name="plus" :size="15" />
-              </el-button>
             </div>
             <span class="g-tip" v-if="showTips">刮削到的标签命中原标签时自动替换；新标签留空则删除该标签</span>
           </div>
@@ -446,9 +442,7 @@ async function clearDb() {
 .player-row { display: flex; gap: 10px; width: 100%; max-width: 340px; }
 .player-input { flex: 1; }
 
-/* 标签类别 / 标签映射：行列表 + 加号按钮并排（加号贴第一行右侧，垂直居中） */
-.rows-wrap { display: flex; align-items: center; gap: 8px; }
-.rows-wrap .row-list { flex: 1; min-width: 0; }
+/* 标签类别 / 标签映射行（加号固定在第一行 × 号后，v-if=idx===0） */
 .cat-row-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .cat-name-input { width: 170px; flex-shrink: 0; }
 .cat-tags-input { flex: 1; }
