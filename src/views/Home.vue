@@ -39,11 +39,6 @@
           <AppIcon name="back" :size="18" class="flip" />
         </button>
       </div>
-      <!-- 当前影片信息（居中） -->
-      <div class="flow-meta" @click="goDetail(hero[active])">
-        <span class="fm-code">{{ hero[active].ph || '—' }}</span>
-        <span class="fm-title">{{ hero[active].pm || '无标题' }}</span>
-      </div>
       <!-- 指示点（按实际数量） -->
       <div v-if="hero.length > 1" class="hero-dots">
         <button v-for="(m, i) in hero" :key="m.id" class="dot" :class="{ on: i === active }"
@@ -135,7 +130,8 @@ function posOf(d) {
   const abs = Math.abs(d)
   const offset = abs === 0 ? 0 : abs === 1 ? 380 : 600
   const scale = abs === 0 ? 1 : abs === 1 ? 0.66 : 0.44
-  const opacity = abs === 0 ? 1 : abs === 1 ? 0.9 : 0.5
+  // 透明度梯度拉大：离场海报明显淡出、进场海报明显淡入（交叉淡化）
+  const opacity = abs === 0 ? 1 : abs === 1 ? 0.55 : 0.22
   return { offset, scale, opacity, z: 10 - abs }
 }
 
@@ -252,9 +248,9 @@ onBeforeUnmount(stopTimer)
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;   /* + translate3d：强制独立合成层，动画期间零重绘 */
-  /* 轮换动画：加长缓出曲线（750ms），透明度稍慢半拍跟上，层次更柔 */
+  /* 轮换动画：位移 750ms 长缓出；透明度独立交叉淡化（进淡出更明显） */
   transition: transform 750ms cubic-bezier(0.3, 1, 0.35, 1),
-              opacity 460ms ease 60ms;
+              opacity 620ms cubic-bezier(0.4, 0, 0.6, 1) 80ms;
   will-change: transform, opacity;
 }
 .slot img {
@@ -291,19 +287,6 @@ onBeforeUnmount(stopTimer)
 .flow-nav.prev { left: 14px; }
 .flow-nav.next { right: 14px; }
 .flip { transform: rotate(180deg); }
-/* 当前影片信息 */
-.flow-meta {
-  display: flex; align-items: baseline; gap: 10px;
-  margin-top: 12px; cursor: pointer;
-}
-.fm-code {
-  font-family: var(--font-display); font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 17px; color: var(--primary);
-}
-.fm-title {
-  font-size: 13.5px; color: var(--text-2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 /* 指示点 */
 .hero-dots { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
 .dot {
