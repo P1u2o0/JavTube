@@ -24,7 +24,7 @@
           <!-- 影片槽：每个影片一个槽位，位置由它相对当前项的距离决定——
                切换时是海报整体平移（而非图片原位替换），动画才顺滑 -->
           <div v-for="(m, i) in hero" :key="m.id" class="slot" :style="slotStyle(i)">
-            <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" @click="onSlotClick(i)" />
+            <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
           </div>
           <!-- 空位槽：该位置没有影片时显示淡红色空白占位图（数量不足即留空） -->
           <div v-for="d in SLOTS" :key="`ph-${d}`" class="slot" :style="phStyle(d)">
@@ -146,15 +146,14 @@ function posOf(d) {
 function slotStyle(i) {
   const d = i - active.value
   if (Math.abs(d) > 2) {
-    const p = posOf(d > 0 ? 3 : -3)
     return {
-      transform: `translate(-50%, -50%) translateX(${d > 0 ? 900 : -900}px) scale(0.3)`,
+      transform: `translate3d(-50%, -50%, 0) translateX(${d > 0 ? 900 : -900}px) scale(0.3)`,
       opacity: 0, zIndex: 0, pointerEvents: 'none'
     }
   }
   const p = posOf(d)
   return {
-    transform: `translate(-50%, -50%) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
+    transform: `translate3d(-50%, -50%, 0) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
     opacity: p.opacity,
     zIndex: p.z
   }
@@ -164,7 +163,7 @@ function slotStyle(i) {
 function phStyle(d) {
   const p = posOf(d)
   return {
-    transform: `translate(-50%, -50%) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
+    transform: `translate3d(-50%, -50%, 0) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
     opacity: p.opacity * 0.9,
     zIndex: p.z - 1
   }
@@ -211,13 +210,15 @@ function goTag(tag) {
   router.push({ path: '/library', query: { tag } })
 }
 
-/** 启动自动轮播 */
+/** 启动自动轮播（到头反向往返，避免末尾跳回首张时海报横跨整屏飞回造成顿挫） */
 function startTimer() {
   stopTimer()
   if (hero.value.length < 2) return
+  let dir = 1
   timer = setInterval(() => {
-    // 到末尾回到开头（自动播放时循环；手动切换时按 step 的边界规则）
-    active.value = (active.value + 1) % hero.value.length
+    let next = active.value + dir
+    if (next < 0 || next >= hero.value.length) { dir = -dir; next = active.value + dir }
+    active.value = next
   }, HERO_INTERVAL)
 }
 function stopTimer() { if (timer) { clearInterval(timer); timer = null } }
@@ -250,9 +251,10 @@ onBeforeUnmount(stopTimer)
   /* 中心海报占满区域高度：区域 430 - 上下各 15 = 400 高，3:2 → 600 宽 */
   width: 600px; height: 400px;
   transform-origin: center center;
-  /* 轮换动画：位移与缩放用长缓出曲线（柔和收尾），透明度同步渐变 */
-  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 420ms ease;
+  backface-visibility: hidden;   /* + translate3d：强制独立合成层，动画期间零重绘 */
+  /* 轮换动画：加长缓出曲线（750ms），透明度稍慢半拍跟上，层次更柔 */
+  transition: transform 750ms cubic-bezier(0.3, 1, 0.35, 1),
+              opacity 460ms ease 60ms;
   will-change: transform, opacity;
 }
 .slot img {
