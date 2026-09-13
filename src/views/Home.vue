@@ -23,9 +23,11 @@
         <!-- 传送带模式（业界标准）：单一 belt 元素整体平移，所有海报刚性同步移动；
              海报 left 按自身索引固定，切换只动 belt → 运动完全均匀自然 -->
         <div class="flow">
-          <TransitionGroup tag="div" class="belt" name="slot" :style="beltStyle">
+          <!-- 3D 封面流：stage 承载透视，每个海报按相对中心距离做 rotateY/translateZ/scale -->
+          <TransitionGroup tag="div" class="stage" name="slot">
             <div v-for="{ m, i } in visibleHero" :key="m.id" class="slot" :style="slotStyle(i)">
               <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
+              <div class="shade"></div>
             </div>
             <!-- 空位槽：视野内没有影片的索引显示淡红色空白占位图 -->
             <div v-for="pi in visiblePh" :key="`ph-${pi}`" class="slot" :style="slotStyle(pi, true)">
@@ -103,18 +105,12 @@ const arrivals = ref([])     // 近期上新
 const active = ref(0)
 let timer = null
 const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
-const PITCH = 300            // 传送带步距：相邻海报中心间距（px），均匀间距 → 运动均匀
 const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
 
 /** 封面 URL 解析（无封面时返回空串） */
 function coverOf(m) {
   return resolveCover(m?.cover) || ''
 }
-
-/** 传送带位移：把当前项对到正中（单一元素过渡 → 所有海报刚性同步移动） */
-const beltStyle = computed(() => ({
-  transform: `translate3d(${-active.value * PITCH}px, 0, 0)`
-}))
 
 /** 视野内的影片（|i - active| <= 2），视野外的按需进出（淡入淡出） */
 const visibleHero = computed(() =>
@@ -133,20 +129,27 @@ const visiblePh = computed(() => {
 })
 
 /**
- * 槽位样式：left 按影片自身索引固定（不随切换变化，位移全靠 belt），
- * 仅缩放/透明度/层级随相对距离渐变——切换时海报只做「长大/缩小 + 淡化」。
+ * 3D coverflow 槽位样式：海报按相对中心距离 d 绕 Y 轴旋转 + 向 Z 轴后撤 + 水平偏移。
+ * 切换时（active 变化）d 随之变化 → 各海报的 rotateY/translateZ/scale 一起过渡，
+ * 呈现「当前海报缩小向后转到侧面、下一张放大向前转到正中」的立体轮换。
  * @param {number} i - 影片（或空位）索引
  * @param {boolean} [ph] - 是否空位占位（层级略低、稍淡）
  */
 function slotStyle(i, ph = false) {
-  const abs = Math.min(Math.abs(i - active.value), 2)
-  const scale = abs === 0 ? 1 : abs === 1 ? 0.66 : 0.44
-  const opacity = abs === 0 ? 1 : abs === 1 ? 0.55 : 0.22
+  const d = i - active.value
+  const abs = Math.min(Math.abs(d), 2)
+  const sign = d < 0 ? -1 : 1
+  // 旋转角 / 后撤深度 / 水平偏移 / 缩放 随距离递增（中心 0，两侧逐级退后）
+  const angle = abs === 0 ? 0 : abs === 1 ? 30 : 55
+  const depth = abs === 0 ? 0 : abs === 1 ? 150 : 280
+  const x     = abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480)
+  const scale = abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5
+  const opacity = abs === 0 ? 1 : abs === 1 ? 0.75 : 0.4
   return {
-    left: `calc(50% + ${i * PITCH}px)`,
-    transform: `translate(-50%, -50%) scale(${scale})`,
-    opacity: ph ? opacity * 0.9 : opacity,
-    zIndex: 10 - abs - (ph ? 1 : 0)
+    transform: `translate(-50%, -50%) translateX(${x}px) translateZ(${-depth}px) rotateY(${sign * -angle}deg) scale(${scale})`,
+    opacity: ph ? opacity * 0.85 : opacity,
+    zIndex: 10 - abs - (ph ? 1 : 0),
+    '--shade': abs === 0 ? 0 : abs === 1 ? 0.35 : 0.6   // 遮罩强度：越靠边越暗
   }
 }
 
@@ -221,27 +224,28 @@ onBeforeUnmount(stopTimer)
   border-radius: var(--r-lg);
   /* 不设背景与边框：海报直接悬浮在页面底色上，由海报自身投影拉开层次 */
   background: transparent;
-  overflow: hidden;   /* 两侧海报被裁切 → 呈现「半幅」效果 */
+  overflow: hidden;   /* 两侧海报被裁切 */
+  perspective: 1400px;                              /* 3D 纵深视距 */
 }
 .flow {
   position: absolute; inset: 0;
+  transform-style: preserve-3d;   /* 让透视传递到 stage → slot */
 }
-/* 传送带：唯一做水平位移的元素（单元素过渡 → 所有海报刚性同步、速度完全一致）。
-   曲线为业界推荐：cubic-bezier(.25,.1,.25,1)（缓入缓出，类 iOS 滑动） */
-.belt {
+/* 3D 舞台：让子海报的 rotateY/translateZ 产生真实透视 */
+.stage {
   position: absolute; inset: 0;
-  transition: transform 480ms cubic-bezier(0.25, 0.1, 0.25, 1);
-  will-change: transform;
+  transform-style: preserve-3d;
 }
-/* 槽位：基准尺寸 = 横向海报 600×400（3:2）；left 按自身索引固定（内联），位移全靠 belt。
-   缩放/淡化比传送带慢半拍起步（follow-through 滞后感，更自然） */
+/* 槽位：基准尺寸 = 横向海报 600×400（3:2）；rotateY/translateZ/scale 由内联控制。
+   立体轮换过渡：一次平滑的三维插值（旋转+后撤+缩放+位移同步） */
 .slot {
-  position: absolute; top: 50%;
+  position: absolute; left: 50%; top: 50%;
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;
-  transition: transform 340ms ease-out 70ms,
-              opacity 320ms ease-out 70ms;
+  transition: transform 620ms cubic-bezier(0.32, 0.72, 0.3, 1),
+              opacity 420ms ease;
+  will-change: transform, opacity;
 }
 .slot img {
   width: 100%; height: 100%; object-fit: cover; display: block;
@@ -251,6 +255,15 @@ onBeforeUnmount(stopTimer)
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .slot img:hover { transform: translateY(-3px); }
+/* 立体遮罩：非中心海报盖暗角渐变，强化前后纵深；中心时透明（--shade=0） */
+.shade {
+  position: absolute; inset: 0;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.62) 100%);
+  opacity: var(--shade, 0);
+  transition: opacity 500ms ease;
+  pointer-events: none;
+}
 /* 拖入/拖出：视野边缘海报的位移由传送带完成，这里只做淡入淡出配合 */
 .slot-enter-from { opacity: 0 !important; }
 .slot-leave-to { opacity: 0 !important; }
@@ -291,9 +304,10 @@ onBeforeUnmount(stopTimer)
 .dot.on { width: 20px; border-radius: var(--r-pill); background: var(--accent); }
 
 /* ===== ② 类别按钮 ===== */
-.cats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.cats { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
 .cat-card {
   display: flex; align-items: stretch;
+  width: 224px; flex-shrink: 0;
   height: 88px; padding: 0; overflow: hidden;
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface); cursor: pointer; text-align: left;

@@ -52,29 +52,53 @@
         <AppIcon name="import" :size="16" />
         <span>导入</span>
       </button>
-      <!-- 刮削进度铃铛：角标显示进行中数量，点击展开进度面板 -->
-      <div class="bell-wrap" v-if="scrape.tasks.length || bellOpen">
-        <button class="bell-btn" :class="{ 'has-task': scrape.runningCount }" @click="bellOpen = !bellOpen" aria-label="刮削进度">
+      <!-- 刮削进度铃铛：始终显示，角标实时显示待刮削任务总数（排队 + 进行中），点击展开进度面板 -->
+      <div class="bell-wrap">
+        <button class="bell-btn" :class="{ 'has-task': scrape.todoCount }" @click="bellOpen = !bellOpen" aria-label="刮削进度">
           <AppIcon name="bell" :size="18" />
-          <span v-if="scrape.runningCount" class="bell-badge">{{ scrape.runningCount }}</span>
+          <span v-if="scrape.todoCount" class="bell-badge">{{ scrape.todoCount }}</span>
         </button>
         <!-- 刮削进度下拉面板 -->
         <transition name="bell-pop">
           <div v-if="bellOpen" class="bell-panel">
             <div class="bp-head">
               <span>刮削进度</span>
-              <button v-if="scrape.tasks.length" class="bp-clear" @click="scrape.clear()">清除已完成</button>
+              <button v-if="scrape.failedCount" class="bp-clear" @click="scrape.clear()">清除失败</button>
             </div>
             <div class="bp-list">
-              <div v-for="t in scrape.tasks" :key="t.key" class="bp-item">
-                <span class="bp-dot" :class="t.status"></span>
-                <div class="bp-main">
-                  <div class="bp-title">{{ t.ph }}<template v-if="t.pm"> · {{ t.pm }}</template></div>
-                  <div class="bp-sub" v-if="t.status === 'running'">刮削中…</div>
-                  <div class="bp-sub bp-fail" v-else-if="t.status === 'fail'">{{ t.error || '刮削失败' }}</div>
-                  <div class="bp-sub bp-ok" v-else>刮削成功</div>
+              <!-- 正在刮削 -->
+              <template v-if="scrape.runningTasks.length">
+                <div class="bp-group">正在刮削</div>
+                <div v-for="t in scrape.runningTasks" :key="t.key" class="bp-item">
+                  <span class="bp-dot running"></span>
+                  <div class="bp-main">
+                    <div class="bp-title">{{ t.ph }}<template v-if="t.pm"> · {{ t.pm }}</template></div>
+                    <div class="bp-sub">刮削中…</div>
+                  </div>
                 </div>
-              </div>
+              </template>
+              <!-- 待刮削 -->
+              <template v-if="scrape.pendingTasks.length">
+                <div class="bp-group">待刮削</div>
+                <div v-for="t in scrape.pendingTasks" :key="t.key" class="bp-item">
+                  <span class="bp-dot pending"></span>
+                  <div class="bp-main">
+                    <div class="bp-title">{{ t.ph }}<template v-if="t.pm"> · {{ t.pm }}</template></div>
+                    <div class="bp-sub">排队中…</div>
+                  </div>
+                </div>
+              </template>
+              <!-- 刮削失败 -->
+              <template v-if="scrape.failedTasks.length">
+                <div class="bp-group">刮削失败</div>
+                <div v-for="t in scrape.failedTasks" :key="t.key" class="bp-item">
+                  <span class="bp-dot fail"></span>
+                  <div class="bp-main">
+                    <div class="bp-title">{{ t.ph }}<template v-if="t.pm"> · {{ t.pm }}</template></div>
+                    <div class="bp-sub bp-fail">{{ t.error || '刮削失败' }}</div>
+                  </div>
+                </div>
+              </template>
               <div v-if="!scrape.tasks.length" class="bp-empty">暂无刮削任务</div>
             </div>
           </div>
@@ -298,6 +322,12 @@ function onSearch() {
 }
 .bp-clear:hover { color: var(--accent); }
 .bp-list { max-height: 320px; overflow-y: auto; }
+/* 分组标题：正在刮削 / 待刮削 / 刮削失败 */
+.bp-group {
+  padding: 9px 14px 5px;
+  font-size: 11.5px; font-weight: 600; color: var(--muted);
+  letter-spacing: 0.03em;
+}
 .bp-item {
   display: flex; align-items: flex-start; gap: 9px;
   padding: 9px 14px;
@@ -313,6 +343,7 @@ function onSearch() {
   background: var(--muted);
 }
 .bp-dot.running { background: var(--accent); animation: bp-pulse 1.2s ease-in-out infinite; }
+.bp-dot.pending { background: var(--muted); }
 .bp-dot.ok { background: var(--success); }
 .bp-dot.fail { background: var(--danger); }
 @keyframes bp-pulse {

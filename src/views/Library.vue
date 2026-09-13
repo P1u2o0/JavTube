@@ -199,8 +199,12 @@ async function onBatchScrape() {
   if (!selected.length) return
   // 批量刮削进度走顶栏铃铛面板（取代 ElNotification 右上角弹窗）
   let ok = 0, fail = 0
-  for (const m of selected) {
-    const key = scrapeStore.start(m.ph, m.pm)
+  // 先把全部选中影片登记为「待刮削」（pending），铃铛红标立即显示任务总数
+  const keys = selected.map(m => scrapeStore.enqueue(m.ph, m.pm))
+  for (let idx = 0; idx < selected.length; idx++) {
+    const m = selected[idx]
+    const key = keys[idx]
+    scrapeStore.begin(key)   // 待刮削 → 正在刮削
     try {
       const r = await window.api.scrapeMovie(m.ph, 'auto')
       if (r.ok && r.data) {
