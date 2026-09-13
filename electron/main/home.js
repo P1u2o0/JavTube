@@ -106,12 +106,9 @@ function registerHomeIpc(ipcMain, db) {
       // 会话级缓存：本轮应用运行期间固定同一批（用户要求「每次打开软件挑选一次」，
       // 软件内切换页面回到首页时不重新随机）；重启应用后模块重载即重新挑选。
       if (!heroCache) {
-        let pool = all.filter(m => !recentIds.has(m.id) && hitInterest(m))
-        if (pool.length < HERO_COUNT) {
-          // 画像为空（尚无观看记录）或同类不足时，用其余影片补足
-          const rest = all.filter(m => !recentIds.has(m.id) && !pool.includes(m))
-          pool = pool.concat(rest)
-        }
+        // 只取「同类且未近期观看」的影片；不足 5 部时按实际数量返回，
+        // 由首页按固定槽位渲染并留出空位（不用无关影片补足，避免推荐失真）
+        const pool = all.filter(m => !recentIds.has(m.id) && hitInterest(m))
         heroCache = sample(pool, HERO_COUNT)
       }
       const hero = heroCache
@@ -134,16 +131,11 @@ function registerHomeIpc(ipcMain, db) {
       // === 蓝区：与画像无交集的影片（不常看），按添加时间倒序取 8 ===
       // 不足 8 部时用「其余影片按添加时间倒序」补足——避免库较小时该区域空白
       // （语义仍是「近期上新」，补足项即最新添加的影片）
-      const byTjrqDesc = (a, b) => String(b.tjrq || '').localeCompare(String(a.tjrq || ''))
-      const noInterest = all.filter(m => !hitInterest(m)).sort(byTjrqDesc)
-      const arrivals = [...noInterest]
-      if (arrivals.length < ARRIVAL_COUNT) {
-        const picked = new Set(arrivals.map(m => m.id))
-        for (const m of [...all].sort(byTjrqDesc)) {
-          if (arrivals.length >= ARRIVAL_COUNT) break
-          if (!picked.has(m.id)) { arrivals.push(m); picked.add(m.id) }
-        }
-      }
+      // 不足 8 部时按实际数量返回，首页留出空位（不补足无关影片）
+      const arrivals = all
+        .filter(m => !hitInterest(m))
+        .sort((a, b) => String(b.tjrq || '').localeCompare(String(a.tjrq || '')))
+        .slice(0, ARRIVAL_COUNT)
 
       return { ok: true, data: { hero, categories, arrivals, recentCount: recent.length } }
     } catch (e) {

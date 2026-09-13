@@ -3,50 +3,54 @@
   文件名：Home.vue
   所属模块：视图 / 首页
   功能描述：首页推荐面板，三块区域（数据来自 home:recommend IPC）：
-           ① 轮播：按近期观看的类别 / 系列 / 女优挑选 5 部同类影片轮换展示
-              （每次打开软件挑选一次——主进程会话级缓存，软件内切页不重随机）
+           ① 轮播：按近期观看的类别 / 系列 / 女优挑选同类影片，以
+              **封面流（coverflow）**形式呈现——中心为当前影片大海报，
+              左右两侧依次露出半幅并逐渐缩小；不足 5 部时留出空位。
+              每次打开软件挑选一次（主进程会话级缓存，软件内切页不重随机）
            ② 类别按钮：近期观看标签中「恰好两个汉字」的标签按出现频率取前 4；
-              按钮左侧类别名 + 数量，右侧该类影片封面 2×2 拼接
+              按钮左侧类别名 + 数量，右侧该类影片封面 2×2 拼接；不足 4 个留空位
            ③ 近期上新：与近期观看兴趣无交集的影片（不常看的类别/系列/女优），
-              4 列 × 2 行共 8 部
-  视觉：沿用设计令牌（暖纸白/墨黑/朱柿红、4 级圆角、发丝边框、悬停上浮）
+              4 列 × 2 行共 8 部；不足时留空位
+  视觉：沿用设计令牌（暖纸白 / 墨黑 / 朱柿红、4 级圆角、发丝边框）
   依赖：vue-router、@/components/AppIcon、@/utils/global（resolveCover）
   ============================================================
 -->
 <template>
   <div class="home-page">
-    <!-- ===== ① 轮播：同类影片（每次打开软件挑选 5 部） ===== -->
+    <!-- ===== ① 轮播：封面流（中心大图 + 两侧半幅递减） ===== -->
     <section v-if="hero.length" class="hero">
-      <div class="hero-stage" @click="goDetail(hero[active])">
-        <!-- 背景：当前海报模糊铺满 -->
-        <div class="hero-bg" :style="{ backgroundImage: `url(${coverOf(hero[active])})` }"></div>
-        <div class="hero-shade"></div>
-        <!-- 前景海报 -->
-        <img class="hero-poster" :src="coverOf(hero[active])" :alt="hero[active].pm || ''" />
-        <!-- 影片信息 -->
-        <div class="hero-meta">
-          <div class="hero-code">{{ hero[active].ph || '—' }}</div>
-          <div class="hero-title">{{ hero[active].pm || '无标题' }}</div>
-          <div v-if="heroTagList.length" class="hero-tags">
-            <span v-for="t in heroTagList" :key="t" class="hero-tag">{{ t }}</span>
+      <div class="flow-wrap">
+        <!-- 背景：当前海报极淡铺底（不抢主体） -->
+        <div class="flow-bg" :style="{ backgroundImage: `url(${coverOf(hero[active])})` }"></div>
+        <!-- 5 个固定槽位：-2 -1 [0] 1 2；无影片的槽位留空 -->
+        <div class="flow">
+          <div v-for="d in SLOTS" :key="d" class="slot" :class="`d-${Math.abs(d)}`"
+               :style="slotStyle(d)">
+            <img v-if="slotMovie(d)" :src="coverOf(slotMovie(d))" :alt="slotMovie(d).pm || ''"
+                 :title="slotMovie(d).pm || ''" @click="onSlotClick(d)" />
           </div>
         </div>
-        <!-- 左右切换（玻璃圆钮，与卡片角标同风格） -->
-        <button v-if="hero.length > 1" class="hero-nav prev" aria-label="上一部" @click.stop="step(-1)">
+        <!-- 左右切换 -->
+        <button v-if="hero.length > 1" class="flow-nav prev" aria-label="上一部" @click="step(-1)">
           <AppIcon name="back" :size="18" />
         </button>
-        <button v-if="hero.length > 1" class="hero-nav next" aria-label="下一部" @click.stop="step(1)">
+        <button v-if="hero.length > 1" class="flow-nav next" aria-label="下一部" @click="step(1)">
           <AppIcon name="back" :size="18" class="flip" />
         </button>
       </div>
-      <!-- 指示点 -->
+      <!-- 当前影片信息（居中） -->
+      <div class="flow-meta" @click="goDetail(hero[active])">
+        <span class="fm-code">{{ hero[active].ph || '—' }}</span>
+        <span class="fm-title">{{ hero[active].pm || '无标题' }}</span>
+      </div>
+      <!-- 指示点（按实际数量） -->
       <div v-if="hero.length > 1" class="hero-dots">
         <button v-for="(m, i) in hero" :key="m.id" class="dot" :class="{ on: i === active }"
-                :aria-label="`第 ${i + 1} 部`" @click.stop="go(i)"></button>
+                :aria-label="`第 ${i + 1} 部`" @click="go(i)"></button>
       </div>
     </section>
 
-    <!-- ===== ② 类别按钮：两个汉字的标签（近期观看中频率前 4） ===== -->
+    <!-- ===== ② 类别按钮：两个汉字的标签（近期观看中频率前 4，不足留空） ===== -->
     <section v-if="categories.length" class="cats">
       <button v-for="c in categories" :key="c.tag" class="cat-card" @click="goTag(c.tag)">
         <div class="cat-name">
@@ -59,8 +63,8 @@
       </button>
     </section>
 
-    <!-- ===== ③ 近期上新：不常看的类别/系列/女优影片（4 列 × 2 行） ===== -->
-    <section v-if="arrivals.length" class="arrivals">
+    <!-- ===== ③ 近期上新：不常看的影片（4 列 × 2 行，不足留空） ===== -->
+    <section class="arrivals">
       <div class="sec-head">
         <span class="sec-title">近期上新</span>
       </div>
@@ -73,7 +77,13 @@
           <div class="ac-code">{{ m.ph || '—' }}</div>
           <div class="ac-title" :title="m.pm">{{ m.pm || '无标题' }}</div>
         </div>
+        <!-- 空位：不足 8 部时补齐占位，保持 4 列 × 2 行版式 -->
+        <div v-for="n in emptySlots" :key="`ph-${n}`" class="arrival-card is-empty" aria-hidden="true">
+          <div class="ac-cover"></div>
+        </div>
       </div>
+      <!-- 无数据时的提示 -->
+      <div v-if="!arrivals.length" class="empty-tip">暂无与近期观看偏好不同的影片</div>
     </section>
   </div>
 </template>
@@ -87,25 +97,47 @@ import AppIcon from '@/components/AppIcon.vue'
 const router = useRouter()
 
 // 三块数据
-const hero = ref([])         // 轮播影片
+const hero = ref([])         // 轮播影片（封面流）
 const categories = ref([])   // 类别按钮
 const arrivals = ref([])     // 近期上新
 
 // 轮播当前索引与定时器
 const active = ref(0)
 let timer = null
-const HERO_INTERVAL = 4500  // 自动轮播间隔（毫秒）
+const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
+const SLOTS = [-2, -1, 0, 1, 2]  // 固定 5 个封面流槽位（0 为中心）
+const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
 
 /** 封面 URL 解析（无封面时返回空串） */
 function coverOf(m) {
   return resolveCover(m?.cover) || ''
 }
 
-/** 当前轮播影片的前 3 个标签（用于展示） */
-const heroTagList = computed(() => {
-  const m = hero.value[active.value]
-  return String(m?.bq || '').split(/[，,]/).map(s => s.trim()).filter(Boolean).slice(0, 3)
-})
+/** 取某个槽位对应的影片（越界返回 null → 该槽位留空，不循环重复） */
+function slotMovie(d) {
+  return hero.value[active.value + d] || null
+}
+
+/**
+ * 槽位样式：中心最大，两侧按距离依次缩小并向外偏移（露出半幅由容器裁切实现）
+ * @param {number} d - 槽位偏移（-2..2）
+ * @returns {Object} 内联样式
+ */
+function slotStyle(d) {
+  const abs = Math.abs(d)
+  const offset = abs === 0 ? 0 : abs === 1 ? 116 : 202   // 距中心水平偏移（px）
+  const scale = abs === 0 ? 1 : abs === 1 ? 0.74 : 0.52  // 缩放
+  const opacity = abs === 0 ? 1 : abs === 1 ? 0.95 : 0.7
+  const z = 10 - abs
+  return {
+    transform: `translate(-50%, -50%) translateX(${d >= 0 ? offset : -offset}px) scale(${scale})`,
+    opacity,
+    zIndex: z
+  }
+}
+
+/** 近期上新的空位数量（保持 4×2 版式） */
+const emptySlots = computed(() => Math.max(0, ARRIVAL_TOTAL - arrivals.value.length))
 
 /** 加载推荐数据（轮播影片由主进程会话级缓存，本次运行内固定） */
 async function load() {
@@ -119,15 +151,21 @@ async function load() {
   }
 }
 
-/** 切换轮播（dir=1 下一部 / -1 上一部，循环） */
+/** 切换轮播（dir=1 下一部 / -1 上一部；夹在有效范围内，不循环留空） */
 function step(dir) {
-  const n = hero.value.length
-  if (!n) return
-  active.value = (active.value + dir + n) % n
+  const next = active.value + dir
+  if (next < 0 || next >= hero.value.length) return   // 到边界即停（无影片处不循环）
+  active.value = next
 }
 
 /** 跳到指定轮播项 */
 function go(i) { active.value = i }
+
+/** 点击槽位：中心海报进详情，两侧海报移到中心 */
+function onSlotClick(d) {
+  if (d === 0) return goDetail(hero.value[active.value])
+  active.value += d
+}
 
 /** 打开影片详情 */
 function goDetail(m) {
@@ -143,7 +181,10 @@ function goTag(tag) {
 function startTimer() {
   stopTimer()
   if (hero.value.length < 2) return
-  timer = setInterval(() => step(1), HERO_INTERVAL)
+  timer = setInterval(() => {
+    // 到末尾回到开头（自动播放时循环；手动切换时按 step 的边界规则）
+    active.value = (active.value + 1) % hero.value.length
+  }, HERO_INTERVAL)
 }
 function stopTimer() { if (timer) { clearInterval(timer); timer = null } }
 
@@ -157,74 +198,74 @@ onBeforeUnmount(stopTimer)
 <style scoped>
 .home-page { display: flex; flex-direction: column; gap: 18px; }
 
-/* ===== ① 轮播 ===== */
-.hero { position: relative; }
-.hero-stage {
-  position: relative; overflow: hidden;
-  height: 300px;
+/* ===== ① 轮播：封面流 ===== */
+.flow-wrap {
+  position: relative;
+  height: 330px;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
-  background: var(--surface-2);
-  cursor: pointer;
+  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+  overflow: hidden;   /* 两侧海报被裁切 → 呈现「半幅」效果 */
 }
-/* 背景：海报放大模糊铺底 */
-.hero-bg {
+/* 背景：当前海报极淡铺底 */
+.flow-bg {
   position: absolute; inset: -20%;
   background-size: cover; background-position: center;
-  filter: blur(34px) saturate(1.3);
-  opacity: 0.55;
+  filter: blur(38px) saturate(1.25);
+  opacity: 0.16;
 }
-/* 压暗层：保证前景与文字可读 */
-.hero-shade {
+.flow {
   position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(29, 28, 26, 0.72) 0%, rgba(29, 28, 26, 0.35) 45%, rgba(29, 28, 26, 0.05) 100%);
 }
-/* 前景海报：右侧竖版展示 */
-.hero-poster {
-  position: absolute; right: 64px; top: 50%; transform: translateY(-50%);
-  height: 232px; width: auto; border-radius: var(--r-md);
+/* 槽位：基准尺寸 = 中心海报 200×300，缩放由内联 transform 控制 */
+.slot {
+  position: absolute; left: 50%; top: 50%;
+  width: 200px; height: 300px;
+  transform-origin: center center;
+  transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-base) ease;
+}
+.slot img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  border-radius: var(--r-md);
   box-shadow: var(--sh-3);
-  object-fit: cover;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
 }
-/* 信息区：左侧 */
-.hero-meta {
-  position: absolute; left: 28px; top: 50%; transform: translateY(-50%);
-  max-width: 46%;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.hero-code {
-  font-family: var(--font-display); font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 24px; color: #fff; letter-spacing: 0.02em;
-}
-.hero-title {
-  font-size: 15px; line-height: 1.6; color: rgba(255, 255, 255, 0.86);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.hero-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.hero-tag {
-  padding: 2px 9px; border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 11.5px;
-}
-/* 左右切换按钮：玻璃圆钮（与卡片角标同一质感） */
-.hero-nav {
+.slot img:hover { transform: translateY(-3px); }
+/* 两侧槽位降低对比、略作柔化，突出中心 */
+.slot.d-1 img { filter: brightness(0.96); }
+.slot.d-2 img { filter: brightness(0.9); }
+/* 左右切换按钮：玻璃圆钮（与卡片角标同质感） */
+.flow-nav {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 34px; height: 34px; border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(12px) saturate(1.5);
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
-  color: #fff; cursor: pointer;
+  color: var(--text);
+  cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--sh-1);
-  transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) ease;
-  opacity: 0;   /* 悬停时淡入 */
+  transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
+  z-index: 20;
 }
-.hero-stage:hover .hero-nav { opacity: 1; }
-.hero-nav:hover { background: rgba(255, 255, 255, 0.28); transform: translateY(-50%) scale(1.08); }
-.hero-nav.prev { left: 12px; }
-.hero-nav.next { right: 12px; }
+.flow-nav:hover { background: rgba(255, 255, 255, 0.55); }
+.flow-nav.prev { left: 14px; }
+.flow-nav.next { right: 14px; }
 .flip { transform: rotate(180deg); }
+/* 当前影片信息 */
+.flow-meta {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-top: 12px; cursor: pointer;
+}
+.fm-code {
+  font-family: var(--font-display); font-variant-numeric: tabular-nums;
+  font-weight: 700; font-size: 17px; color: var(--primary);
+}
+.fm-title {
+  font-size: 13.5px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* 指示点 */
 .hero-dots { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
 .dot {
@@ -272,7 +313,7 @@ onBeforeUnmount(stopTimer)
   font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text);
   padding-left: 10px; border-left: 3px solid var(--accent); line-height: 1.1;
 }
-/* 4 列 × 2 行（8 部） */
+/* 4 列 × 2 行（8 部，含空位） */
 .arrival-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .arrival-card { cursor: pointer; }
 .ac-cover {
@@ -287,6 +328,12 @@ onBeforeUnmount(stopTimer)
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center; color: var(--muted);
 }
+/* 空位：仅保留占位，无边框与悬停效果 */
+.arrival-card.is-empty .ac-cover {
+  border: 1px dashed var(--border);
+  background: transparent;
+}
+.arrival-card.is-empty:hover .ac-cover { transform: none; box-shadow: none; }
 .ac-code {
   margin-top: 7px;
   font-family: var(--font-display); font-variant-numeric: tabular-nums;
@@ -296,4 +343,5 @@ onBeforeUnmount(stopTimer)
   font-size: 12.5px; color: var(--text-2); line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.empty-tip { font-size: 12.5px; color: var(--muted); }
 </style>
