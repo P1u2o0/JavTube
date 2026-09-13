@@ -192,20 +192,23 @@ watch(dataDirRef, () => { errd.value = false })
 .fav-btn {
   position: absolute; top: 8px; right: 8px;
   width: 27px; height: 27px;
-  border: 1px solid rgba(255, 255, 255, 0.3);    /* 玻璃边缘高光 */
+  border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.26);          /* 半透明白（更透，透出海报底色） */
-  backdrop-filter: blur(10px) saturate(1.4);      /* 磨砂玻璃：模糊背景 + 略提饱和 */
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  background: rgba(255, 255, 255, 0.15);          /* 半透明白（更透，明显透出海报底色） */
+  backdrop-filter: blur(12px) saturate(1.5);      /* 磨砂玻璃：模糊背景 + 略提饱和 */
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
   color: var(--text-2);                           /* 未喜欢：暖灰（比 muted 略深，避免玻璃底上发虚） */
   display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--sh-1);
+  /* 玻璃质感：顶部细内高光模拟受光，外加一级轻投影保持层次（替代原实线描边） */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              inset 0 0 0 0.5px rgba(255, 255, 255, 0.12),
+              var(--sh-1);
   cursor: pointer;
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
               transform var(--dur-fast) var(--ease-out);
 }
-.fav-btn:hover { background: rgba(255, 255, 255, 0.5); color: var(--accent); transform: scale(1.12); }
-.fav-btn.active { color: var(--accent); background: rgba(255, 255, 255, 0.36); }
+.fav-btn:hover { background: rgba(255, 255, 255, 0.34); color: var(--accent); transform: scale(1.12); }
+.fav-btn.active { color: var(--accent); background: rgba(255, 255, 255, 0.26); }
 
 /* 播放次数角标：右下角墨黑半透明胶囊 + 白字（与悬停遮罩同色系，不遮挡点击） */
 .play-count {
@@ -224,14 +227,16 @@ watch(dataDirRef, () => { errd.value = false })
 /* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为朱柿红实心 */
 .check {
   position: absolute; top: 8px; left: 8px;
-  background: rgba(255, 255, 255, 0.26);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  border: none;
   border-radius: 50%;
   width: 25px; height: 25px;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--sh-1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              inset 0 0 0 0.5px rgba(255, 255, 255, 0.12),
+              var(--sh-1);
   cursor: pointer;
   transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
