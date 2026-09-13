@@ -11,16 +11,16 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **92 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **122 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
 
 ---
 
-## 1. 当前状态快照（2026-09-11）
+## 1. 当前状态快照（2026-09-13）
 
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，92 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
+| git | `main` 分支，122 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
 | dev 服务 | **已停止**，需要时手动启动（见下） |
 | 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
@@ -162,7 +162,7 @@ javtube_dev/
 
 ---
 
-## 7. 近期批次摘要（2026-09-09 ~ 09-11）
+## 7. 近期批次摘要（2026-09-09 ~ 09-13）
 
 > 完整明细见 `接续工作小结.md` §1.x（每批次对应 commit 与理由）。
 
@@ -171,6 +171,12 @@ javtube_dev/
 - **9/10 上午**：设置页 → 弹窗（900×74vh 固定、五 tab 双栏网格、批量保存、注释精简 + show_tips 开关）
 - **9/10 中午**：详情页定版（自适应海报区 + 灯箱查看器 + 信息行距均分）、排序 dropdown（方向切换+随机）、**修切页影片消失**（稳定分页 + 挂载重载）、铃铛刮削面板、三点菜单移除、persistSoon 性能根治、设置批量保存、全量代码梳理（净减 100 行）
 - **9/10 晚**：卡片喜欢按钮多轮修复未达预期 → **整体回滚到静态收藏角标**（喜欢切换=详情页底部按钮，一直正常）
+- **9/12~9/13**：**首页 Home.vue 从占位改为完整首页**（轮播封面流 / 类别按钮 / 近期上新三板块）；
+  轮播多轮打磨：横向 3:2 海报 600×400 最大化、板块 430px、去玻璃背景、缺位淡红占位、
+  交叉淡化、拖入拖出，最终**参考业界规范重构为传送带（track）模式**——
+  .belt 单元素 translate3d 刚性同步位移（PITCH=300 均匀步距）+ cubic-bezier(.25,.1,.25,1) 480ms
+  + 海报缩放/淡化滞后 70ms（follow-through）+ 乒乓往返自动轮播 + decoding=async；
+  移除轮播下方番号标题行。共 9 个 commit。
 - **9/11**：项目交接文档整理（HANDOFF 重写 / 删除 3 个过时文档 / start.bat 修复）；
   代码全量审查后执行优化批次：★ **persistSoon 无限递归根因修复**（解开 9/10 喜欢按钮"点了不变色"之谜）、
   persistSoon 提升 util 并推广到全部 db 模块、设计令牌合规（2 处硬编码色）、
@@ -185,7 +191,7 @@ javtube_dev/
 3. **#4 scraper.js 拆分**（561 行 → scrape-javbus.js / scrape-javdb.js / 共享提取器）
 4. **#7 JSDoc typedef 深化** + **dev 冒烟自动化**（scripts/smoke.js）
 5. **卡片喜欢交互重做**（上次回滚）——建议换实现思路：纯角标 + 详情页切换组合，或点击卡片其他区域触发
-6. **P2 清理**：`src/views/` 下 ManualForm.vue / ScanDirForm.vue 可挪到 AddMovieDialog/ 下归位；Home.vue 仍是占位（适合接统计做 Dashboard）
+6. **P2 清理**：`src/views/` 下 ManualForm.vue / ScanDirForm.vue 可挪到 AddMovieDialog/ 下归位；Home.vue 已做成完整首页（9/13），后续可按需微调轮播观感（PITCH/时长/透明度梯度均有参数）
 7. **待评估**：Detail.vue（803 行）拆分出 PreviewLightbox.vue 独立组件
 
 > 已完成（勿重复）：~~settings.js/actress.js 的同步 persist 迁移到 persistSoon~~（9/11 完成）
