@@ -60,6 +60,27 @@
           <span class="info-label">时长</span>
           <div class="info-value">{{ m.duration }} 分钟</div>
         </div>
+        <!-- 评分（五颗星：一颗星一分，有分填充黄色，无分灰色；星后为数字分数） -->
+        <div class="info-line" v-if="m.score">
+          <span class="info-label">评分</span>
+          <div class="info-value star-row">
+            <span class="stars">
+              <svg v-for="i in 5" :key="i" class="star" :class="{ on: i <= starCount }"
+                   viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="STAR_PATH" />
+              </svg>
+            </span>
+            <span class="score-num">{{ Number(m.score).toFixed(1) }}</span>
+          </div>
+        </div>
+        <!-- 热度（想看/看过人数，来源 JAVDB） -->
+        <div class="info-line" v-if="m.want || m.watched">
+          <span class="info-label">热度</span>
+          <div class="info-value stats-line">
+            <span v-if="m.want"><AppIcon name="heart" :size="13" />想看 {{ fmt(m.want) }}</span>
+            <span v-if="m.watched"><AppIcon name="history" :size="13" />看过 {{ fmt(m.watched) }}</span>
+          </div>
+        </div>
         <!-- 导演（可点击筛选） -->
         <div class="info-line" v-if="directorList.length">
           <span class="info-label">导演</span>
@@ -81,32 +102,11 @@
             <TagChip :label="m.xl" @click="filterBySeries(m.xl)" />
           </div>
         </div>
-        <!-- 评分（五颗星：一颗星一分，有分填充黄色，无分灰色；星后为数字分数） -->
-        <div class="info-line" v-if="m.score">
-          <span class="info-label">评分</span>
-          <div class="info-value star-row">
-            <span class="stars">
-              <svg v-for="i in 5" :key="i" class="star" :class="{ on: i <= starCount }"
-                   viewBox="0 0 24 24" aria-hidden="true">
-                <path :d="STAR_PATH" />
-              </svg>
-            </span>
-            <span class="score-num">{{ Number(m.score).toFixed(1) }}</span>
-          </div>
-        </div>
-          <!-- 类别（影片标签，可点击筛选）——分配更大高度，标签多时自动扩展 -->
-          <div class="info-line tag-line" v-if="tags.length">
-            <span class="info-label">类别</span>
-            <div class="info-value tag-list">
-              <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
-            </div>
-          </div>
-        <!-- 热度（想看/看过人数，来源 JAVDB） -->
-        <div class="info-line" v-if="m.want || m.watched">
-          <span class="info-label">热度</span>
-          <div class="info-value stats-line">
-            <span v-if="m.want"><AppIcon name="heart" :size="13" />想看 {{ fmt(m.want) }}</span>
-            <span v-if="m.watched"><AppIcon name="history" :size="13" />看过 {{ fmt(m.watched) }}</span>
+        <!-- 类别（影片标签，可点击筛选）——分配更大高度，标签多时自动扩展 -->
+        <div class="info-line tag-line" v-if="tags.length">
+          <span class="info-label">类别</span>
+          <div class="info-value tag-list">
+            <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
           </div>
         </div>
         <!-- 演员（可点击筛选） -->
