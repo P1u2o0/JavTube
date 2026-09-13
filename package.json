@@ -11,7 +11,8 @@
     "build": "vite build && electron-builder",
     "build:win": "vite build && electron-builder --win --x64",
     "preview": "vite preview",
-    "start": "electron ."
+    "start": "electron .",
+    "check:undefined": "node scripts/check-undefined.js"
   },
   "dependencies": {
     "element-plus": "^2.8.0",

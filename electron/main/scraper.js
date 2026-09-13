@@ -147,6 +147,49 @@ async function applyCookieString(url, cookieStr) {
   console.log('[scrape] 已注入会话 Cookie 条数:', ok, '域:', origin)
 }
 
+/**
+ * JAVDB 拦截识别（2026-09-13，判定逻辑参考 mdcx）：把 Cloudflare 5 秒盾 /
+ * IP 封禁 / 版权限制三类拦截转为可操作的中文错误，避免用户只看到 HTTP 403。
+ * @param {string} html - 响应 HTML
+ * @param {string} url - 请求地址（便于用户核对）
+ * @param {boolean} hasCookie - 本次请求是否携带了用户配置的 Cookie
+ * @throws {Error} 命中拦截特征时抛出（调用方 catch 后作为刮削失败原因返回 UI）
+ */
+function assertJavdbNotBlocked(html, url, hasCookie) {
+  if (html.includes('The owner of this website has banned your access based')) {
+    throw new Error(`JAVDB 因请求过多临时封禁了当前 IP，请稍后重试或更换代理节点（${url}）`)
+  }
+  if (html.includes('Due to copyright restrictions')) {
+    throw new Error('JAVDB 禁止日本 IP 访问，请将代理节点切换到日本以外的地区')
+  }
+  if (html.includes('ray-id') || html.includes('Just a moment')) {
+    throw new Error(hasCookie
+      ? 'JAVDB 被 Cloudflare 拦截：设置中的 JAVDB Cookie 已失效，请重新登录 javdb.com 复制新 Cookie'
+      : 'JAVDB 被 Cloudflare 拦截（5 秒盾）：请在 设置 → 刮削 中填入 JAVDB Cookie')
+  }
+}
+
+// 请求限速（2026-09-13，思路参考 amane 的 RateLimiters）：
+// 同一 host 的连续请求保持最小间隔——突发请求极易触发站点反爬
+// （JAVDB 的 Cloudflare 会直接 403）。批量刮削会连续命中同一站点，
+// 因此按 host 维护「上次请求时间」，不足最小间隔则等待补足。
+// 注：本块曾因脚本批量替换区间时被误删，导致运行时 throttleByHost is not defined——
+//     改动本文件后建议执行 scripts/check-undefined.js 做未定义引用检查。
+const lastReqAt = new Map()   // host → 上次请求时间戳
+const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 req/s）
+
+/**
+ * 按 host 限速：距上次请求不足 MIN_REQ_INTERVAL 则等待补足。
+ * @param {string} url - 即将请求的地址
+ */
+async function throttleByHost(url) {
+  let host = ''
+  try { host = new URL(url).host } catch { return }
+  const wait = MIN_REQ_INTERVAL - (Date.now() - (lastReqAt.get(host) || 0))
+  if (wait > 0) await new Promise(r => setTimeout(r, wait))
+  lastReqAt.set(host, Date.now())
+}
+
 async function fetchHtml(url, { referer, cookie } = {}) {
   await throttleByHost(url)
   const headers = {
