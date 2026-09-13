@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('api', {
   getAllTags: () => ipcRenderer.invoke(IPC.MOVIES_GET_ALL_TAGS),
 
   /**
+   * 首页推荐数据：轮播影片 / 类别按钮 / 近期上新
+   * @returns {Promise<Object>} { ok, data: { hero, categories, arrivals, recentCount } }
+   */
+  getHomeRecommend: () => ipcRenderer.invoke(IPC.HOME_RECOMMEND),
+
+  /**
    * 记录影片播放时间
    * @param {number} id - 影片 ID
    * @returns {Promise<Object>} { ok }

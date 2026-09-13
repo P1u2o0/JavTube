@@ -145,6 +145,19 @@ for (const r of ROOTS) {
 let suspicious = 0
 for (const file of files) {
   const raw = fs.readFileSync(file, 'utf8')
+  // === require 相对路径存在性校验（2026-09-13 新增）===
+  // 相对 require 的路径写错（如 ../../common 写成 ../common）node --check 查不出，
+  // 只有运行到该模块时才抛 MODULE_NOT_FOUND——这里提前静态拦截。
+  for (const m of raw.matchAll(/require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+    const rel = m[1]
+    const base = path.resolve(path.dirname(file), rel)
+    const ok = fs.existsSync(base) || fs.existsSync(base + '.js') ||
+               fs.existsSync(path.join(base, 'index.js')) || fs.existsSync(base + '.json')
+    if (!ok) {
+      console.log(`⚠ ${path.relative(root, file)}  require 路径不存在: ${rel}`)
+      suspicious++
+    }
+  }
   const src = stripCommentsAndStrings(raw)
   const defined = collectDefined(src)
   const calls = collectCalls(src)

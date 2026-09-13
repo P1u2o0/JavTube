@@ -23,6 +23,8 @@ const { registerWebsitesIpc } = require('./db/websites')
 const { registerSettingsIpc, applyProxySettings } = require('./db/settings')
 // 工具类 / 对话框 / 刮削 IPC（自本文件拆出）
 const { registerUtilsIpc } = require('./ipc-utils')
+// 首页推荐数据（轮播 / 类别按钮 / 近期上新）
+const { registerHomeIpc } = require('./home')
 // javtube-cover 封面协议（自本文件拆出）
 const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
 
@@ -246,6 +248,7 @@ app.whenReady().then(async () => {
     registerActressIpc(ipcMain, db)                                 // 女优数据 IPC
     registerWebsitesIpc(ipcMain, db)                                // 网址数据 IPC
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
+    registerHomeIpc(ipcMain, db)                                    // 首页推荐 IPC
     console.log('[main] IPC OK')
   } catch (e) {
     console.error('[main] IPC reg FAILED:', e?.stack || e)

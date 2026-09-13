@@ -240,11 +240,19 @@ async function applyRouteFilter(q) {
   store.searchQ = q.q || ''
   if (!q.tag && !q.actress && !q.director && !q.studio && !q.series && !q.q) return false
   if (q.tag) {
+    // 优先放入该标签所属的分类槽；未归入任何分类的标签（如首页类别按钮
+    // 里未配置分类的 2 字标签）兜底放入第一个槽，保证筛选生效
+    let placed = false
     for (let ci = 0; ci < 9; ci++) {
       if (store.categories[ci]?.tags?.includes(q.tag)) {
         store.tagSelected[ci] = [q.tag]
+        placed = true
         break
       }
+    }
+    if (!placed) {
+      store.tagSelected = store.tagSelected.map(() => [])
+      store.tagSelected[0] = [q.tag]
     }
   }
   store.page = 1

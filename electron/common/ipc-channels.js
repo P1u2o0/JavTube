@@ -21,6 +21,7 @@ module.exports = {
   MOVIES_BATCH_FAV: 'movies:batchFav',
   MOVIES_BATCH_TAGS: 'movies:batchTags',
   MOVIES_GET_ALL_TAGS: 'movies:getAllTags',
+  HOME_RECOMMEND: 'home:recommend',        // 首页推荐（轮播/类别按钮/近期上新）
   MOVIES_RECORD_PLAY: 'movies:recordPlay',
   MOVIES_SEARCH: 'movies:search',
 
