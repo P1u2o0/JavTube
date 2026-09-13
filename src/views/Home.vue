@@ -20,14 +20,12 @@
     <!-- ===== ① 轮播：封面流（中心大图 + 两侧半幅递减） ===== -->
     <section v-if="hero.length" class="hero">
       <div class="flow-wrap">
-        <!-- 背景：当前海报极淡铺底（不抢主体） -->
-        <div class="flow-bg" :style="{ backgroundImage: `url(${coverOf(hero[active])})` }"></div>
-        <!-- 5 个固定槽位：-2 -1 [0] 1 2；无影片的槽位留空 -->
+        <!-- 5 个固定槽位：-2 -1 [0] 1 2；无影片的槽位显示淡红色空白占位图 -->
         <div class="flow">
-          <div v-for="d in SLOTS" :key="d" class="slot" :class="`d-${Math.abs(d)}`"
-               :style="slotStyle(d)">
+          <div v-for="d in SLOTS" :key="d" class="slot" :style="slotStyle(d)">
             <img v-if="slotMovie(d)" :src="coverOf(slotMovie(d))" :alt="slotMovie(d).pm || ''"
                  :title="slotMovie(d).pm || ''" @click="onSlotClick(d)" />
+            <div v-else class="slot-ph" @click="onSlotClick(d)"></div>
           </div>
         </div>
         <!-- 左右切换 -->
@@ -125,9 +123,11 @@ function slotMovie(d) {
  */
 function slotStyle(d) {
   const abs = Math.abs(d)
-  const offset = abs === 0 ? 0 : abs === 1 ? 116 : 202   // 距中心水平偏移（px）
-  const scale = abs === 0 ? 1 : abs === 1 ? 0.74 : 0.52  // 缩放
-  const opacity = abs === 0 ? 1 : abs === 1 ? 0.95 : 0.7
+  // 基准尺寸为横向海报 480×320（3:2），两侧按距离缩放并向外偏移，
+  // 偏移量略小于「半幅相接」的临界值 → 侧边被中心遮住约一半（露出半幅）
+  const offset = abs === 0 ? 0 : abs === 1 ? 380 : 560   // 距中心水平偏移（px）
+  const scale = abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5   // 缩放
+  const opacity = abs === 0 ? 1 : abs === 1 ? 0.92 : 0.55
   const z = 10 - abs
   return {
     transform: `translate(-50%, -50%) translateX(${d >= 0 ? offset : -offset}px) scale(${scale})`,
@@ -201,28 +201,23 @@ onBeforeUnmount(stopTimer)
 /* ===== ① 轮播：封面流 ===== */
 .flow-wrap {
   position: relative;
-  height: 330px;
+  height: 430px;                                    /* 板块加大 */
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+  background: var(--surface-2);                     /* 纯色底（不用玻璃/模糊背景） */
   overflow: hidden;   /* 两侧海报被裁切 → 呈现「半幅」效果 */
-}
-/* 背景：当前海报极淡铺底 */
-.flow-bg {
-  position: absolute; inset: -20%;
-  background-size: cover; background-position: center;
-  filter: blur(38px) saturate(1.25);
-  opacity: 0.16;
 }
 .flow {
   position: absolute; inset: 0;
 }
-/* 槽位：基准尺寸 = 中心海报 200×300，缩放由内联 transform 控制 */
+/* 槽位：基准尺寸 = 横向海报 480×320（3:2），缩放由内联 transform 控制 */
 .slot {
   position: absolute; left: 50%; top: 50%;
-  width: 200px; height: 300px;
+  width: 480px; height: 320px;
   transform-origin: center center;
-  transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-base) ease;
+  /* 轮换动画：位移与缩放用回弹曲线，透明度同步渐变 */
+  transition: transform 460ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 320ms ease;
 }
 .slot img {
   width: 100%; height: 100%; object-fit: cover; display: block;
@@ -232,9 +227,14 @@ onBeforeUnmount(stopTimer)
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .slot img:hover { transform: translateY(-3px); }
-/* 两侧槽位降低对比、略作柔化，突出中心 */
-.slot.d-1 img { filter: brightness(0.96); }
-.slot.d-2 img { filter: brightness(0.9); }
+/* 缺失影片的槽位：淡红色空白占位图 */
+.slot-ph {
+  width: 100%; height: 100%;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);                    /* 朱柿红浅底（令牌）*/
+  border: 1px dashed rgba(210, 64, 30, 0.32);
+  box-sizing: border-box;
+}
 /* 左右切换按钮：玻璃圆钮（与卡片角标同质感） */
 .flow-nav {
   position: absolute; top: 50%; transform: translateY(-50%);
