@@ -140,13 +140,14 @@ function slotStyle(i, ph = false) {
   const abs = Math.min(Math.abs(d), 2)
   const sign = d < 0 ? -1 : 1
   // 旋转角 / 后撤深度 / 水平偏移 / 缩放 随距离递增（中心 0，两侧逐级退后）
-  const angle = abs === 0 ? 0 : abs === 1 ? 30 : 55
-  const depth = abs === 0 ? 0 : abs === 1 ? 150 : 280
+  const angle = abs === 0 ? 0 : abs === 1 ? 35 : 60
+  const depth = abs === 0 ? 0 : abs === 1 ? 180 : 320
   const x     = abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480)
   const scale = abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5
   const opacity = abs === 0 ? 1 : abs === 1 ? 0.75 : 0.4
   return {
-    transform: `translate(-50%, -50%) translateX(${x}px) translateZ(${-depth}px) rotateY(${sign * -angle}deg) scale(${scale})`,
+    // perspective() 函数内联进 transform，避免父级 perspective+overflow 压平 3D
+    transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) rotateY(${sign * -angle}deg) translateZ(${-depth}px) scale(${scale})`,
     opacity: ph ? opacity * 0.85 : opacity,
     zIndex: 10 - abs - (ph ? 1 : 0),
     '--shade': abs === 0 ? 0 : abs === 1 ? 0.35 : 0.6   // 遮罩强度：越靠边越暗
@@ -225,7 +226,6 @@ onBeforeUnmount(stopTimer)
   /* 不设背景与边框：海报直接悬浮在页面底色上，由海报自身投影拉开层次 */
   background: transparent;
   overflow: hidden;   /* 两侧海报被裁切 */
-  perspective: 1400px;                              /* 3D 纵深视距 */
 }
 .flow {
   position: absolute; inset: 0;
