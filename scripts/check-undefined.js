@@ -33,7 +33,9 @@ const WHITELIST = new Set([
   // 浏览器 / Electron 全局构造器与命名空间
   'Response', 'Request', 'Headers', 'Blob', 'FormData', 'File', 'FileReader', 'Event',
   'CustomEvent', 'MessageChannel', 'WebSocket', 'Image', 'Audio', 'Notification',
-  'Document', 'Window', 'Element', 'HTMLElement', 'Node', 'Worker', 'URLPattern'
+  'Document', 'Window', 'Element', 'HTMLElement', 'Node', 'Worker', 'URLPattern',
+  // Promise / 回调常见参数名
+  'resolve', 'reject', 'next', 'done', 'callback', 'cb', 'handler'
 ])
 
 /**

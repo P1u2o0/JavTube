@@ -132,7 +132,8 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       const settings = {}
       try {
         const rs = db.exec(`SELECT key, value FROM settings WHERE key IN
-          ('tag_mapping','scrape_previews','preview_count','scrape_stats','javdb_cookie')`)
+          ('tag_mapping','scrape_previews','preview_count','scrape_stats','javdb_cookie',
+           'proxy_enabled','proxy_url')`)
         for (const row of (rs[0]?.values || [])) settings[row[0]] = row[1]
       } catch {}
       // 标签映射规则（settings.tag_mapping 为 JSON 数组 [[原标签,新标签],...]）
@@ -147,6 +148,8 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
         previewCount: Number(settings.preview_count || 0),
         fetchStats: settings.scrape_stats !== 'n',
         javdbCookie: settings.javdb_cookie || '',
+        // 代理（curl 的 -x）：页面请求走代理；图片下载由 net-curl 默认直连
+        proxy: settings.proxy_enabled === 'y' ? (settings.proxy_url || '') : '',
         tagMapping
       })
       return r
