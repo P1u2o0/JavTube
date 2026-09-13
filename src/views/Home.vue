@@ -20,12 +20,15 @@
     <!-- ===== ① 轮播：封面流（中心大图 + 两侧半幅递减） ===== -->
     <section v-if="hero.length" class="hero">
       <div class="flow-wrap">
-        <!-- 5 个固定槽位：-2 -1 [0] 1 2；无影片的槽位显示淡红色空白占位图 -->
         <div class="flow">
-          <div v-for="d in SLOTS" :key="d" class="slot" :style="slotStyle(d)">
-            <img v-if="slotMovie(d)" :src="coverOf(slotMovie(d))" :alt="slotMovie(d).pm || ''"
-                 :title="slotMovie(d).pm || ''" @click="onSlotClick(d)" />
-            <div v-else class="slot-ph" @click="onSlotClick(d)"></div>
+          <!-- 影片槽：每个影片一个槽位，位置由它相对当前项的距离决定——
+               切换时是海报整体平移（而非图片原位替换），动画才顺滑 -->
+          <div v-for="(m, i) in hero" :key="m.id" class="slot" :style="slotStyle(i)">
+            <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" @click="onSlotClick(i)" />
+          </div>
+          <!-- 空位槽：该位置没有影片时显示淡红色空白占位图（数量不足即留空） -->
+          <div v-for="d in SLOTS" :key="`ph-${d}`" class="slot" :style="phStyle(d)">
+            <div v-if="!slotMovie(d)" class="slot-ph"></div>
           </div>
         </div>
         <!-- 左右切换 -->
@@ -121,18 +124,49 @@ function slotMovie(d) {
  * @param {number} d - 槽位偏移（-2..2）
  * @returns {Object} 内联样式
  */
-function slotStyle(d) {
+/**
+ * 某个相对位置（-2..2）的几何参数：
+ * 中心海报占满区域高度（600×400，3:2），两侧依次缩小并向外偏移，
+ * 偏移量略小于「半幅相接」的临界值 → 侧边被中心遮住约一半（露出半幅）。
+ * @param {number} d - 相对当前项的偏移
+ * @returns {{offset:number, scale:number, opacity:number, z:number}}
+ */
+function posOf(d) {
   const abs = Math.abs(d)
-  // 基准尺寸为横向海报 480×320（3:2），两侧按距离缩放并向外偏移，
-  // 偏移量略小于「半幅相接」的临界值 → 侧边被中心遮住约一半（露出半幅）
-  const offset = abs === 0 ? 0 : abs === 1 ? 380 : 560   // 距中心水平偏移（px）
-  const scale = abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5   // 缩放
-  const opacity = abs === 0 ? 1 : abs === 1 ? 0.92 : 0.55
-  const z = 10 - abs
+  const offset = abs === 0 ? 0 : abs === 1 ? 380 : 600
+  const scale = abs === 0 ? 1 : abs === 1 ? 0.66 : 0.44
+  const opacity = abs === 0 ? 1 : abs === 1 ? 0.9 : 0.5
+  return { offset, scale, opacity, z: 10 - abs }
+}
+
+/**
+ * 影片槽样式（索引 → 相对当前项的距离）；|d|>2 的移到远处并隐藏，
+ * 进入视野时从屏外平滑滑入，避免突现。
+ */
+function slotStyle(i) {
+  const d = i - active.value
+  if (Math.abs(d) > 2) {
+    const p = posOf(d > 0 ? 3 : -3)
+    return {
+      transform: `translate(-50%, -50%) translateX(${d > 0 ? 900 : -900}px) scale(0.3)`,
+      opacity: 0, zIndex: 0, pointerEvents: 'none'
+    }
+  }
+  const p = posOf(d)
   return {
-    transform: `translate(-50%, -50%) translateX(${d >= 0 ? offset : -offset}px) scale(${scale})`,
-    opacity,
-    zIndex: z
+    transform: `translate(-50%, -50%) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
+    opacity: p.opacity,
+    zIndex: p.z
+  }
+}
+
+/** 空位槽样式：与同位置影片槽对齐，层级略低 */
+function phStyle(d) {
+  const p = posOf(d)
+  return {
+    transform: `translate(-50%, -50%) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
+    opacity: p.opacity * 0.9,
+    zIndex: p.z - 1
   }
 }
 
@@ -161,10 +195,10 @@ function step(dir) {
 /** 跳到指定轮播项 */
 function go(i) { active.value = i }
 
-/** 点击槽位：中心海报进详情，两侧海报移到中心 */
-function onSlotClick(d) {
-  if (d === 0) return goDetail(hero.value[active.value])
-  active.value += d
+/** 点击槽位：当前（中心）海报进详情，其他海报移到中心 */
+function onSlotClick(i) {
+  if (i === active.value) return goDetail(hero.value[i])
+  active.value = i
 }
 
 /** 打开影片详情 */
@@ -213,11 +247,13 @@ onBeforeUnmount(stopTimer)
 /* 槽位：基准尺寸 = 横向海报 480×320（3:2），缩放由内联 transform 控制 */
 .slot {
   position: absolute; left: 50%; top: 50%;
-  width: 480px; height: 320px;
+  /* 中心海报占满区域高度：区域 430 - 上下各 15 = 400 高，3:2 → 600 宽 */
+  width: 600px; height: 400px;
   transform-origin: center center;
-  /* 轮换动画：位移与缩放用回弹曲线，透明度同步渐变 */
-  transition: transform 460ms cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 320ms ease;
+  /* 轮换动画：位移与缩放用长缓出曲线（柔和收尾），透明度同步渐变 */
+  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 420ms ease;
+  will-change: transform, opacity;
 }
 .slot img {
   width: 100%; height: 100%; object-fit: cover; display: block;
