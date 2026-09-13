@@ -83,8 +83,8 @@
         <div class="info-line" v-if="m.want || m.watched">
           <span class="info-label">热度</span>
           <div class="info-value stats-line">
-            <span v-if="m.want"><AppIcon name="heart" :size="13" />想看 {{ fmt(m.want) }}</span>
-            <span v-if="m.watched"><AppIcon name="history" :size="13" />看过 {{ fmt(m.watched) }}</span>
+            <span v-if="m.want">想看 {{ fmt(m.want) }}</span>
+            <span v-if="m.watched">看过 {{ fmt(m.watched) }}</span>
           </div>
         </div>
         <!-- 导演（可点击筛选） -->
@@ -691,14 +691,14 @@ onMounted(async () => {
 .star-row { display: flex; align-items: center; gap: 10px; }
 .stars { display: inline-flex; gap: 3px; }
 /* 单颗星：灰底 + 按比例填充的叠层（clip 宽度由 starFill 控制） */
-.star { position: relative; width: 16px; height: 16px; display: inline-block; }
+.star { position: relative; width: 19px; height: 19px; display: inline-block; }
 .star-base { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--border-strong); }
 .star-clip {
   position: absolute; left: 0; top: 0; height: 100%;
   overflow: hidden;                 /* 按宽度裁出填充比例 */
   transition: width var(--dur-base) var(--ease-out);
 }
-.star-clip .star-on { width: 16px; height: 16px; display: block; fill: var(--warning); }
+.star-clip .star-on { width: 19px; height: 19px; display: block; fill: var(--warning); }
 .score-num {
   color: var(--text); font-weight: 600; font-size: 14px;
   font-family: var(--font-display);
