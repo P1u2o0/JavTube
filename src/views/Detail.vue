@@ -60,15 +60,21 @@
           <span class="info-label">时长</span>
           <div class="info-value">{{ m.duration }} 分钟</div>
         </div>
-        <!-- 评分（五颗星：一颗星一分，有分填充黄色，无分灰色；星后为数字分数） -->
+        <!-- 评分（五颗星：按分数比例填充——如 4.6 分则第 5 颗填充 60%） -->
         <div class="info-line" v-if="m.score">
           <span class="info-label">评分</span>
           <div class="info-value star-row">
             <span class="stars">
-              <svg v-for="i in 5" :key="i" class="star" :class="{ on: i <= starCount }"
-                   viewBox="0 0 24 24" aria-hidden="true">
-                <path :d="STAR_PATH" />
-              </svg>
+              <span v-for="i in 5" :key="i" class="star">
+                <svg class="star-base" viewBox="0 0 24 24" aria-hidden="true">
+                  <path :d="STAR_PATH" />
+                </svg>
+                <span class="star-clip" :style="{ width: starFill(i) + '%' }">
+                  <svg class="star-on" viewBox="0 0 24 24" aria-hidden="true">
+                    <path :d="STAR_PATH" />
+                  </svg>
+                </span>
+              </span>
             </span>
             <span class="score-num">{{ Number(m.score).toFixed(1) }}</span>
           </div>
@@ -352,10 +358,20 @@ const psList = computed(() => (m.value?.ps || '').split(/[，,]/).map(s => s.tri
 /**
  * 计算属性：五角星填充数量（一颗星一分，四舍五入，范围 0-5）
  */
-const starCount = computed(() => Math.min(5, Math.max(0, Math.round(Number(m.value?.score) || 0))))
+/**
+ * 第 i 颗星的填充百分比（0-100）：按分数精确比例，如 4.6 分 → 第 5 颗 60%。
+ * 例：4.6 → i=1..4 得 100，i=5 得 60；3.25 → 星 1-3 100、星 4 25、星 5 0。
+ * @param {number} i - 星序号（1-5）
+ * @returns {number} 填充百分比
+ */
+function starFill(i) {
+  const score = Number(m.value?.score) || 0
+  return Math.min(100, Math.max(0, Math.round((score - (i - 1)) * 100)))
+}
 
 // 五角星 SVG 路径（实心五角星）
-const STAR_PATH = 'M12 2l2.95 6.3 6.9.62-5.2 4.55 1.55 6.78L12 16.77 5.8 20.25l1.55-6.78-5.2-4.55 6.9-.62z'
+// 星形路径（内径比 ~0.48 的偏瘦五角星，比通用实心星更轻盈克制，贴合工具软件的线性气质）
+const STAR_PATH = 'M12 2.6l2.75 5.85 6.45.83-4.75 4.42 1.22 6.3L12 16.9l-5.67 3.1 1.22-6.3-4.75-4.42 6.45-.83z'
 
 /**
  * 复制番号到剪贴板
@@ -673,9 +689,16 @@ onMounted(async () => {
 
 /* 评分五角星行 */
 .star-row { display: flex; align-items: center; gap: 10px; }
-.stars { display: inline-flex; gap: 2px; }
-.star { width: 18px; height: 18px; fill: var(--border-strong); }
-.star.on { fill: #f5b50a; }
+.stars { display: inline-flex; gap: 3px; }
+/* 单颗星：灰底 + 按比例填充的叠层（clip 宽度由 starFill 控制） */
+.star { position: relative; width: 16px; height: 16px; display: inline-block; }
+.star-base { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--border-strong); }
+.star-clip {
+  position: absolute; left: 0; top: 0; height: 100%;
+  overflow: hidden;                 /* 按宽度裁出填充比例 */
+  transition: width var(--dur-base) var(--ease-out);
+}
+.star-clip .star-on { width: 16px; height: 16px; display: block; fill: var(--warning); }
 .score-num {
   color: var(--text); font-weight: 600; font-size: 14px;
   font-family: var(--font-display);
