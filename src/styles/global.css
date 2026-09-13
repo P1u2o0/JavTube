@@ -59,6 +59,44 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 150ms;
   --dur-base: 320ms;
+
+  /* ====== 字号阶梯（收拢散落字号，统一引用，不改视觉） ====== */
+  --fs-xs: 11px;             /* 角标 / 辅助小字 */
+  --fs-sm: 12px;             /* 说明 / 次要文字 */
+  --fs-base: 13px;           /* 正文默认 */
+  --fs-md: 14px;             /* 控件 / 标签 */
+  --fs-lg: 15px;             /* 强调正文 */
+  --fs-xl: 16px;             /* 小标题 */
+  --fs-2xl: 18px;            /* 页面标题 */
+  --fs-3xl: 20px;            /* 详情番号 */
+
+  /* ====== 间距阶梯 ====== */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* ====== 圆形图标按钮尺寸阶梯 ====== */
+  --icon-btn-sm: 24px;       /* 行内 / 角标小钮 */
+  --icon-btn-md: 32px;       /* 标准图标钮 */
+  --icon-btn-lg: 40px;       /* 大图标钮 */
+
+  /* ====== 遮罩 / 叠层 alpha（暖黑派生，替代纯黑） ====== */
+  --overlay-hover: rgba(29, 28, 26, 0.42);        /* 卡片悬停遮罩 */
+  --overlay-badge: rgba(29, 28, 26, 0.62);        /* 角标底 */
+  --overlay-strong: rgba(29, 28, 26, 0.7);        /* 深角标底 */
+  --overlay-backdrop: rgba(22, 21, 19, 0.88);     /* 灯箱背板 */
+  --overlay-glass: rgba(255, 255, 255, 0.14);     /* 灯箱玻璃钮底 */
+  --overlay-glass-hover: rgba(255, 255, 255, 0.26);/* 灯箱玻璃钮 hover */
+  --shade-strong: rgba(22, 21, 19, 0.72);         /* 卡片底部遮罩（深） */
+  --shade-mid: rgba(22, 21, 19, 0.28);            /* 卡片中部遮罩 */
+  --shade-weak: rgba(22, 21, 19, 0.05);           /* 卡片顶部遮罩（浅） */
+
+  /* ====== 磨砂玻璃钮（浅色海报上的圆钮统一材质） ====== */
+  --glass: rgba(255, 255, 255, 0.22);             /* 磨砂底 */
+  --glass-hover: rgba(255, 255, 255, 0.42);       /* 磨砂 hover */
 }
 
 /* ====== Element Plus 主题令牌对接 ====== */
@@ -130,11 +168,10 @@ html, body, #app {
 a { color: inherit; text-decoration: none; }
 h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 
-/* 键盘可达性：统一焦点描边 */
+/* 键盘可达性：统一焦点描边（不加 border-radius，避免圆形控件聚焦时被改成方角） */
 :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* ====== 滚动条 ====== */

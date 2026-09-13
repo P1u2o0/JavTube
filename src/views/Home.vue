@@ -250,7 +250,7 @@ onBeforeUnmount(stopTimer)
 .shade {
   position: absolute; inset: 0;
   border-radius: var(--r-md);
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.04) 0%, rgba(0, 0, 0, 0.62) 100%);
+  background: linear-gradient(135deg, rgba(22, 21, 19, 0.04) 0%, var(--overlay-badge) 100%);
   opacity: var(--shade, 0);
   transition: opacity 500ms ease;
   pointer-events: none;
@@ -266,8 +266,8 @@ onBeforeUnmount(stopTimer)
 /* 左右切换按钮：玻璃圆钮（与卡片角标同质感） */
 .flow-nav {
   position: absolute; top: 50%; transform: translateY(-50%);
-  width: 34px; height: 34px; border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
+  width: var(--icon-btn-md); height: var(--icon-btn-md); border: none; border-radius: 50%;
+  background: var(--glass);
   backdrop-filter: blur(12px) saturate(1.5);
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
   color: var(--text);
@@ -277,7 +277,8 @@ onBeforeUnmount(stopTimer)
   transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
   z-index: 20;
 }
-.flow-nav:hover { background: rgba(255, 255, 255, 0.55); }
+.flow-nav:hover { background: var(--glass-hover); }
+.flow-nav:active { transform: translateY(-50%) scale(0.92); }
 .flow-nav.prev { left: 14px; }
 .flow-nav.next { right: 14px; }
 .flip { transform: rotate(180deg); }
@@ -315,9 +316,9 @@ onBeforeUnmount(stopTimer)
 .cat-shade {
   position: absolute; inset: 0;
   background: linear-gradient(to top,
-    rgba(0, 0, 0, 0.72) 0%,
-    rgba(0, 0, 0, 0.28) 45%,
-    rgba(0, 0, 0, 0.05) 100%);
+    var(--shade-strong) 0%,
+    var(--shade-mid) 45%,
+    var(--shade-weak) 100%);
   pointer-events: none;
 }
 /* 左下角文字：类别名（最大 4 字，超出截断）+ 数量 */

@@ -237,7 +237,7 @@ onMounted(() => s.load())
 .ops { margin-top: 10px; text-align: center; }
 /* 删除图标按钮：默认弱化，悬停显示危险色 */
 .del-btn {
-  width: 30px; height: 30px;
+  width: var(--icon-btn-md); height: var(--icon-btn-md);
   border: none; border-radius: 50%;
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;

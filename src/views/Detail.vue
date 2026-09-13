@@ -578,7 +578,7 @@ onMounted(async () => {
 }
 /* 圆形返回按钮：描边圆钮，与软件按钮体系一致 */
 .round-back {
-  width: 34px; height: 34px;
+  width: var(--icon-btn-md); height: var(--icon-btn-md);
   flex-shrink: 0;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
@@ -589,6 +589,7 @@ onMounted(async () => {
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 .round-back:hover { background: var(--surface-2); color: var(--text); }
+.round-back:active { transform: scale(0.92); }
 /* 番号样式：展示字 + 等宽数字 */
 .code {
   color: var(--primary);
@@ -622,7 +623,7 @@ onMounted(async () => {
 /* 悬停遮罩：海报变暗 + 中央播放按钮（样式/过渡与片库卡片完全一致） */
 .main-hover {
   position: absolute; inset: 0;
-  background: rgba(29, 28, 26, 0.42);
+  background: var(--overlay-hover);
   opacity: 0;
   transition: opacity var(--dur-fast) ease;
   display: flex; align-items: center; justify-content: center;
@@ -632,7 +633,7 @@ onMounted(async () => {
 .main-image:hover .main-hover.playable { opacity: 1; pointer-events: auto; }
 /* 播放按钮：圆形白底墨黑图标（复刻片库卡片 .play-btn） */
 .play-btn {
-  width: 44px; height: 44px;
+  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
   border: none; border-radius: 50%;
   background: rgba(255, 255, 255, 0.94);
   color: var(--primary);
@@ -642,6 +643,7 @@ onMounted(async () => {
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
+.play-btn:active { transform: scale(0.92); }
 /* 无图占位块 */
 .no-cover {
   width: 300px; aspect-ratio: 3/2;
@@ -679,7 +681,7 @@ onMounted(async () => {
 }
 /* 复制按钮：小型圆形弱化按钮，hover 强调色 */
 .copy-btn {
-  width: 24px; height: 24px;
+  width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   border: none; border-radius: 50%;
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;
@@ -687,6 +689,7 @@ onMounted(async () => {
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 .copy-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.copy-btn:active { transform: scale(0.92); }
 
 /* 评分五角星行 */
 .star-row { display: flex; align-items: center; gap: 10px; }
@@ -748,7 +751,7 @@ onMounted(async () => {
 .lightbox {
   position: fixed; inset: 0;
   z-index: 3000;
-  background: rgba(15, 14, 13, 0.88);
+  background: var(--overlay-backdrop);
   display: flex; align-items: center; justify-content: center;
 }
 .lb-fade-enter-active, .lb-fade-leave-active { transition: opacity 0.3s ease; }
@@ -758,35 +761,37 @@ onMounted(async () => {
   max-width: 82vw; max-height: 92vh;
   width: auto; height: auto;
   border-radius: var(--r-sm);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 48px rgba(50, 46, 38, 0.5);
   transition: transform 0.15s ease;
   cursor: grab;
 }
 /* 关闭按钮：右上角半透明圆钮 */
 .lb-close {
   position: absolute; top: 20px; right: 24px;
-  width: 40px; height: 40px;
+  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
   border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--overlay-glass);
   color: rgba(255, 255, 255, 0.9);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
   transition: background var(--dur-fast) ease;
 }
-.lb-close:hover { background: rgba(255, 255, 255, 0.26); }
+.lb-close:hover { background: var(--overlay-glass-hover); }
+.lb-close:active { transform: scale(0.92); }
 /* 左右切换按钮：两侧居中半透明圆钮，hover 放大 */
 .lb-arrow {
   position: absolute; top: 50%;
   transform: translateY(-50%);
   width: 48px; height: 48px;
   border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--overlay-glass);
   color: rgba(255, 255, 255, 0.9);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
   transition: background var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
-.lb-arrow:hover { background: rgba(255, 255, 255, 0.26); transform: translateY(-50%) scale(1.08); }
+.lb-arrow:hover { background: var(--overlay-glass-hover); transform: translateY(-50%) scale(1.06); }
+.lb-arrow:active { transform: translateY(-50%) scale(0.92); }
 .lb-prev { left: 24px; }
 .lb-next { right: 24px; }
 /* 页码指示：底部居中 */
@@ -816,7 +821,7 @@ onMounted(async () => {
 /* 第一张「海报」角标 */
 .strip-badge {
   position: absolute; left: 4px; top: 4px;
-  background: rgba(29, 28, 26, 0.7);
+  background: var(--overlay-strong);
   color: #fff; font-size: 10px; line-height: 1;
   padding: 3px 6px; border-radius: var(--r-pill);
   pointer-events: none;

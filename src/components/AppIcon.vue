@@ -167,5 +167,5 @@ const els = computed(() => ICONS[props.name] || [])
 </script>
 
 <style scoped>
-.app-icon { display: inline-block; vertical-align: -0.2em; flex-shrink: 0; }
+.app-icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 </style>

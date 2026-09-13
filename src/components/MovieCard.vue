@@ -141,7 +141,7 @@ watch(dataDirRef, () => { errd.value = false })
 }
 /* 悬停：上浮 + 二级阴影 + 边框加深 */
 .movie-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   box-shadow: var(--sh-2);
   border-color: var(--border-strong);
 }
@@ -165,7 +165,7 @@ watch(dataDirRef, () => { errd.value = false })
 /* 悬停遮罩层 */
 .hover-overlay {
   position: absolute; inset: 0;
-  background: rgba(29, 28, 26, 0.42);
+  background: var(--overlay-hover);
   opacity: 0;
   transition: opacity var(--dur-fast) ease;
   display: flex; align-items: center; justify-content: center;
@@ -177,7 +177,7 @@ watch(dataDirRef, () => { errd.value = false })
 }
 /* 播放按钮：圆形白底墨黑图标 */
 .play-btn {
-  width: 44px; height: 44px;
+  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
   border: none; border-radius: 50%;
   background: rgba(255, 255, 255, 0.94);
   color: var(--primary);
@@ -187,14 +187,15 @@ watch(dataDirRef, () => { errd.value = false })
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
+.play-btn:active { transform: scale(0.92); }
 /* 右上角喜欢按钮：磨砂玻璃圆形 + 心形（半透明白 + 背景模糊 + 边缘高光）。
    未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 底色提亮、心形变朱柿红并微放大 */
 .fav-btn {
   position: absolute; top: 8px; right: 8px;
-  width: 27px; height: 27px;
+  width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);          /* 半透明白（更透，明显透出海报底色） */
+  background: var(--glass);          /* 半透明白（更透，明显透出海报底色） */
   backdrop-filter: blur(12px) saturate(1.5);      /* 磨砂玻璃：模糊背景 + 略提饱和 */
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
   color: var(--text-2);                           /* 未喜欢：暖灰（比 muted 略深，避免玻璃底上发虚） */
@@ -207,8 +208,9 @@ watch(dataDirRef, () => { errd.value = false })
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
               transform var(--dur-fast) var(--ease-out);
 }
-.fav-btn:hover { background: rgba(255, 255, 255, 0.34); color: var(--accent); transform: scale(1.12); }
-.fav-btn.active { color: var(--accent); background: rgba(255, 255, 255, 0.26); }
+.fav-btn:hover { background: var(--glass-hover); color: var(--accent); transform: scale(1.06); }
+.fav-btn.active { color: var(--accent); background: var(--glass); }
+.fav-btn:active { transform: scale(0.92); }
 
 /* 播放次数角标：右下角墨黑半透明胶囊 + 白字（与悬停遮罩同色系，不遮挡点击） */
 .play-count {
@@ -216,7 +218,7 @@ watch(dataDirRef, () => { errd.value = false })
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 7px;
   border-radius: var(--r-pill);
-  background: rgba(29, 28, 26, 0.62);
+  background: var(--overlay-badge);
   color: #fff;
   font-size: 11px; font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -232,7 +234,7 @@ watch(dataDirRef, () => { errd.value = false })
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
   border: none;
   border-radius: 50%;
-  width: 25px; height: 25px;
+  width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   display: flex; align-items: center; justify-content: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
               inset 0 0 0 0.5px rgba(255, 255, 255, 0.12),
@@ -241,8 +243,8 @@ watch(dataDirRef, () => { errd.value = false })
   transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
 .check.checked {
-  background: #d2401e;
-  border-color: #d2401e;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 /* 信息区域 */
 .info { padding: 10px 12px 12px; }

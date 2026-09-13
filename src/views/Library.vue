@@ -320,7 +320,7 @@ watch(() => route.query, async (q) => {
 }
 /* 清除筛选按钮：圆形弱化，hover 危险色 */
 .ft-clear {
-  width: 26px; height: 26px;
+  width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   border: none; border-radius: 50%;
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;

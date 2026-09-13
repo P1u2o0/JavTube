@@ -451,7 +451,7 @@ async function clearDb() {
 .map-arrow { color: var(--muted); font-size: 12px; flex-shrink: 0; }
 /* 行删除按钮：与输入框（32px）等高、与加号按钮同规格 */
 .row-del {
-  width: 32px; height: 32px;
+  width: var(--icon-btn-md); height: var(--icon-btn-md);
   flex-shrink: 0;
   border: 1px solid var(--border); border-radius: 50%;
   background: transparent; color: var(--muted);
@@ -471,7 +471,7 @@ async function clearDb() {
 
 /* 加号按钮：圆形图标按钮，与删除按钮同规格（32px 圆形 + 细描边 + 透明底） */
 .add-btn {
-  width: 32px; height: 32px; padding: 0; border-radius: 50%; flex-shrink: 0;
+  width: var(--icon-btn-md); height: var(--icon-btn-md); padding: 0; border-radius: 50%; flex-shrink: 0;
   border: 1px solid var(--border); background: transparent; color: var(--muted);
 }
 .add-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--border-strong); }

@@ -167,7 +167,7 @@ onMounted(() => s.load())
 /* 删除图标按钮：定位到卡片右上角，悬停卡片时显现 */
 .del-btn {
   position: absolute; top: 10px; right: 10px;
-  width: 28px; height: 28px;
+  width: var(--icon-btn-md); height: var(--icon-btn-md);
   border: none; border-radius: 50%;
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;

@@ -275,7 +275,7 @@ function onSearch() {
 .bell-wrap { position: relative; }
 .bell-btn {
   position: relative;
-  width: 38px; height: 38px;
+  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
   border: 1px solid var(--border-strong); border-radius: 50%;
   background: var(--surface); color: var(--muted);
   display: flex; align-items: center; justify-content: center;
@@ -364,7 +364,7 @@ function onSearch() {
 .bell-pop-enter-from, .bell-pop-leave-to { opacity: 0; transform: translateY(-6px); }
 
 .settings-btn {
-  width: 38px; height: 38px;
+  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
   border: 1px solid var(--border-strong); border-radius: 50%;
   background: var(--surface); color: var(--muted);
   display: flex; align-items: center; justify-content: center;
