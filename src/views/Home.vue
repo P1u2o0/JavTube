@@ -23,17 +23,17 @@
         <!-- 传送带模式（业界标准）：单一 belt 元素整体平移，所有海报刚性同步移动；
              海报 left 按自身索引固定，切换只动 belt → 运动完全均匀自然 -->
         <div class="flow">
-          <!-- 3D 封面流：stage 承载透视，每个海报按相对中心距离做 rotateY/translateZ/scale -->
-          <TransitionGroup tag="div" class="stage" name="slot">
-            <div v-for="{ m, i } in visibleHero" :key="m.id" class="slot" :style="slotStyle(i)">
+          <!-- 所有海报常驻 DOM（无进出场），切换仅改内联 style → CSS transition 必然触发 -->
+          <div class="stage">
+            <div v-for="(m, i) in hero" :key="m.id" class="slot" :style="slotStyle(i)">
               <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
               <div class="shade"></div>
             </div>
-            <!-- 空位槽：视野内没有影片的索引显示淡红色空白占位图 -->
-            <div v-for="pi in visiblePh" :key="`ph-${pi}`" class="slot" :style="slotStyle(pi, true)">
-              <div class="slot-ph"></div>
+            <!-- 占位槽：5 个固定位，无影片时显示淡红色空白占位图 -->
+            <div v-for="d in SLOTS" :key="`ph-${d}`" class="slot" :style="slotStyle(active + d, true)">
+              <div v-if="!slotMovie(d)" class="slot-ph"></div>
             </div>
-          </TransitionGroup>
+          </div>
         </div>
         <!-- 左右切换 -->
         <button v-if="hero.length > 1" class="flow-nav prev" aria-label="上一部" @click="step(-1)">
@@ -105,6 +105,7 @@ const arrivals = ref([])     // 近期上新
 const active = ref(0)
 let timer = null
 const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
+const SLOTS = [-2, -1, 0, 1, 2]  // 轮播 5 个槽位（0 为中心）
 const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
 
 /** 封面 URL 解析（无封面时返回空串） */
@@ -112,45 +113,36 @@ function coverOf(m) {
   return resolveCover(m?.cover) || ''
 }
 
-/** 视野内的影片（|i - active| <= 2），视野外的按需进出（淡入淡出） */
-const visibleHero = computed(() =>
-  hero.value
-    .map((m, i) => ({ m, i }))
-    .filter(({ i }) => Math.abs(i - active.value) <= 2)
-)
-
-/** 视野内没有影片的索引（数组两端越界 → 显示淡红色空白占位图） */
-const visiblePh = computed(() => {
-  const out = []
-  for (let i = active.value - 2; i <= active.value + 2; i++) {
-    if (i < 0 || i >= hero.value.length) out.push(i)
-  }
-  return out
-})
+/** 取某个槽位偏移对应的影片（越界返回 null → 该槽位显示占位） */
+function slotMovie(d) {
+  return hero.value[active.value + d] || null
+}
 
 /**
  * 3D coverflow 槽位样式：海报按相对中心距离 d 绕 Y 轴旋转 + 向 Z 轴后撤 + 水平偏移。
- * 切换时（active 变化）d 随之变化 → 各海报的 rotateY/translateZ/scale 一起过渡，
- * 呈现「当前海报缩小向后转到侧面、下一张放大向前转到正中」的立体轮换。
+ * 所有海报（含占位）常驻 DOM，切换时 active 变化仅让各槽位的 d 变化 → transform/opacity
+ * 由 CSS transition 平滑过渡，呈现「当前海报缩小向后转到侧面、下一张放大向前转到正中」。
+ * |d|>2 的海报移到屏外并隐藏（仍常驻，保证过渡连续）。
  * @param {number} i - 影片（或空位）索引
  * @param {boolean} [ph] - 是否空位占位（层级略低、稍淡）
  */
 function slotStyle(i, ph = false) {
   const d = i - active.value
-  const abs = Math.min(Math.abs(d), 2)
   const sign = d < 0 ? -1 : 1
-  // 旋转角 / 后撤深度 / 水平偏移 / 缩放 随距离递增（中心 0，两侧逐级退后）
+  const off = Math.abs(d) > 2          // 超出视野 → 移出屏外隐藏
+  const abs = Math.min(Math.abs(d), 2)
   const angle = abs === 0 ? 0 : abs === 1 ? 35 : 60
   const depth = abs === 0 ? 0 : abs === 1 ? 180 : 320
-  const x     = abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480)
-  const scale = abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5
-  const opacity = abs === 0 ? 1 : abs === 1 ? 0.75 : 0.4
+  const x     = off ? sign * 900 : (abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480))
+  const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
+  const opacity = off ? 0 : (abs === 0 ? 1 : abs === 1 ? 0.75 : 0.4)
   return {
-    // perspective() 函数内联进 transform，避免父级 perspective+overflow 压平 3D
-    transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) rotateY(${sign * -angle}deg) translateZ(${-depth}px) scale(${scale})`,
+    // perspective() 内联进 transform，避免父级 perspective+overflow 压平 3D
+    transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) rotateY(${off ? 0 : sign * -angle}deg) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
     opacity: ph ? opacity * 0.85 : opacity,
     zIndex: 10 - abs - (ph ? 1 : 0),
-    '--shade': abs === 0 ? 0 : abs === 1 ? 0.35 : 0.6   // 遮罩强度：越靠边越暗
+    '--shade': off ? 1 : (abs === 0 ? 0 : abs === 1 ? 0.35 : 0.6),   // 遮罩强度
+    pointerEvents: ph || off ? 'none' : undefined
   }
 }
 
@@ -264,10 +256,6 @@ onBeforeUnmount(stopTimer)
   transition: opacity 500ms ease;
   pointer-events: none;
 }
-/* 拖入/拖出：视野边缘海报的位移由传送带完成，这里只做淡入淡出配合 */
-.slot-enter-from { opacity: 0 !important; }
-.slot-leave-to { opacity: 0 !important; }
-.slot-leave-active { pointer-events: none; }
 /* 缺失影片的槽位：淡红色空白占位图 */
 .slot-ph {
   width: 100%; height: 100%;
