@@ -490,6 +490,7 @@ async function onScrape() {
         ElMessage.success(`刮削成功（来源: ${r.data.source}）`)
         store.dirty = true
         await load(m.value.id)
+        await store.loadAllDbTags()  // 刷新标签统计（标签按影片数量排序，见 TagFilter.byUsage）
       } else {
         scrapeStore.done(key, false, ur.error)
         ElMessage.error('更新失败：' + ur.error)

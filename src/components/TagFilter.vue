@@ -61,20 +61,20 @@ const store = useMoviesStore()
 const allTags = computed(() => store.allDbTags || [])
 
 /**
- * 按使用次数（出现频率）对标签数组降序排序
- * allDbTags 即按频率降序的标签名数组，以其索引为序；不在库中的标签排最后
+ * 按「含该标签的影片数量」降序排序（数量相同则按名称稳定排序）
+ * 数据源为 store.tagCounts（主进程统计），不依赖 allDbTags 的数组顺序——
+ * 这样即使标签列表尚未刷新，新标签也能按真实数量归位，不会落在最末。
+ * 该排序同时作用于「分类内部」与「未分类标签」两处。
  * @param {string[]} tags - 原始标签数组
  * @returns {string[]} 排序后的新数组（不改动 store 内数据）
  */
 function byUsage(tags) {
-  const order = store.allDbTags || []
+  const counts = store.tagCounts || {}
   return [...tags].sort((a, b) => {
-    const ia = order.indexOf(a)
-    const ib = order.indexOf(b)
-    if (ia === -1 && ib === -1) return 0
-    if (ia === -1) return 1
-    if (ib === -1) return -1
-    return ia - ib
+    const ca = counts[a] || 0
+    const cb = counts[b] || 0
+    if (cb !== ca) return cb - ca          // 影片数量多者在前
+    return String(a).localeCompare(String(b), 'zh-Hans-CN')  // 同数量按名称稳定排序
   })
 }
 

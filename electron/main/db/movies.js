@@ -301,7 +301,9 @@ function registerMovieIpc(ipcMain, db) {
       const tags = Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
         .map(([tag]) => tag)
-      return { ok: true, tags }
+      // counts 一并返回：前端按「含该标签的影片数量」排序标签（含分类内部），
+      // 不依赖数组顺序，避免列表陈旧时新标签被排到最后
+      return { ok: true, tags, counts }
     } catch (e) { return { ok: false, error: e.message, tags: [] } }
   })
 

@@ -23,7 +23,8 @@ export const useMoviesStore = defineStore('movies', {
     inited: false,        // 是否已初始化（防止重复初始化）
     settings: {},         // 全局设置对象
     categories: [...DEFAULT_CATS], // [{cat, tags: []}] 9 大标签分类配置
-    allDbTags: [],        // 数据库中实际存在的标签（扁平化数组）
+    allDbTags: [],        // 数据库中实际存在的标签（扁平化数组，主进程按使用频率降序返回）
+    tagCounts: {},        // 标签 → 含该标签的影片数量（用于标签排序，见 TagFilter.byUsage）
     movies: [],           // 当前页影片列表
     total: 0,             // 影片总数（含筛选条件）
     page: 1,              // 当前页码
@@ -103,7 +104,10 @@ export const useMoviesStore = defineStore('movies', {
     async loadAllDbTags() {
       if (!window.api) return []
       const r = await window.api.getAllTags()
-      if (r.ok) { this.allDbTags = r.tags || [] }
+      if (r.ok) {
+        this.allDbTags = r.tags || []
+        this.tagCounts = r.counts || {}
+      }
       return this.allDbTags
     },
 
