@@ -187,21 +187,25 @@ watch(dataDirRef, () => { errd.value = false })
   transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
-/* 右上角喜欢按钮：白底圆形 + 心形，可点击切换喜欢。
-   未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 心形变朱柿红并微放大 */
+/* 右上角喜欢按钮：磨砂玻璃圆形 + 心形（半透明白 + 背景模糊 + 边缘高光）。
+   未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 底色提亮、心形变朱柿红并微放大 */
 .fav-btn {
   position: absolute; top: 8px; right: 8px;
-  width: 26px; height: 26px;
-  border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--muted);
+  width: 27px; height: 27px;
+  border: 1px solid rgba(255, 255, 255, 0.45);   /* 玻璃边缘高光 */
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.42);          /* 半透明白 */
+  backdrop-filter: blur(10px) saturate(1.4);      /* 磨砂玻璃：模糊背景 + 略提饱和 */
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  color: var(--text-2);                           /* 未喜欢：暖灰（比 muted 略深，避免玻璃底上发虚） */
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--sh-1);
   cursor: pointer;
-  transition: color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
+              transform var(--dur-fast) var(--ease-out);
 }
-.fav-btn:hover { color: var(--accent); transform: scale(1.12); }
-.fav-btn.active { color: var(--accent); }
+.fav-btn:hover { background: rgba(255, 255, 255, 0.68); color: var(--accent); transform: scale(1.12); }
+.fav-btn.active { color: var(--accent); background: rgba(255, 255, 255, 0.58); }
 
 /* 播放次数角标：右下角墨黑半透明胶囊 + 白字（与悬停遮罩同色系，不遮挡点击） */
 .play-count {
@@ -217,14 +221,15 @@ watch(dataDirRef, () => { errd.value = false })
   pointer-events: none;
 }
 
-/* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
-   选中底色与描边使用设计令牌（--accent / --border-strong） */
+/* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为朱柿红实心 */
 .check {
   position: absolute; top: 8px; left: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1.5px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.42);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
   border-radius: 50%;
-  width: 24px; height: 24px;
+  width: 25px; height: 25px;
   display: flex; align-items: center; justify-content: center;
   box-shadow: var(--sh-1);
   cursor: pointer;
