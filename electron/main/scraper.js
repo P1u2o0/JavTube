@@ -382,20 +382,24 @@ async function scrapeJavDb(ph, type, opts = {}) {
     }
   }
 
-  // 提取想看/看过人数与评分（2026-09-09 新增，按 opts.fetchStats 开关执行）
-  // 页面结构：<span class="nav-separated-title">想要看</span><span class="nav-separated-value">1,234</span>
-  //           评分：<span class="score-average">4.53</span>
+  // 提取想看/看过人数与评分（2026-09-09 新增；2026-09-13 按 JAVDB 现行页面结构修正）
+  // 实测页面结构（2026-09-13 联网验证）：
+  //   想看/看过人数：纯文本节点「10245人想看」「3323人看過」
+  //   评分：在「評分:」字段块内 —— <strong>評分:</strong><span class="value">
+  //         <span class="score-stars">★…</span> 4.51分, 由3323人評價</span>
+  //   注：旧结构的 nav-separated-title/value 与 score-average 类名已被 JAVDB 废弃，
+  //       导致此前提取恒为空值（表现为「想看/看过/评分永远为空」）
   let want = '', watched = '', score = ''
   if (opts.fetchStats) {
-    const sepRe = /nav-separated-title">([^<]+)<\/span><span class="nav-separated-value">([\d,.]+)/g
-    let sm
-    while ((sm = sepRe.exec(data)) !== null) {
-      const label = sm[1]
-      const num = sm[2].replace(/,/g, '')
-      if (label.indexOf('想要看') !== -1) want = num
-      else if (label.indexOf('看過') !== -1 || label.indexOf('看过') !== -1) watched = num
-    }
-    const scoreM = data.match(/score-average">([\d.]+)/)
+    // 想看人数：「N人想看」（兼容千分位逗号）
+    const wantM = data.match(/([\d,]+)\s*人\s*想(?:要)?看/)
+    if (wantM) want = wantM[1].replace(/,/g, '')
+    // 看过人数：「N人看過」（繁体页面）
+    const watchM = data.match(/([\d,]+)\s*人\s*看[过過]/)
+    if (watchM) watched = watchM[1].replace(/,/g, '')
+    // 评分：「評分:」字段块内的「4.51分」形式（避免误取评价人数）
+    const ratingBlock = inteHandler(detail, '<strong>評分:</strong>', '</div>', [0, 0, 0])
+    const scoreM = ratingBlock.match(/([\d.]+)\s*分/)
     if (scoreM) score = scoreM[1]
   }
 
@@ -508,6 +512,20 @@ async function scrapeMovie(ph, {
         result = await scrapeJavBus(cleanPh, type)
       }
       if (result) {
+        // 统计补抓（2026-09-13）：想看/看过/评分仅 JAVDB 页面提供，而 auto/默认
+        // 模式 JAVBUS 优先且成功后立即返回——导致「抓取统计」开关形同虚设。
+        // 因此 JAVBUS 命中后，若开启统计抓取，则静默补抓一次 JAVDB 的统计字段
+        // （失败忽略，不影响主体数据与整个刮削结果）
+        if (fetchStats && src.name === 'JAVBUS') {
+          try {
+            const stats = await scrapeJavDb(cleanPh, type, { fetchStats: true })
+            if (stats) {
+              if (stats.want) result.want = stats.want
+              if (stats.watched) result.watched = stats.watched
+              if (stats.score) result.score = stats.score
+            }
+          } catch {}
+        }
         // 如果有封面图且指定了数据目录，下载封面到本地
         if (result.cover && dataDir) {
           const coversDir = path.join(dataDir, coverDir || COVER_DIR)
