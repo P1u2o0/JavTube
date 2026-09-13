@@ -8,7 +8,7 @@
  */
 
 // 引入 Electron 内置的 net 模块用于 HTTP 请求（支持 fetch API）
-const { net } = require('electron')
+const { net, session } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const { URL } = require('url')
@@ -150,7 +150,36 @@ function assertJavdbNotBlocked(html, url, hasCookie) {
   }
 }
 
+// 请求限速（2026-09-13 新增，思路参考 amane 的 RateLimiters）：
+// 同一 host 的连续请求保持最小间隔——突发请求极易触发站点反爬
+// （JAVDB 的 Cloudflare 会直接 403）。批量刮削时会连续命中同一站点，
+// 因此按 host 维护「上次请求时间」，不足最小间隔则等待补足。
+const lastReqAt = new Map()   // host → 上次请求时间戳
+const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 req/s）
+
+/**
+ * 按 host 限速：距上次请求不足 MIN_REQ_INTERVAL 则等待补足。
+ * @param {string} url - 即将请求的地址
+ */
+async function throttleByHost(url) {
+  let host = ''
+  try { host = new URL(url).host } catch { return }
+  const wait = MIN_REQ_INTERVAL - (Date.now() - (lastReqAt.get(host) || 0))
+  if (wait > 0) await new Promise(r => setTimeout(r, wait))
+  lastReqAt.set(host, Date.now())
+}
+
+/**
+ * 使用 Electron net.fetch 获取网页 HTML 内容（内置同 host 限速）。
+ * @param {string} url - 请求的 URL
+ * @param {Object} [opts] - 可选参数
+ * @param {string} [opts.referer] - Referer 头，用于模拟从某页面跳转
+ * @param {string} [opts.cookie] - Cookie 头，用于携带会话信息
+ * @returns {Promise<string>} 网页 HTML 文本
+ * @throws {Error} HTTP 请求失败时抛出异常
+ */
 async function fetchHtml(url, { referer, cookie } = {}) {
+  await throttleByHost(url)
   const headers = {
     'User-Agent': USER_AGENT,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -172,19 +201,52 @@ async function fetchHtml(url, { referer, cookie } = {}) {
 }
 
 /**
+ * 图片直连专用会话（2026-09-13 新增）。
+ * 背景（实测）：DMM 图床（awsimgsrc.dmm.co.jp / pics.dmm.co.jp）经代理访问
+ * 连接失败（000），但直连正常（200）——即图床不应走代理，而刮削主站（JAVDB 等）
+ * 又必须走代理。因此为图片单独建立一个「直连」会话，与页面请求的代理会话隔离。
+ * 创建失败（异常）时返回 null，调用方回退默认会话。
+ */
+let imageDirectSession = null
+function getImageDirectSession() {
+  if (imageDirectSession) return imageDirectSession
+  try {
+    // Electron session 需在 app ready 后创建；downloadImage 只在运行时调用，安全
+    imageDirectSession = session.fromPartition('javtube-image-direct')
+    imageDirectSession.setProxy({ mode: 'direct' })  // 直连，不走系统/应用代理
+  } catch (e) {
+    console.warn('[scrape] 图片直连会话创建失败:', e.message)
+    imageDirectSession = null
+  }
+  return imageDirectSession
+}
+
+/**
  * 下载图片并保存到本地文件。
+ * 下载策略：直连会话优先（适配 DMM 等「必须直连」图床），失败则回退默认会话
+ * （走应用代理，适配「图床必须走代理」的网络环境）。
  * @param {string} url - 图片的 URL
  * @param {string} savePath - 本地保存路径
  * @param {string} [referer] - 请求来源页（部分图床校验 Referer，如 javbus 图需
  *   https://www.javbus.com/；不传时回退为图片自身 origin）
  * @returns {Promise<string>} 保存成功后返回保存路径
- * @throws {Error} 下载失败时抛出异常
+ * @throws {Error} 两种方式都失败时抛出异常
  */
 async function downloadImage(url, savePath, referer) {
   const parsed = new URL(url)
   const headers = { 'User-Agent': USER_AGENT, Referer: referer || (parsed.origin + '/') }
-  const resp = await net.fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(30000) })
-  if (!resp.ok) throw new Error(`Image HTTP ${resp.status}`)
+  const baseInit = { headers, redirect: 'follow', signal: AbortSignal.timeout(30000) }
+  let resp = null
+  // 1) 直连优先
+  const directSession = getImageDirectSession()
+  if (directSession) {
+    try { resp = await net.fetch(url, { ...baseInit, session: directSession }) } catch { resp = null }
+  }
+  // 2) 直连失败则回退默认会话（走应用代理）
+  if (!resp || !resp.ok) {
+    try { resp = await net.fetch(url, baseInit) } catch { resp = null }
+  }
+  if (!resp || !resp.ok) throw new Error(`Image HTTP ${resp ? resp.status : 'network error'}`)
   const buf = Buffer.from(await resp.arrayBuffer())
   fs.writeFileSync(savePath, buf)
   return savePath
