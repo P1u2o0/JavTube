@@ -35,6 +35,10 @@
               @click.stop="onFavClick">
         <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" />
       </button>
+      <!-- 播放次数角标（观看记录页显示）：右下角胶囊，播放次数来自 recordPlay 累加 -->
+      <span v-if="showPlayCount && m.play_count" class="play-count">
+        <AppIcon name="play" :size="10" />{{ m.play_count }}
+      </span>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -63,7 +67,8 @@ import AppIcon from '@/components/AppIcon.vue'
 const props = defineProps({
   m: { type: Object, required: true },        // 影片数据对象
   selectMode: { type: Boolean, default: false }, // 是否处于多选模式
-  isSel: { type: Boolean, default: false }       // 当前卡片是否被选中
+  isSel: { type: Boolean, default: false },      // 当前卡片是否被选中
+  showPlayCount: { type: Boolean, default: false } // 是否显示播放次数角标（观看记录页启用）
 })
 
 // 定义 emit 事件：
@@ -197,6 +202,20 @@ watch(dataDirRef, () => { errd.value = false })
 }
 .fav-btn:hover { color: var(--accent); transform: scale(1.12); }
 .fav-btn.active { color: var(--accent); }
+
+/* 播放次数角标：右下角墨黑半透明胶囊 + 白字（与悬停遮罩同色系，不遮挡点击） */
+.play-count {
+  position: absolute; right: 8px; bottom: 8px;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: rgba(29, 28, 26, 0.62);
+  color: #fff;
+  font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
 
 /* 多选模式勾选框：自绘圆形，选中前后形状一致（圆形）。
    选中底色与描边使用设计令牌（--accent / --border-strong） */

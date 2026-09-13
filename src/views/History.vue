@@ -29,6 +29,7 @@
       :loading="store.loading"
       :selectMode="store.selectMode"
       :selectedIds="store.selectedIds"
+      :showPlayCount="true"
       @page="onPageChange"
       @play="onPlay"
       @fav="onFav"

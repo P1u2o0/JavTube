@@ -21,8 +21,9 @@
         <el-dropdown-menu>
           <el-dropdown-item command="tjrq" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'tjrq' }">添加日期</el-dropdown-item>
           <el-dropdown-item command="fxrq" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'fxrq' }">发行日期</el-dropdown-item>
+          <el-dropdown-item command="want" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'want' }">想看人数</el-dropdown-item>
+          <el-dropdown-item command="watched" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'watched' }">看过人数</el-dropdown-item>
           <el-dropdown-item command="score" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'score' }">评分</el-dropdown-item>
-          <el-dropdown-item command="play_count" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'play_count' }">观看次数</el-dropdown-item>
           <el-dropdown-item command="random" divided :class="{ 'sort-active': store.sort.random }">随机排序</el-dropdown-item>
         </el-dropdown-menu>
       </template>
@@ -88,7 +89,7 @@ const store = useMoviesStore()
 // 排序按钮显示文案：随机模式显示「随机排序」，否则显示当前字段名
 const sortLabel = computed(() => {
   if (store.sort.random) return '随机排序'
-  return { tjrq: '添加日期', fxrq: '发行日期', score: '评分', play_count: '观看次数' }[store.sort.by] || '添加日期'
+  return { tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数', score: '评分' }[store.sort.by] || '添加日期'
 })
 // 方向箭头（随机模式无方向）
 const sortArrow = computed(() => (store.sort.random ? '' : (store.sort.order === 'ASC' ? '↑' : '↓')))

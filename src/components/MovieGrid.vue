@@ -19,6 +19,7 @@
         :style="{ '--i': i }"
         :selectMode="selectMode"
         :isSel="selectedIds.includes(m.id)"
+        :showPlayCount="showPlayCount"
         @click="$emit('click', m)"
         @play="$emit('play', m)"
 
@@ -57,7 +58,8 @@ const props = defineProps({
   cols: { type: Number, default: 5 }, // 网格列数，默认 5 列
   loading: Boolean,   // 是否正在加载
   selectMode: Boolean, // 是否处于多选模式
-  selectedIds: Array   // 已选中的影片 ID 列表
+  selectedIds: Array,  // 已选中的影片 ID 列表
+  showPlayCount: Boolean // 是否显示播放次数角标（观看记录页）
 })
 
 // 定义 emit 事件：
