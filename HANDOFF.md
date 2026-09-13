@@ -44,6 +44,8 @@ unset ELECTRON_RUN_AS_NODE          # ← 关键，否则 Electron 变纯 Node �
 ```bash
 # 构建验证（~5s，改完必跑）
 npx vite build
+# 主进程「调用但未定义」静态检查（改 electron/ 代码后必跑，见 §5 坑 14）
+npm run check:undefined
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 # IPC 通道配平检查：invoke 与 handle 应 40/40
@@ -136,6 +138,9 @@ javtube_dev/
 11. **回滚/脚本分段替换文件后必须 grep 验证 + build**——部分应用状态（残留大括号/emits）会导致编译错误
 12. **★ 函数被脚本批量替换时要警惕自引用**——2026-09-11 发现 `persistSoon` 曾被脚本误改成 `(db) => persistSoon(db)` 无限递归，且被 IPC handler 的 `try/catch` 吞掉只返回 `{ ok:false }`，表现为「界面点了不变色但数据库其实已改」（前端乐观更新被回滚）。**批量替换后务必检查被改函数自身是否引用了自己**；IPC 的 try/catch 会掩盖此类致命错误，排查 UI 不更新时先查主进程异常
 13. **WorkBuddy 会话注入 `ELECTRON_RUN_AS_NODE=1`**——会让 Electron 退化为纯 Node，启动即崩（详见 §1 启动说明）
+14. **★ 脚本按区间替换代码时，必须确认区间内是否夹带其他函数定义**——2026-09-13 一次替换把 `throttleByHost`、`assertJavdbNotBlocked` 两个定义连带删除，`node --check` 只查语法查不出未定义引用，直到运行时才报 `xxx is not defined`。**改主进程代码后必跑 `npm run check:undefined`**（`scripts/check-undefined.js`：静态列出「调用了但找不到定义」的候选，本次即靠它复查出第二个被删函数）
+15. **Electron `net.fetch` 不能手动设置 Cookie 头**——Fetch 标准把 Cookie 列为 forbidden header，`headers.Cookie = ...` 会被 Chromium **静默丢弃**（表现为「配置了 Cookie 仍 403」）。必须用 `session.cookies.set()` 注入，请求在 `credentials: 'include'` 下自动携带（见 scraper.js `applyCookieString`）
+16. **刮削图片必须走直连会话**——DMM 图床（awsimgsrc/pics.dmm.co.jp）经代理连接失败、直连正常，而 JAVDB/JAVBUS 主站必须走代理，故图片用独立 `setProxy({mode:'direct'})` 会话 + 代理会话兜底（见 `downloadImage`）
 
 ---
 
