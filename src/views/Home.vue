@@ -203,8 +203,8 @@ onBeforeUnmount(stopTimer)
   position: relative;
   height: 430px;                                    /* 板块加大 */
   border-radius: var(--r-lg);
-  border: 1px solid var(--border);
-  background: var(--surface);                       /* 白色底 */
+  /* 不设背景与边框：海报直接悬浮在页面底色上，由海报自身投影拉开层次 */
+  background: transparent;
   overflow: hidden;   /* 两侧海报被裁切 → 呈现「半幅」效果 */
 }
 .flow {
