@@ -446,8 +446,8 @@ async function clearDb() {
 .player-row { display: flex; gap: 10px; width: 100%; max-width: 340px; }
 .player-input { flex: 1; }
 
-/* 标签类别 / 标签映射：行列表 + 加号按钮并排（加号贴第一行右侧） */
-.rows-wrap { display: flex; align-items: flex-start; gap: 8px; }
+/* 标签类别 / 标签映射：行列表 + 加号按钮并排（加号贴第一行右侧，垂直居中） */
+.rows-wrap { display: flex; align-items: center; gap: 8px; }
 .rows-wrap .row-list { flex: 1; min-width: 0; }
 .cat-row-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .cat-name-input { width: 170px; flex-shrink: 0; }
@@ -455,17 +455,17 @@ async function clearDb() {
 .map-row-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .map-input { flex: 1; }
 .map-arrow { color: var(--muted); font-size: 12px; flex-shrink: 0; }
-/* 行删除按钮 */
+/* 行删除按钮：与输入框（32px）等高、与加号按钮同规格 */
 .row-del {
-  width: 28px; height: 28px;
+  width: 32px; height: 32px;
   flex-shrink: 0;
-  border: none; border-radius: 50%;
+  border: 1px solid var(--border); border-radius: 50%;
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
-.row-del:hover { background: var(--danger-soft); color: var(--danger); }
+.row-del:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 
 /* 辅助设置清空按钮：hover 危险色 */
 .act-del:hover,
@@ -475,8 +475,12 @@ async function clearDb() {
   color: var(--danger) !important;
 }
 
-/* 加号按钮：圆形图标按钮（只保留 + 图标），与行列表第一行并排 */
-.add-btn { width: 30px; height: 30px; padding: 0; border-radius: 50%; flex-shrink: 0; }
+/* 加号按钮：圆形图标按钮，与删除按钮同规格（32px 圆形 + 细描边 + 透明底） */
+.add-btn {
+  width: 32px; height: 32px; padding: 0; border-radius: 50%; flex-shrink: 0;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+}
+.add-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--border-strong); }
 
 /* 关于页文字行 */
 .about-line { padding: 3px 0; color: var(--text-2); font-size: 13.5px; }
