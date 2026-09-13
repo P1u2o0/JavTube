@@ -20,17 +20,17 @@
     <!-- ===== ① 轮播：封面流（中心大图 + 两侧半幅递减） ===== -->
     <section v-if="hero.length" class="hero">
       <div class="flow-wrap">
-        <div class="flow">
-          <!-- 影片槽：每个影片一个槽位，位置由它相对当前项的距离决定——
-               切换时是海报整体平移（而非图片原位替换），动画才顺滑 -->
-          <div v-for="(m, i) in hero" :key="m.id" class="slot" :style="slotStyle(i)">
+        <!-- TransitionGroup：视野外海报「拖入」屏内、离场海报「拖出」屏外（方向跟随切换方向） -->
+        <TransitionGroup tag="div" class="flow" name="slot">
+          <!-- 影片槽：只渲染视野内（|d|<=2）的影片，其余按需进出 -->
+          <div v-for="{ m, i } in visibleHero" :key="m.id" class="slot" :style="slotStyle(i)">
             <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
           </div>
           <!-- 空位槽：该位置没有影片时显示淡红色空白占位图（数量不足即留空） -->
           <div v-for="d in SLOTS" :key="`ph-${d}`" class="slot" :style="phStyle(d)">
             <div v-if="!slotMovie(d)" class="slot-ph"></div>
           </div>
-        </div>
+        </TransitionGroup>
         <!-- 左右切换 -->
         <button v-if="hero.length > 1" class="flow-nav prev" aria-label="上一部" @click="step(-1)">
           <AppIcon name="back" :size="18" />
@@ -114,6 +114,13 @@ function slotMovie(d) {
   return hero.value[active.value + d] || null
 }
 
+/** 视野内的影片（|i - active| <= 2）——视野外的由 TransitionGroup 拖入/拖出 */
+const visibleHero = computed(() =>
+  hero.value
+    .map((m, i) => ({ m, i }))
+    .filter(({ i }) => Math.abs(i - active.value) <= 2)
+)
+
 /**
  * 槽位样式：中心最大，两侧按距离依次缩小并向外偏移（露出半幅由容器裁切实现）
  * @param {number} d - 槽位偏移（-2..2）
@@ -141,17 +148,14 @@ function posOf(d) {
  */
 function slotStyle(i) {
   const d = i - active.value
-  if (Math.abs(d) > 2) {
-    return {
-      transform: `translate3d(-50%, -50%, 0) translateX(${d > 0 ? 900 : -900}px) scale(0.3)`,
-      opacity: 0, zIndex: 0, pointerEvents: 'none'
-    }
-  }
   const p = posOf(d)
+  const tx = d < 0 ? '-900px' : '900px'   // 拖入/拖出方向：左侧的海报从左屏外进出，右侧同理
   return {
     transform: `translate3d(-50%, -50%, 0) translateX(${d >= 0 ? p.offset : -p.offset}px) scale(${p.scale})`,
     opacity: p.opacity,
-    zIndex: p.z
+    zIndex: p.z,
+    '--tx-from': tx,
+    '--tx-to': tx
   }
 }
 
@@ -261,6 +265,17 @@ onBeforeUnmount(stopTimer)
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .slot img:hover { transform: translateY(-3px); }
+/* 拖入：新进视野的海报从屏外滑入（方向由 --tx-from 决定，!important 覆盖内联终态） */
+.slot-enter-from {
+  transform: translate3d(-50%, -50%, 0) translateX(var(--tx-from, 900px)) scale(0.3) !important;
+  opacity: 0 !important;
+}
+/* 拖出：离场海报滑出屏外（沿用离场前的 --tx-to 方向） */
+.slot-leave-to {
+  transform: translate3d(-50%, -50%, 0) translateX(var(--tx-to, 900px)) scale(0.3) !important;
+  opacity: 0 !important;
+}
+.slot-leave-active { pointer-events: none; }
 /* 缺失影片的槽位：淡红色空白占位图 */
 .slot-ph {
   width: 100%; height: 100%;
