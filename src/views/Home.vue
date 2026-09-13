@@ -50,18 +50,17 @@
       </div>
     </section>
 
-    <!-- ===== ② 类别按钮：两个汉字的标签（近期观看中频率前 4，不足留空） ===== -->
-    <section v-if="categories.length" class="cats">
-      <button v-for="c in categories" :key="c.tag" class="cat-card" @click="goTag(c.tag)">
-        <div class="cat-name">
-          <div class="cat-main">{{ c.tag }}</div>
-          <div class="cat-sub">{{ c.count }} 部</div>
-        </div>
-        <div class="cat-covers">
-          <img v-for="(cv, i) in c.covers" :key="i" :src="coverOf(cv)" alt="" />
-        </div>
-      </button>
-    </section>
+    <!-- ===== ② 类别按钮：全库标签频率前 5（4 字以内），单张背景海报 + 暗遮罩 ===== -->
+      <section v-if="categories.length" class="cats">
+        <button v-for="c in categories" :key="c.tag" class="cat-card" @click="goTag(c.tag)">
+          <div v-if="c.cover" class="cat-bg" :style="{ backgroundImage: `url(${coverOf(c.cover)})` }"></div>
+          <div class="cat-shade"></div>
+          <div class="cat-label">
+            <div class="cat-main">{{ c.tag }}</div>
+            <div class="cat-sub">{{ c.count }} 部</div>
+          </div>
+        </button>
+      </section>
 
     <!-- ===== ③ 近期上新：不常看的影片（4 列 × 2 行，不足留空） ===== -->
     <section class="arrivals">
@@ -291,37 +290,55 @@ onBeforeUnmount(stopTimer)
 }
 .dot.on { width: 20px; border-radius: var(--r-pill); background: var(--accent); }
 
-/* ===== ② 类别按钮 ===== */
-.cats { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+/* ===== ② 类别按钮：5 列卡片式，单张背景海报 + 暗遮罩 + 左下角文字 ===== */
+.cats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .cat-card {
-  display: flex; align-items: stretch;
-  width: 224px; flex-shrink: 0;
-  height: 88px; padding: 0; overflow: hidden;
+  position: relative;
+  display: block; width: 100%;
+  aspect-ratio: 16 / 9;           /* 横向卡片（参考 Emby 横滑卡片） */
+  padding: 0; overflow: hidden;
   border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--surface); cursor: pointer; text-align: left;
+  background: var(--surface-2);   /* 无封面时的底色 */
+  cursor: pointer; text-align: left;
   transition: transform var(--dur-fast) var(--ease-out),
-              box-shadow var(--dur-fast) var(--ease-out),
-              border-color var(--dur-fast) ease;
+              box-shadow var(--dur-fast) var(--ease-out);
 }
-.cat-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); border-color: var(--border-strong); }
-.cat-name {
-  flex: 0 0 42%;
-  padding: 14px 12px;
-  display: flex; flex-direction: column; justify-content: center; gap: 4px;
-  background: linear-gradient(135deg, var(--surface-2), var(--surface-3));
+.cat-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+/* 背景海报图（单张，含该类别随机一部影片） */
+.cat-bg {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  transition: transform 500ms var(--ease-out);
 }
-.cat-main {
-  font-family: var(--font-display); font-weight: 700; font-size: 17px;
-  color: var(--text); letter-spacing: 0.02em;
+.cat-card:hover .cat-bg { transform: scale(1.06); }
+/* 暗色遮罩：底部到顶部由深到透（让左下角文字清晰可读） */
+.cat-shade {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.28) 45%,
+    rgba(0, 0, 0, 0.05) 100%);
+  pointer-events: none;
 }
-.cat-sub { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-/* 右侧封面拼图：2×2 无缝拼接 */
-.cat-covers {
-  flex: 1; min-width: 0;
-  display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
-  gap: 1px; background: var(--border);
+/* 左下角文字：类别名（最大 4 字，超出截断）+ 数量 */
+.cat-label {
+  position: absolute;
+  left: 12px; bottom: 10px; right: 12px;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);   /* 增强对比 */
 }
-.cat-covers img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cat-label .cat-main {
+  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  letter-spacing: 0.02em;
+  max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cat-label .cat-sub {
+  font-size: 11px; font-weight: 400;
+  opacity: 0.88;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ===== ③ 近期上新 ===== */
 .arrivals { display: flex; flex-direction: column; gap: 12px; }

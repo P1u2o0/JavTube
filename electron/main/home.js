@@ -3,10 +3,10 @@
  * @module electron/main/home
  * @description 首页推荐数据（2026-09-13 新增）。
  *
- * 三块数据，均以「近期观看影片」构建的兴趣画像（标签 / 系列 / 女优）为依据：
- *   - hero：同类影片（与画像有交集），随机 5 部 → 首页轮播（每次进入首页重新随机）
- *   - categories：近期标签中「恰好 2 个汉字」的标签按出现频率取前 4，
- *                 每个类别附该标签下的影片封面（用于按钮右侧拼图）
+ * 三块数据（2026-09-13 重构）：
+ *   - hero：基于近期观看兴趣画像的同类影片，随机 5 部 → 首页轮播（会话级缓存）
+ *   - categories：**全库**标签按出现频率取前 5（不基于用户画像），优先 4 字以内；
+ *                 每个类别随机挑一部有封面的影片作背景图（单张，非拼图）
  *   - arrivals：与画像无交集的影片（不常看的类别/系列/女优），按添加时间倒序取 8
  *
  * 实现说明：影片量级为本地库（数十~数千条），直接全表取出在 JS 中分组计算，
@@ -22,10 +22,8 @@ const { rows } = require('./db/util')
 const RECENT_LIMIT = 20
 // 首页三块的数量
 const HERO_COUNT = 5
-const CATEGORY_COUNT = 4
+const CATEGORY_COUNT = 5
 const ARRIVAL_COUNT = 8
-// 每个类别按钮右侧拼图使用的封面数
-const CATEGORY_COVER_COUNT = 4
 // 轮播影片会话级缓存（首次调用生成，应用运行期间保持；重启后重新随机）
 let heroCache = null
 
@@ -113,18 +111,25 @@ function registerHomeIpc(ipcMain, db) {
       }
       const hero = heroCache
 
-      // === 绿区：近期标签中「两个汉字」的，按频率取前 4，附该类影片封面 ===
-      const twoCharTags = [...tagFreq.entries()]
-        .filter(([t]) => isTwoCharTag(t))
+      // === 绿区：全库标签按出现频率取前 5（不基于用户画像），优先 4 字以内；
+      //          每个类别随机挑一部有封面的影片作背景图（单张）===
+      const allTagFreq = new Map()
+      for (const m of all) {
+        for (const t of splitMulti(m.bq)) {
+          allTagFreq.set(t, (allTagFreq.get(t) || 0) + 1)
+        }
+      }
+      const topTags = [...allTagFreq.entries()]
+        .filter(([t]) => t.length <= 4)   // 4 字以内（标签名用于卡片显示）
         .sort((a, b) => b[1] - a[1])
         .slice(0, CATEGORY_COUNT)
-      const categories = twoCharTags.map(([tag, count]) => {
-        const members = all.filter(m => splitMulti(m.bq).includes(tag))
+      const categories = topTags.map(([tag, count]) => {
+        const members = all.filter(m => splitMulti(m.bq).includes(tag) && m.cover)
+        const bg = sample(members, 1)[0]   // 随机一部有封面的作背景
         return {
           tag,
           count,
-          covers: sample(members.filter(m => m.cover), CATEGORY_COVER_COUNT)
-            .map(m => ({ id: m.id, cover: m.cover, pm: m.pm }))
+          cover: bg ? { id: bg.id, cover: bg.cover, pm: bg.pm } : null
         }
       })
 
