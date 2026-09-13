@@ -215,8 +215,10 @@ async function scrapeJavBus(ph, type) {
   }
   bq = twToCn(bq)  // 繁体标签转简体
 
-  // 提取时长（分钟，2026-09-09 新增）：JAVBUS「長度:」字段，如 "120 分鐘"
-  const lenStr = inteHandler(data, '<p class="header">長度:</p>', '</p>', [0, 1, 0])
+  // 提取时长（分钟，2026-09-09 新增）
+  // 2026-09-13 修正：实测 JAVBUS 页面该字段为 <span class="header">長度:</span>
+  // （原实现用 <p class="header"> 恒失配，导致详情页时长永远取不到值）
+  const lenStr = inteHandler(data, '<span class="header">長度:</span>', '</p>', [0, 1, 0])
   const lenM = lenStr.match(/(\d+)/)
   const duration = lenM ? Number(lenM[1]) : 0
 
@@ -512,17 +514,28 @@ async function scrapeMovie(ph, {
         result = await scrapeJavBus(cleanPh, type)
       }
       if (result) {
-        // 统计补抓（2026-09-13）：想看/看过/评分仅 JAVDB 页面提供，而 auto/默认
-        // 模式 JAVBUS 优先且成功后立即返回——导致「抓取统计」开关形同虚设。
-        // 因此 JAVBUS 命中后，若开启统计抓取，则静默补抓一次 JAVDB 的统计字段
-        // （失败忽略，不影响主体数据与整个刮削结果）
-        if (fetchStats && src.name === 'JAVBUS') {
+        // 跨源兜底补全（2026-09-13）：auto/默认模式按 JAVBUS → JAVDB 顺序，
+        // 第一个成功的源整体返回，不再自动补其他字段。而 JAVBUS 缺少
+        // 想看/看过/评分（站点无评分体系）与 vr 字段，其预览图/时长也可能缺失。
+        // 因此 JAVBUS 命中后，若需要 JAVDB 独有数据（统计或预览图任一开启），
+        // 静默补抓一次 JAVDB，用其非空值填补 JAVBUS 结果的空字段。
+        // 失败忽略——不影响主体数据与刮削结果。
+        if (src.name === 'JAVBUS' && (fetchStats || downloadPreviews)) {
           try {
-            const stats = await scrapeJavDb(cleanPh, type, { fetchStats: true })
-            if (stats) {
-              if (stats.want) result.want = stats.want
-              if (stats.watched) result.watched = stats.watched
-              if (stats.score) result.score = stats.score
+            const jd = await scrapeJavDb(cleanPh, type, { fetchStats })
+            if (jd) {
+              // 标量字段兜底：仅填补 JAVBUS 结果中的空值
+              for (const k of ['pm', 'fl', 'fxrq', 'dy', 'ps', 'fx', 'xl', 'yy', 'bq', 'cover', 'vr', 'duration']) {
+                if (!result[k] && jd[k]) result[k] = jd[k]
+              }
+              // 预览图：JAVBUS 无样本图时用 JAVDB 的
+              if (!(result.previews || []).length && (jd.previews || []).length) {
+                result.previews = jd.previews
+              }
+              // 统计：JAVDB 专有（JAVBUS 站点无评分体系）
+              if (jd.want) result.want = jd.want
+              if (jd.watched) result.watched = jd.watched
+              if (jd.score) result.score = jd.score
             }
           } catch {}
         }
