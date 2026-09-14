@@ -162,6 +162,7 @@ function invert() {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--sh-1);        /* Apple：面板微阴影 */
   font-size: 13px;
   color: var(--text-2);
 }

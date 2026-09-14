@@ -124,6 +124,7 @@ watch(dataDirRef, () => { errd.value = false })
   border-radius: var(--r-md);
   overflow: hidden;
   border: 1px solid var(--border);
+  box-shadow: var(--sh-1);        /* Apple：默认微阴影分层，hover 升至 sh-2 */
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-out),
               box-shadow var(--dur-fast) var(--ease-out),

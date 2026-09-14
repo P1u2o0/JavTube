@@ -40,16 +40,18 @@
   --danger-soft: #fbeeeb;
   --warning: #c98a1b;
 
-  /* 圆角体系 */
-  --r-sm: 8px;              /* 小件：封面、缩略图、菜单 */
-  --r-md: 12px;             /* 卡片、面板、表格 */
-  --r-lg: 16px;             /* 对话框、抽屉 */
+  /* 圆角体系（Apple 风格：整体更圆润，连续圆角观感） */
+  --r-sm: 10px;             /* 小件：封面、缩略图、菜单 */
+  --r-md: 14px;             /* 卡片、面板、表格 */
+  --r-lg: 20px;             /* 对话框、抽屉 */
   --r-pill: 999px;          /* 按钮、输入框、标签 */
 
-  /* 阴影三级（暖色环境色） */
-  --sh-1: 0 1px 2px rgba(50, 46, 38, .06);
-  --sh-2: 0 6px 20px rgba(50, 46, 38, .09);
-  --sh-3: 0 16px 48px rgba(50, 46, 38, .16);
+  /* 阴影三级（Apple 风格：多层叠加 = 近层锐利 + 远层柔和；暖色环境色不变） */
+  --sh-1: 0 1px 2px rgba(50, 46, 38, .05), 0 1px 1px rgba(50, 46, 38, .04);
+  --sh-2: 0 2px 4px rgba(50, 46, 38, .05), 0 8px 24px rgba(50, 46, 38, .09);
+  --sh-3: 0 4px 12px rgba(50, 46, 38, .07), 0 24px 56px rgba(50, 46, 38, .16);
+  /* 表面内高光（Apple 质感：顶部细微受光，用于卡片/按钮） */
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, .65);
 
   /* 字体 */
   --font-display: "Outfit", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
@@ -152,10 +154,10 @@
   --el-border-radius-small: 6px;
   --el-border-radius-round: 999px;
   --el-font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
-  --el-box-shadow: 0 6px 20px rgba(50, 46, 38, .09);
-  --el-box-shadow-light: 0 1px 2px rgba(50, 46, 38, .06);
-  --el-box-shadow-lighter: 0 1px 2px rgba(50, 46, 38, .05);
-  --el-box-shadow-dark: 0 16px 48px rgba(50, 46, 38, .16);
+  --el-box-shadow: 0 2px 4px rgba(50, 46, 38, .05), 0 8px 24px rgba(50, 46, 38, .09);
+  --el-box-shadow-light: 0 1px 2px rgba(50, 46, 38, .05), 0 1px 1px rgba(50, 46, 38, .04);
+  --el-box-shadow-lighter: 0 1px 2px rgba(50, 46, 38, .04);
+  --el-box-shadow-dark: 0 4px 12px rgba(50, 46, 38, .07), 0 24px 56px rgba(50, 46, 38, .16);
 
   /* Element Plus 过渡：曲线与时长对齐 Emil 设计工程规范 */
   --el-transition-duration: 220ms;
@@ -296,6 +298,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 }
 .el-button:active { transform: scale(0.97); }
 .el-button--primary {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16);   /* 顶部受光，Apple 按钮质感 */
   --el-button-bg-color: var(--primary);
   --el-button-border-color: var(--primary);
   --el-button-hover-bg-color: var(--primary-hover);
