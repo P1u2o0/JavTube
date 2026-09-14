@@ -57,7 +57,6 @@
           <div class="cat-shade"></div>
           <div class="cat-label">
             <div class="cat-main">{{ c.tag }}</div>
-            <div class="cat-sub">{{ c.count }} 部</div>
           </div>
         </button>
       </section>
@@ -130,14 +129,14 @@ function slotStyle(i, ph = false) {
   const sign = d < 0 ? -1 : 1
   const off = Math.abs(d) > 2          // 超出视野 → 移出屏外隐藏
   const abs = Math.min(Math.abs(d), 2)
-  const angle = abs === 0 ? 0 : abs === 1 ? 35 : 60
   const depth = abs === 0 ? 0 : abs === 1 ? 180 : 320
   const x     = off ? sign * 900 : (abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480))
   const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
   const opacity = off ? 0 : (abs === 0 ? 1 : abs === 1 ? 0.75 : 0.4)
   return {
+    // 两侧不倾斜（无 rotateY）：仅水平位移 + 纵深后撤 + 缩放
     // perspective() 内联进 transform，避免父级 perspective+overflow 压平 3D
-    transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) rotateY(${off ? 0 : sign * -angle}deg) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
+    transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
     opacity: ph ? opacity * 0.85 : opacity,
     zIndex: 10 - abs - (ph ? 1 : 0),
     '--shade': off ? 1 : (abs === 0 ? 0 : abs === 1 ? 0.35 : 0.6),   // 遮罩强度
@@ -312,33 +311,29 @@ onBeforeUnmount(stopTimer)
   transition: transform 500ms var(--ease-out);
 }
 .cat-card:hover .cat-bg { transform: scale(1.06); }
-/* 暗色遮罩：底部到顶部由深到透（让左下角文字清晰可读） */
+/* 暗色遮罩：整体加深，左侧更深（承载类别名），右侧保留海报可见度 */
 .cat-shade {
   position: absolute; inset: 0;
-  background: linear-gradient(to top,
-    var(--shade-strong) 0%,
-    var(--shade-mid) 45%,
-    var(--shade-weak) 100%);
+  background: linear-gradient(to right,
+    rgba(22, 21, 19, 0.82) 0%,
+    rgba(22, 21, 19, 0.52) 45%,
+    rgba(22, 21, 19, 0.36) 100%);
   pointer-events: none;
 }
-/* 左下角文字：类别名（最大 4 字，超出截断）+ 数量 */
+/* 类别名：位于左半部分、垂直居中（不含数量） */
 .cat-label {
   position: absolute;
-  left: 12px; bottom: 10px; right: 12px;
+  left: 14px; right: 45%; top: 0; bottom: 0;
+  display: flex; align-items: center;
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);   /* 增强对比 */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);   /* 增强对比 */
+  pointer-events: none;
 }
 .cat-label .cat-main {
-  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  font-family: var(--font-display); font-weight: 700; font-size: 16px;
   letter-spacing: 0.02em;
   max-width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.cat-label .cat-sub {
-  font-size: 11px; font-weight: 400;
-  opacity: 0.88;
-  margin-top: 2px;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ===== ③ 近期上新 ===== */
