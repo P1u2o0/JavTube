@@ -311,28 +311,26 @@ onBeforeUnmount(stopTimer)
   transition: transform 500ms var(--ease-out);
 }
 .cat-card:hover .cat-bg { transform: scale(1.06); }
-/* 暗色遮罩：整体加深，左侧更深（承载类别名），右侧保留海报可见度 */
+/* 暗色遮罩：整体均匀加深（类别名居中，四周均可读） */
 .cat-shade {
   position: absolute; inset: 0;
-  background: linear-gradient(to right,
-    rgba(22, 21, 19, 0.82) 0%,
-    rgba(22, 21, 19, 0.52) 45%,
-    rgba(22, 21, 19, 0.36) 100%);
+  background: linear-gradient(180deg,
+    rgba(22, 21, 19, 0.46) 0%,
+    rgba(22, 21, 19, 0.62) 100%);
   pointer-events: none;
 }
-/* 类别名：位于左半部分、垂直居中（不含数量） */
+/* 类别名：整卡居中，字体加大（不含数量） */
 .cat-label {
-  position: absolute;
-  left: 14px; right: 45%; top: 0; bottom: 0;
-  display: flex; align-items: center;
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);   /* 增强对比 */
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);   /* 增强对比 */
   pointer-events: none;
 }
 .cat-label .cat-main {
-  font-family: var(--font-display); font-weight: 700; font-size: 16px;
+  font-family: var(--font-display); font-weight: 700; font-size: 20px;
   letter-spacing: 0.02em;
-  max-width: 100%;
+  max-width: 88%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 

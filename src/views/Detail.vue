@@ -647,9 +647,12 @@ onMounted(async () => {
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   box-shadow: var(--sh-2);
-  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
+  /* 柔和反馈：与片库卡片播放按钮一致 */
+  transition: transform 240ms cubic-bezier(0.34, 1.45, 0.64, 1),
+              background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
+.play-btn:active { transform: scale(0.9); transition-duration: 100ms; }
 .play-btn:active { transform: scale(0.92); }
 /* 无图占位块 */
 .no-cover {
