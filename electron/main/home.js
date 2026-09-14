@@ -104,9 +104,12 @@ function registerHomeIpc(ipcMain, db) {
       // 会话级缓存：本轮应用运行期间固定同一批（用户要求「每次打开软件挑选一次」，
       // 软件内切换页面回到首页时不重新随机）；重启应用后模块重载即重新挑选。
       if (!heroCache) {
-        // 只取「同类且未近期观看」的影片；不足 5 部时按实际数量返回，
-        // 由首页按固定槽位渲染并留出空位（不用无关影片补足，避免推荐失真）
-        const pool = all.filter(m => !recentIds.has(m.id) && hitInterest(m))
+        // 首选：同类且未近期观看；为空时逐级兜底，避免「库很小且全部看过」
+        // 时轮播整块消失（2026-09-14 修复）：
+        //   ① 未近期观看的全部影片 ② 全部影片（保底仍有轮播）
+        let pool = all.filter(m => !recentIds.has(m.id) && hitInterest(m))
+        if (!pool.length) pool = all.filter(m => !recentIds.has(m.id))
+        if (!pool.length) pool = all.slice()
         heroCache = sample(pool, HERO_COUNT)
       }
       const hero = heroCache
