@@ -11,7 +11,7 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **140 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **149 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
 
 ---
 
@@ -20,7 +20,7 @@
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，140 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
+| git | `main` 分支，149 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
 | dev 服务 | **已停止**，需要时手动启动（见下） |
 | 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
@@ -171,6 +171,18 @@ javtube_dev/
 - **9/10 上午**：设置页 → 弹窗（900×74vh 固定、五 tab 双栏网格、批量保存、注释精简 + show_tips 开关）
 - **9/10 中午**：详情页定版（自适应海报区 + 灯箱查看器 + 信息行距均分）、排序 dropdown（方向切换+随机）、**修切页影片消失**（稳定分页 + 挂载重载）、铃铛刮削面板、三点菜单移除、persistSoon 性能根治、设置批量保存、全量代码梳理（净减 100 行）
 - **9/10 晚**：卡片喜欢按钮多轮修复未达预期 → **整体回滚到静态收藏角标**（喜欢切换=详情页底部按钮，一直正常）
+- **9/14 晚｜Apple 风格重构（Emil Kowalski 设计工程规范，**仅 CSS，零逻辑改动**）**——
+  动效：换强自定义曲线（`--ease-out .23,1,.32,1` / `in-out` / `drawer` iOS / `spring` 弹性）+
+  分级时长（`--dur-press 120 / fast 160 / base 220 / slow 300`，UI 一律 <300ms）；消除 `transition:all`（TopNav 2 处）；
+  收敛超长时长（轮播 620→480ms）；弹层一律从 `scale(0.96)+opacity` 进入（非 scale(0)）；对话框退出快于进入；
+  全站按压态统一 `scale(0.96)` 并补齐所有可按压元素；开关/Tabs 下划线/播放钮用弹性曲线。
+  质感：圆角微调（`r-sm10/r-md14/r-lg20`）；阴影单层→**多层叠加**（近层锐利+远层柔和）并同步 EP 变量；
+  主按钮加顶部内高光；卡片/面板补默认微阴影。
+  响应式：顶栏搜索框固定 260px → 弹性（`flex 1 1 220 / min150 / max260`）+ `@media(max-width:1200px)` 断点
+  （窗口 `minWidth:1000 / minHeight:700`）。
+  修复：首页轮播在「库小且全部看过」时整块消失 → hero 候选池逐级兜底。
+  **重构前回滚备份**：`javtube_backup_20260914_pre_apple.bundle` + `javtube_src_backup_20260914_pre_apple.tar.gz`
+  （对应 commit `35a5678`，如需回退：`git reset --hard 35a5678`）
 - **9/14**：**UI 审计修复（UI-UX-Pro-Max / Taste / Shadcn / Impeccable 四 skill）**——
   global.css 补令牌（字号阶梯、间距阶梯、图标按钮尺寸 --icon-btn-sm/md/lg、遮罩 alpha --overlay-*/--shade-*/--glass）；
   硬编码色值收敛 token、遮罩纯黑改暖黑；圆钮 12 种尺寸 → 3 档（24/32/40）；磨砂玻璃/hover 幅度统一；
