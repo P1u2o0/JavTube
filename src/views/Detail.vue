@@ -108,14 +108,14 @@
             <TagChip :label="m.xl" @click="filterBySeries(m.xl)" />
           </div>
         </div>
-        <!-- 类别（影片标签，可点击筛选）——分配更大高度，标签多时自动扩展 -->
+        <!-- 类别（影片标签，可点击筛选）——标签多行时该行自动变高，行间距仍均匀 -->
         <div class="info-line tag-line" v-if="tags.length">
           <span class="info-label">类别</span>
           <div class="info-value tag-list">
             <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
           </div>
         </div>
-        <!-- 演员（仅名字，点击进入该女优的影片页）——tag-line 使行高与「类别」行一致 -->
+        <!-- 演员（仅名字，点击进入该女优的影片页） -->
         <div class="info-line tag-line" v-if="actressList.length">
           <span class="info-label">演员</span>
           <div class="info-value tag-list">
