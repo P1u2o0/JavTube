@@ -242,9 +242,11 @@ onMounted(() => s.load())
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
+              transform var(--dur-press) var(--ease-out);
 }
 .del-btn:hover { background: var(--danger-soft); color: var(--danger); }
+.del-btn:active { transform: scale(0.96); }
 /* 空状态提示 */
 .empty-tip { text-align: center; color: var(--muted); padding: 60px 0; }
 /* 详情抽屉段落间距 */

@@ -233,8 +233,8 @@ onBeforeUnmount(stopTimer)
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;
-  transition: transform 620ms cubic-bezier(0.32, 0.72, 0.3, 1),
-              opacity 420ms ease;
+  transition: transform 480ms var(--ease-in-out),
+              opacity 300ms var(--ease-out);
   will-change: transform, opacity;
 }
 .slot img {
@@ -251,7 +251,7 @@ onBeforeUnmount(stopTimer)
   border-radius: var(--r-md);
   background: linear-gradient(135deg, rgba(22, 21, 19, 0.04) 0%, var(--overlay-badge) 100%);
   opacity: var(--shade, 0);
-  transition: opacity 500ms ease;
+  transition: opacity 300ms var(--ease-out);
   pointer-events: none;
 }
 /* 缺失影片的槽位：淡红色空白占位图 */
@@ -277,7 +277,7 @@ onBeforeUnmount(stopTimer)
   z-index: 20;
 }
 .flow-nav:hover { background: var(--glass-hover); }
-.flow-nav:active { transform: translateY(-50%) scale(0.92); }
+.flow-nav:active { transform: translateY(-50%) scale(0.96); transition-duration: var(--dur-press); }
 .flow-nav.prev { left: 14px; }
 .flow-nav.next { right: 14px; }
 .flip { transform: rotate(180deg); }
@@ -308,7 +308,7 @@ onBeforeUnmount(stopTimer)
 .cat-bg {
   position: absolute; inset: 0;
   background-size: cover; background-position: center;
-  transition: transform 500ms var(--ease-out);
+  transition: transform 300ms var(--ease-out);   /* hover 放大 */
 }
 .cat-card:hover .cat-bg { transform: scale(1.06); }
 /* 暗色遮罩：从右往左逐渐加深（左侧最深，承载靠左的类别名） */

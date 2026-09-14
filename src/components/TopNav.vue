@@ -280,7 +280,8 @@ function onSearch() {
   background: var(--surface); color: var(--muted);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: all var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
+              border-color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
 }
 .bell-btn:hover { background: var(--surface-2); color: var(--text); }
 .bell-btn.has-task { color: var(--accent); border-color: var(--accent); }
@@ -360,8 +361,10 @@ function onSearch() {
 .bp-ok { color: var(--success); }
 .bp-empty { padding: 22px 0; text-align: center; color: var(--muted); font-size: 12.5px; }
 /* 面板弹出过渡：向下展开 + 淡入 */
-.bell-pop-enter-active, .bell-pop-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
-.bell-pop-enter-from, .bell-pop-leave-to { opacity: 0; transform: translateY(-6px); }
+/* 面板进入：ease-out；退出更快（Emil 非对称时长） */
+.bell-pop-enter-active { transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+.bell-pop-leave-active { transition: opacity var(--dur-press) ease, transform var(--dur-press) ease; }
+.bell-pop-enter-from, .bell-pop-leave-to { opacity: 0; transform: translateY(-4px) scale(0.96); }  /* 不从 scale(0) */
 
 .settings-btn {
   width: var(--icon-btn-lg); height: var(--icon-btn-lg);
@@ -369,7 +372,8 @@ function onSearch() {
   background: var(--surface); color: var(--muted);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: all var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
+              border-color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
 }
 .settings-btn:hover { background: var(--surface-2); color: var(--text); }
 /* 设置按钮激活状态（当前处于设置页面时） */

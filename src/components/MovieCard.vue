@@ -167,7 +167,7 @@ watch(dataDirRef, () => { errd.value = false })
   position: absolute; inset: 0;
   background: var(--overlay-hover);
   opacity: 0;
-  transition: opacity 200ms ease;   /* 淡入淡出更柔和 */
+  transition: opacity var(--dur-base) var(--ease-out);   /* 淡入淡出更柔和 */
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
 }
@@ -184,12 +184,11 @@ watch(dataDirRef, () => { errd.value = false })
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
   box-shadow: var(--sh-2);
-  /* 柔和反馈：按下迅速收缩，释放时带轻微回弹（避免生硬跳变） */
-  transition: transform 240ms cubic-bezier(0.34, 1.45, 0.64, 1),
-              background var(--dur-fast) ease;
+  /* 柔和反馈：按下迅速收缩、释放带轻微回弹（Apple 触感） */
+  transition: transform var(--dur-base) var(--ease-spring), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
-.play-btn:active { transform: scale(0.9); transition-duration: 100ms; }
+.play-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 /* 右上角喜欢按钮：磨砂玻璃圆形 + 心形（半透明白 + 背景模糊 + 边缘高光）。
    未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 底色提亮、心形变朱柿红并微放大 */
 .fav-btn {
@@ -208,11 +207,11 @@ watch(dataDirRef, () => { errd.value = false })
               var(--sh-1);
   cursor: pointer;
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
-              transform var(--dur-fast) var(--ease-out);
+              transform var(--dur-base) var(--ease-spring);
 }
 .fav-btn:hover { background: var(--glass-hover); color: var(--accent); transform: scale(1.06); }
 .fav-btn.active { color: var(--accent); background: var(--glass); }
-.fav-btn:active { transform: scale(0.92); }
+.fav-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 
 /* 播放次数角标：右下角墨黑半透明胶囊 + 白字（与悬停遮罩同色系，不遮挡点击） */
 .play-count {

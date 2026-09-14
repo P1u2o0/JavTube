@@ -457,9 +457,11 @@ async function clearDb() {
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
+              border-color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
 }
 .row-del:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+.row-del:active { transform: scale(0.96); }
 
 /* 辅助设置清空按钮：hover 危险色 */
 .act-del:hover,
@@ -475,6 +477,7 @@ async function clearDb() {
   border: 1px solid var(--border); background: transparent; color: var(--muted);
 }
 .add-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--border-strong); }
+.add-btn:active { transform: scale(0.96); }
 
 /* 关于页文字行 */
 .about-line { padding: 3px 0; color: var(--text-2); font-size: 13.5px; }

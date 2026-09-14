@@ -148,7 +148,7 @@ function invert() {
 
 <style scoped>
 .sort-dir { display: inline-flex; margin-left: 5px; }
-.sort-dir :deep(svg) { transition: transform 0.15s ease; }
+.sort-dir :deep(svg) { transition: transform var(--dur-fast) var(--ease-out); }
 .sort-dir.desc :deep(svg) { transform: rotate(-90deg); }  /* 左箭头 → 下 */
 .sort-dir.asc :deep(svg) { transform: rotate(90deg); }   /* 左箭头 → 上 */
 .sort-btn { margin-right: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }

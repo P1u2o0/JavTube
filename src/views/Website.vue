@@ -172,8 +172,10 @@ onMounted(() => s.load())
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; opacity: 0;
-  transition: opacity var(--dur-fast) ease, background var(--dur-fast) ease, color var(--dur-fast) ease;
+  transition: opacity var(--dur-fast) ease, background var(--dur-fast) ease,
+              color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
 }
 .card:hover .del-btn { opacity: 1; }
+.del-btn:active { transform: scale(0.96); }
 .del-btn:hover { background: var(--danger-soft); color: var(--danger); }
 </style>

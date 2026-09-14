@@ -596,7 +596,7 @@ onMounted(async () => {
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 .round-back:hover { background: var(--surface-2); color: var(--text); }
-.round-back:active { transform: scale(0.92); }
+.round-back:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 /* 番号样式：展示字 + 等宽数字 */
 .code {
   color: var(--primary);
@@ -648,12 +648,10 @@ onMounted(async () => {
   cursor: pointer;
   box-shadow: var(--sh-2);
   /* 柔和反馈：与片库卡片播放按钮一致 */
-  transition: transform 240ms cubic-bezier(0.34, 1.45, 0.64, 1),
-              background var(--dur-fast) ease;
+  transition: transform var(--dur-base) var(--ease-spring), background var(--dur-fast) ease;
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
-.play-btn:active { transform: scale(0.9); transition-duration: 100ms; }
-.play-btn:active { transform: scale(0.92); }
+.play-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 /* 无图占位块 */
 .no-cover {
   width: 300px; aspect-ratio: 3/2;
@@ -701,7 +699,7 @@ onMounted(async () => {
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 .copy-btn:hover { background: var(--accent-soft); color: var(--accent); }
-.copy-btn:active { transform: scale(0.92); }
+.copy-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 
 /* 评分五角星行 */
 .star-row { display: flex; align-items: center; gap: 10px; }
@@ -763,7 +761,8 @@ onMounted(async () => {
   background: var(--overlay-backdrop);
   display: flex; align-items: center; justify-content: center;
 }
-.lb-fade-enter-active, .lb-fade-leave-active { transition: opacity 0.3s ease; }
+.lb-fade-enter-active { transition: opacity var(--dur-base) var(--ease-out); }
+.lb-fade-leave-active { transition: opacity var(--dur-fast) ease; }   /* 退出更快 */
 .lb-fade-enter-from, .lb-fade-leave-to { opacity: 0; }
 /* 当前图片：初始 contain 于视口内（约 82% 宽 / 84% 高），滚轮缩放经 transform 生效 */
 .lb-img {
@@ -771,7 +770,7 @@ onMounted(async () => {
   width: auto; height: auto;
   border-radius: var(--r-sm);
   box-shadow: 0 12px 48px rgba(50, 46, 38, 0.5);
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-fast) var(--ease-out);
   cursor: grab;
 }
 /* 关闭按钮：右上角半透明圆钮 */
@@ -786,7 +785,7 @@ onMounted(async () => {
   transition: background var(--dur-fast) ease;
 }
 .lb-close:hover { background: var(--overlay-glass-hover); }
-.lb-close:active { transform: scale(0.92); }
+.lb-close:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 /* 左右切换按钮：两侧居中半透明圆钮，hover 放大 */
 .lb-arrow {
   position: absolute; top: 50%;
@@ -800,7 +799,7 @@ onMounted(async () => {
   transition: background var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 .lb-arrow:hover { background: var(--overlay-glass-hover); transform: translateY(-50%) scale(1.06); }
-.lb-arrow:active { transform: translateY(-50%) scale(0.92); }
+.lb-arrow:active { transform: translateY(-50%) scale(0.96); transition-duration: var(--dur-press); }
 .lb-prev { left: 24px; }
 .lb-next { right: 24px; }
 /* 页码指示：底部居中 */

@@ -325,7 +325,9 @@ watch(() => route.query, async (q) => {
   background: transparent; color: var(--muted);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
+              transform var(--dur-press) var(--ease-out);
 }
 .ft-clear:hover { background: var(--danger-soft); color: var(--danger); }
+.ft-clear:active { transform: scale(0.96); }
 </style>

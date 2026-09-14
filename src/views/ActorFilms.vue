@@ -351,7 +351,7 @@ onMounted(async () => {
 /* ===== ③ 排序按钮（已并入标签面板 header 右侧；样式与片库页一致） ===== */
 .sort-btn { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .sort-dir { display: inline-flex; margin-left: 5px; }
-.sort-dir :deep(svg) { transition: transform 0.15s ease; }
+.sort-dir :deep(svg) { transition: transform var(--dur-fast) var(--ease-out); }
 .sort-dir.desc :deep(svg) { transform: rotate(-90deg); }
 .sort-dir.asc :deep(svg) { transform: rotate(90deg); }
 .sort-active { color: var(--accent); font-weight: 600; }
