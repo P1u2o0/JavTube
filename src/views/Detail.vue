@@ -673,6 +673,7 @@ onMounted(async () => {
 .info-body {
   flex: 1;
   display: flex; flex-direction: column;
+  justify-content: space-evenly;   /* 行间距均匀（含首尾），标签两行时自动压缩仍相等 */
   min-height: 0;
 }
 /* 番号行：番号文字 + 复制按钮 */
@@ -718,16 +719,13 @@ onMounted(async () => {
 .stats-line { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .stats-line > span { display: inline-flex; align-items: center; gap: 5px; }
 .stats-line .app-icon { color: var(--muted); }
-/* 信息行：所有行均分高度（行距严格一致），内容垂直居中于行内，
-   即内容到上下虚线的距离相等；标签行分配 1.6 倍比例 */
+/* 信息行：高度由内容决定，行与行之间由父容器 space-evenly 均匀分配间距
+   （无横线；标签多行时该行自动变高，间距仍保持相等） */
 .info-line {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 0 0 auto;
   display: flex; gap: 14px;
   align-items: center;
 }
-.info-line + .info-line { border-top: 1px dashed var(--border); }
-.info-line.tag-line { flex: 1.6 1 0; }
 .info-label {
   width: 60px; flex-shrink: 0;
   color: var(--muted); font-size: 14.5px;

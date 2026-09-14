@@ -169,8 +169,7 @@ function onClearAll() {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 14px 0;   /* 下内边距交 0：与分类行连成一体（无下边框） */
 }
 /* 头部标签文字样式 */
 .header-label {
@@ -183,7 +182,7 @@ function onClearAll() {
 }
 /* 筛选器主体区域 */
 .filter-body {
-  padding: 6px 14px;
+  padding: 4px 14px 8px;   /* 上 4 + cat-row 上 4 = 8，与行间距一致 */
 }
 /* 单个分类行样式 */
 .cat-row {
@@ -198,7 +197,9 @@ function onClearAll() {
   font-weight: 500;
   color: var(--text-2);
   font-size: 13px;
-  line-height: 1.9;
+  /* 行高 = 芯片总高（12.5×1.6 + 8 padding + 6 上下 margin = 34px），
+     使分类名与同行芯片文字落在同一条水平线上 */
+  line-height: 34px;
   margin-right: 6px;
   flex-shrink: 0;
   min-width: 60px;
