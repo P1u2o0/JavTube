@@ -319,9 +319,12 @@ function onSearch() {
 .bp-clear {
   border: none; background: transparent;
   color: var(--muted); font-size: 12px;
+  padding: 2px 6px; border-radius: var(--r-sm);
   cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
-.bp-clear:hover { color: var(--accent); }
+.bp-clear:hover { color: var(--accent); background: var(--surface-2); }
+.bp-clear:active { transform: scale(0.96); }
 .bp-list { max-height: 320px; overflow-y: auto; }
 /* 分组标题：正在刮削 / 待刮削 / 刮削失败 */
 .bp-group {

@@ -289,6 +289,7 @@ onBeforeUnmount(stopTimer)
   transition: width var(--dur-base) var(--ease-out), background var(--dur-fast) ease;
 }
 .dot.on { width: 20px; border-radius: var(--r-pill); background: var(--accent); }
+.dot:active { transform: scale(0.85); }
 
 /* ===== ② 类别按钮：5 列卡片式，单张背景海报 + 暗遮罩 + 左下角文字 ===== */
 .cats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
@@ -304,6 +305,7 @@ onBeforeUnmount(stopTimer)
               box-shadow var(--dur-fast) var(--ease-out);
 }
 .cat-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+.cat-card:active { transform: translateY(-1px) scale(0.99); }   /* 按压反馈 */
 /* 背景海报图（单张，含该类别随机一部影片） */
 .cat-bg {
   position: absolute; inset: 0;
