@@ -547,11 +547,13 @@ onMounted(async () => {
 <style scoped>
 /* 详情页根容器内边距 */
 .detail { padding: 4px 4px 40px; }
-/* 信息卡底部操作按钮区（喜欢/刮削/编辑/删除） */
+/* 信息卡底部操作按钮区（喜欢/刮削/编辑/删除）：恒定贴底，
+   margin-top:auto + flex-shrink:0 使其不受上方信息行间距调整影响 */
 .card-actions {
   display: flex; gap: 8px; flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: auto;
   padding-top: 12px;
+  flex-shrink: 0;
   border-top: 1px dashed var(--border);
 }
 /* 喜欢按钮：收藏态朱柿红描边 + 图标强调 */
@@ -675,6 +677,7 @@ onMounted(async () => {
   display: flex; flex-direction: column;
   justify-content: space-evenly;   /* 行间距均匀（含首尾），标签两行时自动压缩仍相等 */
   min-height: 0;
+  overflow: hidden;                /* 内容过多时裁剪，不挤压底部按钮区 */
 }
 /* 番号行：番号文字 + 复制按钮 */
 .code-line { display: inline-flex; align-items: center; gap: 8px; }
