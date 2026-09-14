@@ -115,8 +115,8 @@
             <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
           </div>
         </div>
-        <!-- 演员（仅名字，点击进入该女优的影片页） -->
-        <div class="info-line" v-if="actressList.length">
+        <!-- 演员（仅名字，点击进入该女优的影片页）——tag-line 使行高与「类别」行一致 -->
+        <div class="info-line tag-line" v-if="actressList.length">
           <span class="info-label">演员</span>
           <div class="info-value tag-list">
             <TagChip v-for="a in actressList" :key="a" :label="a" @click="goActor(a)" />
@@ -738,8 +738,8 @@ onMounted(async () => {
   line-height: 1.7;
   word-break: break-all;
 }
-/* 标签列表：自动换行排列 */
-.tag-list { white-space: normal; display: flex; flex-wrap: wrap; }
+/* 标签列表：自动换行排列，chip 与行内文字垂直居中 */
+.tag-list { white-space: normal; display: flex; flex-wrap: wrap; align-items: center; }
 .preview-strip {
   margin-top: 16px;
   display: flex; align-items: center; gap: 8px;
@@ -833,5 +833,5 @@ onMounted(async () => {
 }
 
 /* 标签列表：自动换行排列（TagChip 自带外边距） */
-.tag-list { white-space: normal; display: flex; flex-wrap: wrap; }
+.tag-list { white-space: normal; display: flex; flex-wrap: wrap; align-items: center; }
 </style>

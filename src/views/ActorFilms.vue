@@ -33,6 +33,29 @@
       <div class="filter-header">
         <span class="header-label">标签筛选</span>
         <TagChip label="全部" :selected="selectedTags.length === 0" @click="clearTags" />
+        <!-- 排序按钮并入本行右侧（与片库页同款） -->
+        <div class="filter-tools">
+          <el-dropdown trigger="click" @command="onSortCommand">
+            <el-button class="sort-btn">
+              <AppIcon v-if="sort.random" name="shuffle" :size="14" style="margin-right:5px" />
+              <span>{{ sortLabel }}</span>
+              <span v-if="sortArrow" class="sort-dir" :class="sort.order === 'ASC' ? 'asc' : 'desc'">
+                <AppIcon name="back" :size="12" />
+              </span>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="tjrq" :class="{ 'sort-active': !sort.random && sort.by === 'tjrq' }">添加日期</el-dropdown-item>
+                <el-dropdown-item command="fxrq" :class="{ 'sort-active': !sort.random && sort.by === 'fxrq' }">发行日期</el-dropdown-item>
+                <el-dropdown-item command="want" :class="{ 'sort-active': !sort.random && sort.by === 'want' }">想看人数</el-dropdown-item>
+                <el-dropdown-item command="watched" :class="{ 'sort-active': !sort.random && sort.by === 'watched' }">看过人数</el-dropdown-item>
+                <el-dropdown-item command="score" :class="{ 'sort-active': !sort.random && sort.by === 'score' }">评分</el-dropdown-item>
+                <el-dropdown-item command="random" divided :class="{ 'sort-active': sort.random }">随机排序</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <span class="result-count">共 <b>{{ shownFilms.length }}</b> 部</span>
+        </div>
       </div>
       <div class="filter-body">
         <div v-for="cat in displayCategories" :key="cat.idx" class="cat-row">
@@ -50,30 +73,6 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ===== ③ 排序栏（黄）：与片库页同款排序按钮（样式/选项/功能一致） ===== -->
-    <div class="statusbar">
-      <el-dropdown trigger="click" @command="onSortCommand">
-        <el-button class="sort-btn">
-          <AppIcon v-if="sort.random" name="shuffle" :size="14" style="margin-right:5px" />
-          <span>{{ sortLabel }}</span>
-          <span v-if="sortArrow" class="sort-dir" :class="sort.order === 'ASC' ? 'asc' : 'desc'">
-            <AppIcon name="back" :size="12" />
-          </span>
-        </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="tjrq" :class="{ 'sort-active': !sort.random && sort.by === 'tjrq' }">添加日期</el-dropdown-item>
-            <el-dropdown-item command="fxrq" :class="{ 'sort-active': !sort.random && sort.by === 'fxrq' }">发行日期</el-dropdown-item>
-            <el-dropdown-item command="want" :class="{ 'sort-active': !sort.random && sort.by === 'want' }">想看人数</el-dropdown-item>
-            <el-dropdown-item command="watched" :class="{ 'sort-active': !sort.random && sort.by === 'watched' }">看过人数</el-dropdown-item>
-            <el-dropdown-item command="score" :class="{ 'sort-active': !sort.random && sort.by === 'score' }">评分</el-dropdown-item>
-            <el-dropdown-item command="random" divided :class="{ 'sort-active': sort.random }">随机排序</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <div class="left">共找到 <b>{{ shownFilms.length }}</b> 个结果</div>
     </div>
 
     <!-- ===== ④ 影片海报网格（绿）：每行数量跟随设置 ===== -->
@@ -325,46 +324,37 @@ onMounted(async () => {
 }
 .filter-header {
   display: flex; align-items: center; gap: 5px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 14px 0;      /* 下 0：与分类行的间距统一由 body/cat-row 提供 */
+  /* 无下边框：与下方分类行连成一体（用户要求） */
 }
+/* 右侧工具区：排序按钮 + 结果数，始终贴右 */
+.filter-tools { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.result-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.result-count b { color: var(--primary); font-family: var(--font-display); font-weight: 700; }
 .header-label {
   font-weight: 600; color: var(--text); font-size: 13.5px;
   flex-shrink: 0; min-width: 60px; margin-right: 6px;
 }
-.filter-body { padding: 6px 14px; }
+.filter-body { padding: 4px 14px 8px; }
 .cat-row {
   display: flex; align-items: flex-start; flex-wrap: wrap;
   gap: 2px 5px; padding: 4px 0;
 }
 .cat-name {
   font-weight: 500; color: var(--text-2); font-size: 13px;
-  line-height: 1.9; margin-right: 6px; flex-shrink: 0; min-width: 60px;
+  /* 行高 = 芯片总高（12.5×1.6 行高 + 8 padding + 6 上下 margin = 34px），
+     使分类名与同行的芯片文字落在同一条水平线上 */
+  line-height: 34px; margin-right: 6px; flex-shrink: 0; min-width: 60px;
 }
 .cat-tags { display: flex; flex-wrap: wrap; gap: 2px 5px; flex: 1; }
 
-/* ===== ③ 排序栏（样式与片库页 StatusBar 一致） ===== */
-.statusbar {
-  display: flex; align-items: center;
-  padding: 8px 14px;
-  margin: 10px 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  font-size: 13px;
-  color: var(--text-2);
-}
-.sort-btn { margin-right: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+/* ===== ③ 排序按钮（已并入标签面板 header 右侧；样式与片库页一致） ===== */
+.sort-btn { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .sort-dir { display: inline-flex; margin-left: 5px; }
 .sort-dir :deep(svg) { transition: transform 0.15s ease; }
 .sort-dir.desc :deep(svg) { transform: rotate(-90deg); }
 .sort-dir.asc :deep(svg) { transform: rotate(90deg); }
 .sort-active { color: var(--accent); font-weight: 600; }
-.left { margin-right: auto; }
-.left b {
-  color: var(--primary); font-family: var(--font-display);
-  font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; margin: 0 3px;
-}
 
 /* ===== ④ 影片网格 ===== */
 .actor-grid { display: grid; gap: 14px; }
