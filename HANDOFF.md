@@ -11,7 +11,7 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **130 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **140 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
 
 ---
 
@@ -20,7 +20,7 @@
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，130 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
+| git | `main` 分支，140 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
 | dev 服务 | **已停止**，需要时手动启动（见下） |
 | 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
@@ -171,6 +171,21 @@ javtube_dev/
 - **9/10 上午**：设置页 → 弹窗（900×74vh 固定、五 tab 双栏网格、批量保存、注释精简 + show_tips 开关）
 - **9/10 中午**：详情页定版（自适应海报区 + 灯箱查看器 + 信息行距均分）、排序 dropdown（方向切换+随机）、**修切页影片消失**（稳定分页 + 挂载重载）、铃铛刮削面板、三点菜单移除、persistSoon 性能根治、设置批量保存、全量代码梳理（净减 100 行）
 - **9/10 晚**：卡片喜欢按钮多轮修复未达预期 → **整体回滚到静态收藏角标**（喜欢切换=详情页底部按钮，一直正常）
+- **9/14**：**UI 审计修复（UI-UX-Pro-Max / Taste / Shadcn / Impeccable 四 skill）**——
+  global.css 补令牌（字号阶梯、间距阶梯、图标按钮尺寸 --icon-btn-sm/md/lg、遮罩 alpha --overlay-*/--shade-*/--glass）；
+  硬编码色值收敛 token、遮罩纯黑改暖黑；圆钮 12 种尺寸 → 3 档（24/32/40）；磨砂玻璃/hover 幅度统一；
+  全部图标按钮补 :active 按压态；AppIcon 基线 vertical-align 修正；:focus-visible 去 border-radius。
+  （修复前备份：`javtube_backup_20260913_ui_audit.bundle` + 同名 tar.gz）
+- **9/14 演员头像**：刮削提取**女优头像**（JAVBUS `#avatar-waterfall`，下载到 `covers/actress/<starId>.jpg`），
+  `movies` 新增 `cast_json`（`[{name,gender,avatar}]`）、`actress` 新增 `gender`；
+  新增 IPC `actor:films`（按演员名查影片 + 头像/资料）+ preload `getActorFilms`；
+  **详情页演员栏改纯文字**（点击名字进入演员页，仅女优）；新页面 `ActorFilms.vue`
+  （头像+资料 / 标签栏 / 排序栏 / 海报网格，每行数量跟随设置）+ 路由 `/actor/:name`；
+  默认男女剪影 SVG（`public/actor-female.svg` / `actor-male.svg`）。
+  注：JAVBUS 只列女优且带头像；JAVDB 新版结构 `<a class=actor-female>` 女优 / 无 class 男优，逗号分隔（男优本次不做）
+- **9/14 UI 收尾**：演员页标签栏/排序栏对齐片库（TagFilter / StatusBar 同款，移除选择按钮）；
+  片库标签区与详情信息板块去横线、行间距均匀（详情 `space-evenly` + 行高自适应，标签两行时间距仍相等）；
+  详情页信息卡底部四按钮 `margin-top:auto` 恒贴底。
 - **9/12~9/13**：**首页 Home.vue 从占位改为完整首页**并多轮重构（轮播 / 类别 / 近期上新三板块）：
   - **轮播**：横向 3:2 海报 600×400、板块 430px、去玻璃背景、缺位淡红占位；多轮试错后
     **最终定为 3D coverflow**——每海报按距中心 d 做 rotateY/translateZ/translateX/scale
