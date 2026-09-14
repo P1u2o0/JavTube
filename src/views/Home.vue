@@ -311,18 +311,20 @@ onBeforeUnmount(stopTimer)
   transition: transform 500ms var(--ease-out);
 }
 .cat-card:hover .cat-bg { transform: scale(1.06); }
-/* 暗色遮罩：整体均匀加深（类别名居中，四周均可读） */
+/* 暗色遮罩：从右往左逐渐加深（左侧最深，承载靠左的类别名） */
 .cat-shade {
   position: absolute; inset: 0;
-  background: linear-gradient(180deg,
-    rgba(22, 21, 19, 0.46) 0%,
-    rgba(22, 21, 19, 0.62) 100%);
+  background: linear-gradient(to right,
+    rgba(22, 21, 19, 0.78) 0%,
+    rgba(22, 21, 19, 0.52) 50%,
+    rgba(22, 21, 19, 0.30) 100%);
   pointer-events: none;
 }
-/* 类别名：整卡居中，字体加大（不含数量） */
+/* 类别名：靠左显示、垂直居中（字号 20px，不含数量） */
 .cat-label {
   position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: flex-start;
+  padding-left: 14px;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);   /* 增强对比 */
   pointer-events: none;
