@@ -28,15 +28,28 @@
       </div>
     </div>
 
-    <!-- ===== ② 标签类别栏（红）：该演员影片的标签，点击筛选 ===== -->
-    <div class="actor-tags" v-if="tagList.length">
-      <button class="at-chip" :class="{ on: !activeTag }" @click="activeTag = ''">
-        全部 <span class="at-n">{{ films.length }}</span>
-      </button>
-      <button v-for="t in tagList" :key="t.name" class="at-chip"
-              :class="{ on: activeTag === t.name }" @click="activeTag = t.name">
-        {{ t.name }} <span class="at-n">{{ t.count }}</span>
-      </button>
+    <!-- ===== ② 标签类别栏（红）：与片库页同款（面板 + 分类分组 + TagChip 多选） ===== -->
+    <div class="tag-filter" v-if="tagList.length">
+      <div class="filter-header">
+        <span class="header-label">标签筛选</span>
+        <TagChip label="全部" :selected="selectedTags.length === 0" @click="clearTags" />
+      </div>
+      <div class="filter-body">
+        <div v-for="cat in displayCategories" :key="cat.idx" class="cat-row">
+          <span class="cat-name">{{ cat.cat }}</span>
+          <div class="cat-tags">
+            <TagChip v-for="t in cat.tags" :key="t" :label="t"
+                     :selected="selectedTags.includes(t)" @click="toggleTag(t)" />
+          </div>
+        </div>
+        <div v-if="uncategorizedTags.length" class="cat-row">
+          <span class="cat-name">未分类</span>
+          <div class="cat-tags">
+            <TagChip v-for="t in uncategorizedTags" :key="t" :label="t"
+                     :selected="selectedTags.includes(t)" @click="toggleTag(t)" />
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ===== ③ 排序 / 选择栏（黄）：左排序、右选择 ===== -->
@@ -90,6 +103,7 @@ import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { resolveCover, safeCall } from '@/utils/global'
 import MovieCard from '@/components/MovieCard.vue'
+import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 const route = useRoute()
@@ -109,7 +123,7 @@ const loading = ref(true)
 const cols = computed(() => store.colsPerRow || 5)
 
 // 筛选 / 排序 / 分页 / 多选
-const activeTag = ref('')
+const selectedTags = ref([])
 const sortKey = ref('fxrq')
 const sortDesc = ref(true)
 const page = ref(1)
@@ -146,6 +160,46 @@ const tagList = computed(() => {
   return [...freq.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
 })
 
+// 该演员影片的标签名集合
+const actorTags = computed(() => tagList.value.map(t => t.name))
+
+/** 该演员影片标签的出现次数表（用于类内排序） */
+const tagCountMap = computed(() => new Map(tagList.value.map(t => [t.name, t.count])))
+/** 按出现次数降序排序（同数量按名称稳定排序，与片库 byUsage 一致） */
+function byUsage(tags) {
+  const m = tagCountMap.value
+  return [...tags].sort((a, b) => {
+    const ca = m.get(a) || 0, cb = m.get(b) || 0
+    if (cb !== ca) return cb - ca
+    return String(a).localeCompare(String(b), 'zh-Hans-CN')
+  })
+}
+
+/** 分类分组：按 9 大类展示该演员影片中出现的标签（与片库标签栏同结构） */
+const displayCategories = computed(() => {
+  const set = new Set(actorTags.value)
+  return (store.visibleCategories || [])
+    .map((c, i) => ({ idx: c.idx ?? i, cat: c.cat, tags: byUsage((c.tags || []).filter(t => set.has(t))) }))
+    .filter(c => c.tags.length > 0)
+})
+
+/** 未分类标签：该演员影片有、但不属于任何分类的标签 */
+const uncategorizedTags = computed(() => {
+  const categorized = new Set()
+  for (const c of (store.categories || [])) for (const t of (c.tags || [])) categorized.add(t)
+  return byUsage(actorTags.value.filter(t => !categorized.has(t)))
+})
+
+/** 切换标签选中（多选，AND 筛选，与片库标签逻辑一致） */
+function toggleTag(t) {
+  const i = selectedTags.value.indexOf(t)
+  if (i >= 0) selectedTags.value.splice(i, 1)
+  else selectedTags.value.push(t)
+  page.value = 1
+}
+/** 清除所有标签筛选 */
+function clearTags() { selectedTags.value = []; page.value = 1 }
+
 const sortLabel = computed(() => {
   const map = { fxrq: '发行日期', tjrq: '添加日期', score: '评分', play_count: '观看次数' }
   return `${map[sortKey.value] || '排序'}${sortDesc.value ? ' ↓' : ' ↑'}`
@@ -154,8 +208,11 @@ const sortLabel = computed(() => {
 /** 标签筛选后的影片 */
 const shownFilms = computed(() => {
   let list = films.value
-  if (activeTag.value) {
-    list = list.filter(m => String(m.bq || '').split(/[，,]/).map(s => s.trim()).includes(activeTag.value))
+  if (selectedTags.value.length) {
+    list = list.filter(m => {
+      const tags = String(m.bq || '').split(/[，,]/).map(s => s.trim())
+      return selectedTags.value.every(t => tags.includes(t))   // AND（与片库标签逻辑一致）
+    })
   }
   const k = sortKey.value
   const arr = [...list].sort((a, b) => {
@@ -226,8 +283,9 @@ async function load() {
 }
 
 onMounted(async () => {
-  // 确保设置已加载（每行数量依赖 store.colsPerRow / pageSize）
+  // 确保设置与全局标签已加载（每行数量 + 标签分类栏都依赖 store）
   await safeCall(() => store.initIfNeeded())
+  await safeCall(() => store.loadAllDbTags())
   await load()
 })
 </script>
@@ -257,20 +315,32 @@ onMounted(async () => {
 .ah-meta { font-size: var(--fs-base); color: var(--text-2); }
 .ah-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* ===== ② 标签类别栏 ===== */
-.actor-tags { display: flex; flex-wrap: wrap; gap: 8px; }
-.at-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 12px;
-  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
-  background: var(--surface); color: var(--text-2);
-  font-size: var(--fs-base); cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
-              border-color var(--dur-fast) ease;
+/* ===== ② 标签类别栏（样式与片库页 TagFilter 一致） ===== */
+.tag-filter {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: 10px;
 }
-.at-chip:hover { background: var(--surface-2); color: var(--text); }
-.at-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
-.at-n { font-size: var(--fs-sm); opacity: 0.7; font-variant-numeric: tabular-nums; }
+.filter-header {
+  display: flex; align-items: center; gap: 5px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.header-label {
+  font-weight: 600; color: var(--text); font-size: 13.5px;
+  flex-shrink: 0; min-width: 60px; margin-right: 6px;
+}
+.filter-body { padding: 6px 14px; }
+.cat-row {
+  display: flex; align-items: flex-start; flex-wrap: wrap;
+  gap: 2px 5px; padding: 4px 0;
+}
+.cat-name {
+  font-weight: 500; color: var(--text-2); font-size: 13px;
+  line-height: 1.9; margin-right: 6px; flex-shrink: 0; min-width: 60px;
+}
+.cat-tags { display: flex; flex-wrap: wrap; gap: 2px 5px; flex: 1; }
 
 /* ===== ③ 排序 / 选择栏 ===== */
 .actor-bar {
