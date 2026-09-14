@@ -52,30 +52,28 @@
       </div>
     </div>
 
-    <!-- ===== ③ 排序 / 选择栏（黄）：左排序、右选择 ===== -->
-    <div class="actor-bar">
-      <div class="ab-left">
-        <el-dropdown @command="onSort">
-          <button class="ab-sort">
-            <AppIcon name="shuffle" :size="14" />
-            <span>{{ sortLabel }}</span>
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="fxrq">发行日期</el-dropdown-item>
-              <el-dropdown-item command="tjrq">添加日期</el-dropdown-item>
-              <el-dropdown-item command="score">评分</el-dropdown-item>
-              <el-dropdown-item command="play_count">观看次数</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-      <div class="ab-right">
-        <button class="ab-select" :class="{ on: selectMode }" @click="toggleSelect">
-          <AppIcon :name="selectMode ? 'close' : 'check'" :size="14" />
-          <span>{{ selectMode ? '退出选择' : '选择' }}</span>
-        </button>
-      </div>
+    <!-- ===== ③ 排序栏（黄）：与片库页同款排序按钮（样式/选项/功能一致） ===== -->
+    <div class="statusbar">
+      <el-dropdown trigger="click" @command="onSortCommand">
+        <el-button class="sort-btn">
+          <AppIcon v-if="sort.random" name="shuffle" :size="14" style="margin-right:5px" />
+          <span>{{ sortLabel }}</span>
+          <span v-if="sortArrow" class="sort-dir" :class="sort.order === 'ASC' ? 'asc' : 'desc'">
+            <AppIcon name="back" :size="12" />
+          </span>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="tjrq" :class="{ 'sort-active': !sort.random && sort.by === 'tjrq' }">添加日期</el-dropdown-item>
+            <el-dropdown-item command="fxrq" :class="{ 'sort-active': !sort.random && sort.by === 'fxrq' }">发行日期</el-dropdown-item>
+            <el-dropdown-item command="want" :class="{ 'sort-active': !sort.random && sort.by === 'want' }">想看人数</el-dropdown-item>
+            <el-dropdown-item command="watched" :class="{ 'sort-active': !sort.random && sort.by === 'watched' }">看过人数</el-dropdown-item>
+            <el-dropdown-item command="score" :class="{ 'sort-active': !sort.random && sort.by === 'score' }">评分</el-dropdown-item>
+            <el-dropdown-item command="random" divided :class="{ 'sort-active': sort.random }">随机排序</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <div class="left">共找到 <b>{{ shownFilms.length }}</b> 个结果</div>
     </div>
 
     <!-- ===== ④ 影片海报网格（绿）：每行数量跟随设置 ===== -->
@@ -83,8 +81,7 @@
     <div v-else-if="!shownFilms.length" class="actor-empty">该演员暂无影片</div>
     <div v-else class="actor-grid" :style="{ gridTemplateColumns: `repeat(${cols}, 1fr)` }">
       <MovieCard v-for="m in pagedFilms" :key="m.id" :m="m"
-                 :selectMode="selectMode" :isSel="selectedIds.has(m.id)"
-                 @click="onCardClick(m)" @play="onPlay(m)" @toggle="onToggle(m.id)" @fav="onFav(m)" />
+                 @click="onCardClick(m)" @play="onPlay(m)" @fav="onFav(m)" />
     </div>
 
     <!-- 分页（多于 1 页时显示） -->
@@ -122,14 +119,11 @@ const loading = ref(true)
 // 每行数量：跟随设置（store.colsPerRow；未加载时回退 5）
 const cols = computed(() => store.colsPerRow || 5)
 
-// 筛选 / 排序 / 分页 / 多选
+// 筛选 / 排序 / 分页（排序状态结构与片库页 store.sort 一致）
 const selectedTags = ref([])
-const sortKey = ref('fxrq')
-const sortDesc = ref(true)
+const sort = ref({ by: 'fxrq', order: 'DESC', random: false })
 const page = ref(1)
 const pageSize = computed(() => store.pageSize || 20)
-const selectMode = ref(false)
-const selectedIds = ref(new Set())
 
 /** 演员头像：有本地头像走封面协议，否则按性别用默认剪影 */
 const avatarUrl = computed(() => avatar.value
@@ -200,12 +194,14 @@ function toggleTag(t) {
 /** 清除所有标签筛选 */
 function clearTags() { selectedTags.value = []; page.value = 1 }
 
+// 排序按钮文案（与片库页 StatusBar 一致）
 const sortLabel = computed(() => {
-  const map = { fxrq: '发行日期', tjrq: '添加日期', score: '评分', play_count: '观看次数' }
-  return `${map[sortKey.value] || '排序'}${sortDesc.value ? ' ↓' : ' ↑'}`
+  if (sort.value.random) return '随机排序'
+  return { tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数', score: '评分' }[sort.value.by] || '发行日期'
 })
+const sortArrow = computed(() => (sort.value.random ? '' : (sort.value.order === 'ASC' ? '↑' : '↓')))
 
-/** 标签筛选后的影片 */
+/** 标签筛选 + 排序后的影片（语义与片库页一致：点当前项切正倒序、随机打乱） */
 const shownFilms = computed(() => {
   let list = films.value
   if (selectedTags.value.length) {
@@ -214,15 +210,24 @@ const shownFilms = computed(() => {
       return selectedTags.value.every(t => tags.includes(t))   // AND（与片库标签逻辑一致）
     })
   }
-  const k = sortKey.value
-  const arr = [...list].sort((a, b) => {
-    let va = a[k], vb = b[k]
-    if (typeof va === 'string' || typeof vb === 'string') {
-      return String(vb || '').localeCompare(String(va || ''))
+  const { by, order, random } = sort.value
+  if (random) {
+    // Fisher-Yates 洗牌（对应片库「随机排序」）
+    const arr = [...list]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
     }
-    return (Number(vb) || 0) - (Number(va) || 0)   // 默认降序（大在前）
+    return arr
+  }
+  const dir = order === 'ASC' ? 1 : -1
+  return [...list].sort((a, b) => {
+    const va = a[by], vb = b[by]
+    if (typeof va === 'string' || typeof vb === 'string') {
+      return String(va || '').localeCompare(String(vb || '')) * dir
+    }
+    return ((Number(va) || 0) - (Number(vb) || 0)) * dir
   })
-  return sortDesc.value ? arr : arr.reverse()
 })
 
 const pageCount = computed(() => Math.ceil(shownFilms.value.length / pageSize.value) || 1)
@@ -231,26 +236,22 @@ const pagedFilms = computed(() => {
   return shownFilms.value.slice(start, start + pageSize.value)
 })
 
-/** 排序：重复点击同一项切换升/降序 */
-function onSort(cmd) {
-  if (sortKey.value === cmd) sortDesc.value = !sortDesc.value
-  else { sortKey.value = cmd; sortDesc.value = true }
+/**
+ * 排序命令处理（与片库页 StatusBar 一致）：
+ * 点当前字段切正序/倒序；点其他字段默认降序；随机进入随机模式
+ */
+function onSortCommand(cmd) {
+  if (cmd === 'random') {
+    sort.value = { by: sort.value.by, order: sort.value.order, random: true }
+  } else if (sort.value.by === cmd && !sort.value.random) {
+    sort.value = { by: cmd, order: sort.value.order === 'DESC' ? 'ASC' : 'DESC', random: false }
+  } else {
+    sort.value = { by: cmd, order: 'DESC', random: false }
+  }
   page.value = 1
 }
-/** 切换多选模式 */
-function toggleSelect() {
-  selectMode.value = !selectMode.value
-  if (!selectMode.value) selectedIds.value = new Set()
-}
-/** 切换单个选中（Set 需替换以触发响应式） */
-function onToggle(id) {
-  const next = new Set(selectedIds.value)
-  next.has(id) ? next.delete(id) : next.add(id)
-  selectedIds.value = next
-}
-/** 点击卡片：选择模式切换选中，否则进详情 */
+/** 点击卡片：进入详情 */
 function onCardClick(m) {
-  if (selectMode.value) return onToggle(m.id)
   router.push(`/detail/${m.id}`)
 }
 /** 播放 */
@@ -342,23 +343,28 @@ onMounted(async () => {
 }
 .cat-tags { display: flex; flex-wrap: wrap; gap: 2px 5px; flex: 1; }
 
-/* ===== ③ 排序 / 选择栏 ===== */
-.actor-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px;
+/* ===== ③ 排序栏（样式与片库页 StatusBar 一致） ===== */
+.statusbar {
+  display: flex; align-items: center;
+  padding: 8px 14px;
+  margin: 10px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--text-2);
 }
-.ab-sort, .ab-select {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: var(--icon-btn-md); padding: 0 14px;
-  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
-  background: var(--surface); color: var(--text-2);
-  font-size: var(--fs-base); cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease,
-              border-color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
+.sort-btn { margin-right: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.sort-dir { display: inline-flex; margin-left: 5px; }
+.sort-dir :deep(svg) { transition: transform 0.15s ease; }
+.sort-dir.desc :deep(svg) { transform: rotate(-90deg); }
+.sort-dir.asc :deep(svg) { transform: rotate(90deg); }
+.sort-active { color: var(--accent); font-weight: 600; }
+.left { margin-right: auto; }
+.left b {
+  color: var(--primary); font-family: var(--font-display);
+  font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; margin: 0 3px;
 }
-.ab-sort:hover, .ab-select:hover { background: var(--surface-2); color: var(--text); }
-.ab-sort:active, .ab-select:active { transform: scale(0.96); }
-.ab-select.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
 /* ===== ④ 影片网格 ===== */
 .actor-grid { display: grid; gap: 14px; }
