@@ -72,7 +72,9 @@ const MOVIE_COLUMNS = [
   ['score',    N('score')],     // 评分（JAVDB）
   // 2026-09-09 下午新增（详情页改版）
   ['duration',   N('duration')],   // 影片时长（分钟）：刮削優先，无值时由视频文件解析补齐
-  ['play_count', N('play_count')]  // 观看次数（recordPlay 累加，供排序）
+  ['play_count', N('play_count')], // 观看次数（recordPlay 累加，供排序）
+  // 2026-09-14 新增（演员头像）：演员列表 JSON [{name,gender,avatar}]
+  ['cast_json',  S('cast_json')]
 ]
 
 // INSERT 语句与参数构造器（全部 30 列）

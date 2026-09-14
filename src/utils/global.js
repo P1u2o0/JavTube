@@ -118,6 +118,8 @@ export function buildScrapeUpdate(d) {
   if (d.want) update.want = Number(d.want) || 0      // 想看人数（JAVDB）
   if (d.watched) update.watched = Number(d.watched) || 0 // 看过人数（JAVDB）
   if (d.score) update.score = Number(d.score) || 0   // 评分（JAVDB）
+  // 2026-09-14 演员头像：演员列表 [{name,gender,avatar}] 序列化入库
+  if (Array.isArray(d.cast) && d.cast.length) update.cast_json = JSON.stringify(d.cast)
   return update
 }
 

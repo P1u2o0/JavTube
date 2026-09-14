@@ -220,21 +220,39 @@ async function scrapeJavBus(ph, type, opts = {}) {
   // 提取系列
   let xl = inteHandler(data, '<span class="header">系列:</span>', '</a>', [0, 1, 1]).trim()
 
-  // 提取演员列表
+  // 提取演员列表（2026-09-14 增强：从 #avatar-waterfall 区块同时取头像与演员页链接）
+  // 结构：<a class="avatar-box" href="/star/xxx"><div class="photo-frame"><img src="/pics/actress/xxx_a.jpg" title="名字"></div><span>名字</span></a>
   let yy = ''
+  const cast = []   // [{ name, gender, avatar, star }]
   // 检查是否有演员信息（排除"暂无出演者信息"的情况）
   const hasCast = data.indexOf('暫無出演者資訊') === -1 && data.indexOf('暂无出演者信息') === -1
   if (hasCast) {
-    // 尝试多种 HTML 结构匹配演员区块
-    let castHtml = inteHandler(data, '<span class="header" style="cursor: pointer;">演員</span>', '</ul>', [0, 1, 0])
-    if (!castHtml) castHtml = inteHandler(data, '<span class="header">演員</span>', '</ul>', [0, 1, 0])
-    if (!castHtml) castHtml = inteHandler(data, '演員', '</ul>', [0, 1, 0])
-    castHtml = inteHandler(castHtml, '<li>', '</ul>', [0, 0, 0])
-    const castArr = castHtml.split('</li>')
-    castArr.pop()  // 移除末尾空元素
-    for (const c of castArr) {
-      const name = inteHandler(c, 'title="', '"', [0, 0, 0])
-      if (name) yy = yy ? yy + '，' + name : name  // 用中文逗号拼接多名演员
+    const castRe = /<a class="avatar-box"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g
+    let cm
+    while ((cm = castRe.exec(data)) !== null) {
+      const star = cm[1]
+      const inner = cm[2]
+      const avM = inner.match(/<img[^>]*src="([^"]+)"/)
+      const nmM = inner.match(/title="([^"]+)"/) || inner.match(/<span>([^<]+)<\/span>/)
+      const name = nmM ? nmM[1].trim() : ''
+      if (!name) continue
+      let avatar = avM ? avM[1] : ''
+      if (avatar && !avatar.startsWith('http')) avatar = baseUrl + avatar
+      cast.push({ name, gender: 'f', avatar, star })
+      yy = yy ? yy + '，' + name : name
+    }
+    // 兼容旧结构（无 avatar-waterfall 时仅取名字，无头像）
+    if (!cast.length) {
+      let castHtml = inteHandler(data, '<span class="header" style="cursor: pointer;">演員</span>', '</ul>', [0, 1, 0])
+      if (!castHtml) castHtml = inteHandler(data, '<span class="header">演員</span>', '</ul>', [0, 1, 0])
+      if (!castHtml) castHtml = inteHandler(data, '演員', '</ul>', [0, 1, 0])
+      castHtml = inteHandler(castHtml, '<li>', '</ul>', [0, 0, 0])
+      const castArr = castHtml.split('</li>')
+      castArr.pop()
+      for (const c of castArr) {
+        const name = inteHandler(c, 'title="', '"', [0, 0, 0])
+        if (name) { yy = yy ? yy + '，' + name : name; cast.push({ name, gender: 'f', avatar: '', star: '' }) }
+      }
     }
   }
 
@@ -268,7 +286,7 @@ async function scrapeJavBus(ph, type, opts = {}) {
     if (url && url.startsWith('http') && !previews.includes(url)) previews.push(url)
   }
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, duration, previews, source: 'JAVBUS' }
+  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, duration, previews, cast, source: 'JAVBUS' }
 }
 
 /**
@@ -379,16 +397,26 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 提取系列
   let xl = inteHandler(inteHandler(detail, '<strong>系列:</strong>', '</div>', [0, 0, 0]), '<span class="value">', '</span>', [0, 0, 1])
 
-  // 提取演员列表：JAVDB 用 ♀ 符号标识女性演员
+  // 提取演员列表（2026-09-14 适配新版 JAVDB）：
+  //   结构 <span class="value"><a class="actor-female" href="/actors/xxx">女优名</a>,
+  //        <a href="/actors/yyy">男优名</a>, ...</span>
+  //   女优带 class="actor-female"，无该 class 的按男优处理；逗号分隔（不再是 &nbsp;）。
+  //   兼容旧版 ♀/♂ 符号写法。yid 仍只存女优，兼容片库筛选与 actress 匹配。
   let yy = ''
+  const cast = []
   let castContainer = inteHandler(detail, '<strong>演員:</strong>', '</div>', [0, 0, 0])
   let castHtml = inteHandler(castContainer, '<span class="value">', '</span>', [0, 0, 0])
-  let castArr = castHtml.split('&nbsp;')  // 演员之间用 &nbsp; 分隔
-  castArr.pop()
-  for (const c of castArr) {
-    if (c.indexOf('♀') !== -1) {  // 只提取女性演员
-      let name = c.replace(/<[^>]+>/g, '').replace(/♀/g, '').trim()
-      if (name) yy = yy ? yy + '，' + name : name
+  if (castHtml) {
+    const aRe = /<a\b([^>]*)>([\s\S]*?)<\/a>/g
+    let am
+    while ((am = aRe.exec(castHtml)) !== null) {
+      const attrs = am[1]
+      const rawName = am[2].replace(/<[^>]+>/g, '').trim()
+      const name = rawName.replace(/[♀♂]/g, '').trim()
+      if (!name) continue
+      const female = /actor-female/.test(attrs) || rawName.indexOf('♀') !== -1
+      if (female) yy = yy ? yy + '，' + name : name
+      cast.push({ name, gender: female ? 'f' : 'm', avatar: '', star: '' })  // JAVDB 详情页无头像
     }
   }
 
@@ -448,7 +476,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
     if (scoreM) score = scoreM[1]
   }
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, duration, previews, want, watched, score, source: 'JAVDB' }
+  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, duration, previews, want, watched, score, cast, source: 'JAVDB' }
 }
 
 /**
@@ -575,6 +603,12 @@ async function scrapeMovie(ph, {
               for (const k of ['pm', 'fl', 'fxrq', 'dy', 'ps', 'fx', 'xl', 'yy', 'bq', 'cover', 'vr', 'duration']) {
                 if (!result[k] && jd[k]) result[k] = jd[k]
               }
+              // 演员合并（2026-09-14）：JAVBUS 结果为女优（含头像），JAVDB 补男优（无头像）
+              if (Array.isArray(jd.cast) && jd.cast.length) {
+                const names = new Set((result.cast || []).map(c => c.name))
+                const extra = jd.cast.filter(c => !names.has(c.name))
+                if (extra.length) result.cast = [...(result.cast || []), ...extra]
+              }
               // 预览图：JAVBUS 无样本图时用 JAVDB 的
               if (!(result.previews || []).length && (jd.previews || []).length) {
                 result.previews = jd.previews
@@ -603,6 +637,25 @@ async function scrapeMovie(ph, {
           } catch (e) {
             // 封面下载失败不影响其他数据
           }
+        }
+        // 下载演员头像（2026-09-14）：有远程头像 URL 的下载到 covers/actress/，
+        // 失败或本无头像则留空（前端按性别用默认剪影）
+        if (dataDir && Array.isArray(result.cast) && result.cast.length) {
+          const actDir = path.join(dataDir, coverDir || COVER_DIR, 'actress')
+          if (!fs.existsSync(actDir)) fs.mkdirSync(actDir, { recursive: true })
+          for (const c of result.cast) {
+            if (!c.avatar || !/^https?:/.test(c.avatar)) { c.avatar = ''; delete c.star; continue }
+            const sid = (String(c.star || '').match(/\/star\/([^/?#]+)/) || [])[1]
+            const aBase = sid || `${cleanPh}-${c.name}`
+            const aExt = c.avatar.match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
+            const rel = path.join(coverDir || COVER_DIR, 'actress', `${aBase}${aExt}`)
+            try {
+              await downloadImage(c.avatar, path.join(dataDir, rel), imgReferer, proxy)
+              c.avatar = rel.replace(/\\/g, '/')
+            } catch (e) { c.avatar = '' }
+            delete c.star
+          }
+          console.log(`[scrape] ${cleanPh} 演员: ${result.cast.map(c => c.name + '(' + c.gender + (c.avatar ? '+头像' : '') + ')').join(' ')}`)
         }
         // 下载预览图（2026-09-09 新增，按设置开关与数量上限）
         if (downloadPreviews && dataDir && Array.isArray(result.previews) && result.previews.length) {

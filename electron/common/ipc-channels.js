@@ -31,6 +31,8 @@ module.exports = {
   ACTRESS_CREATE: 'actress:create',
   ACTRESS_UPDATE: 'actress:update',
   ACTRESS_DELETE: 'actress:delete',
+  // 2026-09-14 演员头像：按演员名查询其出演影片 + 演员信息（男女通用）
+  ACTOR_FILMS: 'actor:films',
 
   // === 网址 ===
   WEBSITES_LIST: 'websites:list',

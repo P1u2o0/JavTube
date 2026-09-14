@@ -19,6 +19,7 @@ import History from '@/views/History.vue'
 import Actress from '@/views/Actress.vue'
 import Website from '@/views/Website.vue'
 import Detail from '@/views/Detail.vue'
+import ActorFilms from '@/views/ActorFilms.vue'
 
 // 路由表定义
 const routes = [
@@ -41,7 +42,10 @@ const routes = [
   { path: '/website', component: Website, meta: { title: '网址' } },
 
   // 影片详情 - 展示单部影片完整信息，:id 为路由参数，props: true 将参数作为 props 传入
-  { path: '/detail/:id', component: Detail, meta: { title: '详情' }, props: true }
+  { path: '/detail/:id', component: Detail, meta: { title: '详情' }, props: true },
+
+  // 演员影片页（2026-09-14）- 某演员出演的全部影片，:name 为演员名
+  { path: '/actor/:name', component: ActorFilms, meta: { title: '演员' }, props: true }
 ]
 
 // 创建路由实例，使用 Hash 模式（Electron 应用中避免文件协议路径冲突）

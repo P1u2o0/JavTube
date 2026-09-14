@@ -179,6 +179,13 @@ async function initDb(dataDir) {
   try { db.run("ALTER TABLE movies ADD COLUMN duration INTEGER DEFAULT 0") } catch {}
   try { db.run("ALTER TABLE movies ADD COLUMN play_count INTEGER DEFAULT 0") } catch {}
 
+  // 2026-09-14 新增（演员头像）：
+  //   cast_json — 影片演员列表 JSON：[{name,gender,avatar},...]
+  //               gender: 'f' 女优 / 'm' 男优；avatar 为本地相对路径（空则前端按性别用默认剪影）
+  try { db.run("ALTER TABLE movies ADD COLUMN cast_json TEXT") } catch {}
+  //   actress.gender — 女优/男优标记（'f' 默认 / 'm'），用于演员页与默认剪影选择
+  try { db.run("ALTER TABLE actress ADD COLUMN gender TEXT DEFAULT 'f'") } catch {}
+
   // 写入默认设置项（仅在不存在时插入）
   const defaults = [
     ['player_path',''],      // 自定义播放器路径
@@ -206,9 +213,11 @@ async function initDb(dataDir) {
     db.run(`INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)`, [k, v])
   }
 
-  // 创建封面图片存放目录
+  // 创建封面图片存放目录（含演员头像子目录 covers/actress，2026-09-14）
   const coversDir = path.join(dataDir, COVER_DIR)
   try { if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true }) } catch {}
+  const actressDir = path.join(coversDir, 'actress')
+  try { if (!fs.existsSync(actressDir)) fs.mkdirSync(actressDir, { recursive: true }) } catch {}
 
   // === 脏标记 + 定时持久化机制 ===
   // sql.js 的数据库在内存中操作，需要定期写盘。

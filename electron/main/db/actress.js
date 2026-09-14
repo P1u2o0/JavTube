@@ -89,6 +89,33 @@ function registerActressIpc(ipcMain, db) {
       persistSoon(db); return { ok: true } }
     catch (e) { return { ok: false, error: e.message } }
   })
+
+  // IPC: actor:films — 渲染进程 → 主进程（2026-09-14）
+  // 按演员名查询其出演的全部影片，并回传该演员的性别/头像与资料（男女通用）
+  ipcMain.handle(IPC.ACTOR_FILMS, (_e, name) => {
+    const nm = String(name || '').trim()
+    const empty = { name: nm, gender: 'f', avatar: '', info: null, movies: [] }
+    if (!nm) return { ok: true, data: empty }
+    try {
+      // 匹配：cast_json 精确名字（含男女演员）+ yid 四种位置（兼容未写 cast_json 的旧数据）
+      const like = `%"name":"${nm}"%`
+      const q = `SELECT * FROM movies
+        WHERE cast_json LIKE ? OR yid LIKE ? OR yid LIKE ? OR yid LIKE ? OR yid=?
+        ORDER BY fxrq DESC`
+      const movies = rows(db.exec(q, [like, `${nm}，%`, `%，${nm}，%`, `%，${nm}`, nm])[0])
+      // 从命中影片的 cast_json 取该演员的性别/头像（取第一条）
+      let gender = 'f', avatar = ''
+      for (const mv of movies) {
+        try {
+          const hit = (JSON.parse(mv.cast_json || '[]') || []).find(c => c.name === nm)
+          if (hit) { gender = hit.gender || 'f'; avatar = hit.avatar || ''; break }
+        } catch {}
+      }
+      // 演员资料（actress 表，用户维护）：身高/三围/生日等，无则留空
+      const info = firstRow(db.exec('SELECT * FROM actress WHERE name=?', [nm])[0]) || null
+      return { ok: true, data: { name: nm, gender, avatar, info, movies } }
+    } catch (e) { return { ok: false, error: e.message, data: empty } }
+  })
 }
 
 module.exports = { registerActressIpc }

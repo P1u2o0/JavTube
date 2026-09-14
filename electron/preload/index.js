@@ -142,6 +142,13 @@ contextBridge.exposeInMainWorld('api', {
    */
   deleteActress: (id) => ipcRenderer.invoke(IPC.ACTRESS_DELETE, id),
 
+  /**
+   * 按演员名查询其出演的全部影片 + 演员信息（性别/头像/资料）
+   * @param {string} name - 演员名
+   * @returns {Promise<{ok:boolean,data:{name,gender,avatar,info,movies}}>}
+   */
+  getActorFilms: (name) => ipcRenderer.invoke(IPC.ACTOR_FILMS, name),
+
   // === 网址相关接口 ===
 
   /**

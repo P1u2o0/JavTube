@@ -115,11 +115,19 @@
             <TagChip v-for="t in tags" :key="t" :label="t" @click="filterByTag(t)" />
           </div>
         </div>
-        <!-- 演员（可点击筛选） -->
-        <div class="info-line" v-if="actressList.length">
+        <!-- 演员：圆角方形头像 + 名字（♀女优在前 / ♂男优在后），点击进入该演员影片页 -->
+        <div class="info-line" v-if="castList.length">
           <span class="info-label">演员</span>
-          <div class="info-value tag-list">
-            <TagChip v-for="a in actressList" :key="a" :label="a" @click="filterByActress(a)" />
+          <div class="info-value cast-row">
+            <button v-for="c in castList" :key="c.name" class="cast-item" @click="goActor(c.name)"
+                    :title="c.name">
+              <div class="cast-avatar">
+                <img :src="castAvatar(c)" :alt="c.name" loading="lazy" />
+              </div>
+              <div class="cast-name">
+                <span class="cast-sex" :class="c.gender">{{ c.gender === 'm' ? '♂' : '♀' }}</span>{{ c.name }}
+              </div>
+            </button>
           </div>
         </div>
         </div>
@@ -344,6 +352,33 @@ const tags = computed(() => (m.value?.bq || '').split(/[，,]/).map(s => s.trim(
  * 计算属性：女优列表（按逗号分割 yid 字段）
  */
 const actressList = computed(() => (m.value?.yid || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+
+/**
+ * 演员列表（含性别与头像）：优先解析 cast_json；无则回退 yid 女优名。
+ * 排序完成后女优（f）在前、男优（m）在后。
+ * @returns {Array<{name:string, gender:string, avatar:string}>}
+ */
+const castList = computed(() => {
+  let list = []
+  const raw = m.value?.cast_json
+  if (raw) { try { list = JSON.parse(raw) || [] } catch { list = [] } }
+  if (!list.length) {
+    list = (m.value?.yid || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)
+      .map(name => ({ name, gender: 'f', avatar: '' }))
+  }
+  return [...list].sort((a, b) => (a.gender === 'm' ? 1 : 0) - (b.gender === 'm' ? 1 : 0))
+})
+
+/** 演员头像 URL：有本地头像走封面协议，否则按性别用默认剪影 */
+function castAvatar(c) {
+  if (c.avatar) return resolveCover(c.avatar)
+  return c.gender === 'm' ? '/actor-male.svg' : '/actor-female.svg'
+}
+
+/** 跳转该演员的影片列表页 */
+function goActor(name) {
+  if (name) router.push(`/actor/${encodeURIComponent(name)}`)
+}
 
 /**
  * 计算属性：导演列表（按逗号分割 dy 字段）
@@ -829,4 +864,29 @@ onMounted(async () => {
 
 /* 标签列表：自动换行排列（TagChip 自带外边距） */
 .tag-list { white-space: normal; display: flex; flex-wrap: wrap; }
+/* ====== 演员头像卡片：圆角方形头像 + 性别符号 + 名字（可点击） ====== */
+.cast-row { display: flex; flex-wrap: wrap; gap: 10px 8px; }
+.cast-item {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  width: 62px; padding: 0; border: none; background: transparent; cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.cast-item:hover { transform: translateY(-2px); }
+.cast-item:active { transform: scale(0.94); }
+.cast-avatar {
+  width: 56px; height: 56px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.cast-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cast-name {
+  max-width: 62px;
+  font-size: var(--fs-sm); color: var(--text-2); line-height: 1.3; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 性别符号：♀ 朱柿红 / ♂ 柔蓝 */
+.cast-sex { font-weight: 700; margin-right: 2px; color: var(--accent); }
+.cast-sex.m { color: #3d7ebf; }
 </style>
