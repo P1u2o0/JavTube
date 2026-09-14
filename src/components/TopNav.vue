@@ -225,11 +225,12 @@ function onSearch() {
   background: var(--primary); border-radius: 3px 3px 0 0;
 }
 /* 右侧区域容器 */
-.right { display: flex; align-items: center; gap: 10px; }
+.right { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
 /* 搜索框容器：胶囊形 */
 .search-box {
   display: flex; align-items: center;
-  width: 260px; height: 38px;
+  /* 弹性宽度：窗口宽时 260px，窗口收窄时自动缩小（最小 150px） */
+  flex: 1 1 220px; min-width: 150px; max-width: 260px; height: 38px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   overflow: hidden;
@@ -270,6 +271,14 @@ function onSearch() {
 }
 .add-btn:hover { background: var(--primary-hover); }
 .add-btn:active { transform: scale(0.97); }
+/* 窄窗口适配（Electron 最小宽 1000px）：收紧间距，避免顶栏挤压 */
+@media (max-width: 1200px) {
+  .left { gap: 18px; }
+  .tab { padding: 0 8px; font-size: 13px; }
+  .right { gap: 8px; }
+  .add-btn { padding: 0 12px; }
+}
+
 /* 设置按钮：圆形描边 */
 /* ====== 刮削进度铃铛 ====== */
 .bell-wrap { position: relative; }
