@@ -397,11 +397,10 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 提取系列
   let xl = inteHandler(inteHandler(detail, '<strong>系列:</strong>', '</div>', [0, 0, 0]), '<span class="value">', '</span>', [0, 0, 1])
 
-  // 提取演员列表（2026-09-14 适配新版 JAVDB）：
-  //   结构 <span class="value"><a class="actor-female" href="/actors/xxx">女优名</a>,
-  //        <a href="/actors/yyy">男优名</a>, ...</span>
-  //   女优带 class="actor-female"，无该 class 的按男优处理；逗号分隔（不再是 &nbsp;）。
-  //   兼容旧版 ♀/♂ 符号写法。yid 仍只存女优，兼容片库筛选与 actress 匹配。
+  // 提取演员列表（2026-09-14，仅女优）：
+  //   新版 JAVDB 结构 <span class="value"><a class="actor-female" href="/actors/xxx">女优名</a>,
+  //   <a href="/actors/yyy">男优名</a>, ...</span>：女优带 class="actor-female"，
+  //   其余为男优（本次需求不做男优，直接跳过）；兼容旧版 ♀ 符号写法。
   let yy = ''
   const cast = []
   let castContainer = inteHandler(detail, '<strong>演員:</strong>', '</div>', [0, 0, 0])
@@ -415,8 +414,9 @@ async function scrapeJavDb(ph, type, opts = {}) {
       const name = rawName.replace(/[♀♂]/g, '').trim()
       if (!name) continue
       const female = /actor-female/.test(attrs) || rawName.indexOf('♀') !== -1
-      if (female) yy = yy ? yy + '，' + name : name
-      cast.push({ name, gender: female ? 'f' : 'm', avatar: '', star: '' })  // JAVDB 详情页无头像
+      if (!female) continue   // 仅女优
+      yy = yy ? yy + '，' + name : name
+      cast.push({ name, gender: 'f', avatar: '', star: '' })  // JAVDB 详情页无头像
     }
   }
 
@@ -602,12 +602,6 @@ async function scrapeMovie(ph, {
               // 标量字段兜底：仅填补 JAVBUS 结果中的空值
               for (const k of ['pm', 'fl', 'fxrq', 'dy', 'ps', 'fx', 'xl', 'yy', 'bq', 'cover', 'vr', 'duration']) {
                 if (!result[k] && jd[k]) result[k] = jd[k]
-              }
-              // 演员合并（2026-09-14）：JAVBUS 结果为女优（含头像），JAVDB 补男优（无头像）
-              if (Array.isArray(jd.cast) && jd.cast.length) {
-                const names = new Set((result.cast || []).map(c => c.name))
-                const extra = jd.cast.filter(c => !names.has(c.name))
-                if (extra.length) result.cast = [...(result.cast || []), ...extra]
               }
               // 预览图：JAVBUS 无样本图时用 JAVDB 的
               if (!(result.previews || []).length && (jd.previews || []).length) {
