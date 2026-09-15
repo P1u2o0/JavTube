@@ -144,6 +144,15 @@ function createWindow() {
       minWidth: 1000,     // 窗口最小宽度
       minHeight: 700,     // 窗口最小高度
       title: APP_TITLE,   // 窗口标题
+      // 标题栏与顶栏统一为白色（2026-09-15）：
+      //   hidden 隐藏系统原生标题栏；titleBarOverlay 绘制白色覆盖层，
+      //   右上角保留最小化/最大化/关闭（符号用墨黑），高度与 TopNav 一致
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#ffffff',        // 底色：与 TopNav 的 --surface 白一致
+        symbolColor: '#22211f',  // 按钮符号：墨黑（--text）
+        height: 60               // 与 .topnav 高度一致
+      },
       backgroundColor: '#fafafa', // 背景色，避免加载白屏
       autoHideMenuBar: true,      // 自动隐藏菜单栏
       show: true,         // 窗口创建后立即显示

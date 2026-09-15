@@ -56,6 +56,29 @@ onMounted(async () => {
   // 加载设置、标签分类、影片列表
   // 调用 Store 的初始化方法，按需加载应用数据
   await store.initIfNeeded()
+
+  // 窗口打开/页面加载后，浏览器会自动聚焦首个可聚焦元素（顶部导航的「首页」），
+  // 触发 :focus-visible 描边（按钮外一圈深色方框，需点别处才消失）。
+  // 这里清除该「程序性初始焦点」；一旦用户已交互则不再干预（键盘 Tab 导航照常显示焦点环）。
+  let userInteracted = false
+  const markInteracted = () => { userInteracted = true }
+  window.addEventListener('pointerdown', markInteracted, { once: true })
+  window.addEventListener('keydown', markInteracted, { once: true })
+
+  // 初始阶段（用户尚未交互）出现的任何焦点一律清除 ——
+  // 这样无论自动聚焦发生在 rAF / load / 重载后的哪一帧，都能被拦住。
+  // 用户一旦交互（点击/按键），本逻辑即失效，键盘导航的焦点环恢复常态。
+  window.addEventListener('focusin', (e) => {
+    if (userInteracted) return
+    const el = e.target
+    if (el instanceof HTMLElement && el !== document.body) el.blur()
+  })
+  window.addEventListener('focus', () => {
+    // 窗口重新获得焦点时同样处理（切回应用时可能带出聚焦态）
+    if (userInteracted) return
+    const el = document.activeElement
+    if (el instanceof HTMLElement && el !== document.body) el.blur()
+  })
 })
 </script>
 

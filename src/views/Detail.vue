@@ -33,7 +33,7 @@
         <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
         <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
-            <AppIcon name="play" :size="18" />
+            <AppIcon name="play" :size="24" />
           </button>
         </div>
       </div>
@@ -638,9 +638,9 @@ onMounted(async () => {
 }
 .main-hover.playable { cursor: pointer; }
 .main-image:hover .main-hover.playable { opacity: 1; pointer-events: auto; }
-/* 播放按钮：圆形白底墨黑图标（复刻片库卡片 .play-btn） */
+/* 播放按钮：圆形白底墨黑图标（详情页海报区更大，按钮相应放大） */
 .play-btn {
-  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
+  width: 56px; height: 56px;
   border: none; border-radius: 50%;
   background: rgba(255, 255, 255, 0.94);
   color: var(--primary);

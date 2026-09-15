@@ -194,11 +194,21 @@ function onSearch() {
 /* 顶部导航栏主体：左右两端对齐，底部分隔发丝线 */
 .topnav {
   display: flex; align-items: stretch; justify-content: space-between;
-  padding: 0 20px;
+  /* 右侧 158px 给窗口按钮区（最小化/最大化/关闭）让位，避免内容被覆盖 */
+  padding: 0 158px 0 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   height: 60px;
   flex-shrink: 0;
+  /* 顶栏可拖拽移动窗口（子交互元素需 no-drag，否则点不动） */
+  -webkit-app-region: drag;
+}
+/* 所有可交互元素排除拖拽：否则点击/悬停被拖拽区吞掉 */
+.topnav button, .topnav a, .topnav input,
+.topnav .tab, .topnav .logo, .topnav .search-box,
+.topnav .search-btn, .topnav .add-btn,
+.topnav .bell-btn, .topnav .settings-btn, .topnav .bell-wrap {
+  -webkit-app-region: no-drag;
 }
 /* 左侧区域容器 */
 .left { display: flex; align-items: center; gap: 28px; }
