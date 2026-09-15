@@ -11,7 +11,7 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **181 个 commit**（`git rev-list --count HEAD` 实时为准；纯文档提交会使该数字继续递增），工作区 clean，无 git 远端。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **181 个 commit**（`git rev-list --count HEAD` 实时为准；纯文档提交会使该数字继续递增），工作区 clean；远端 `origin` → https://github.com/P1u2o0/javtube.git（**公开仓库 · MIT**）。
 
 ---
 
@@ -20,11 +20,12 @@
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，181 commit（实时值为准），工作区 clean，**无远端**（用户决定不用代码托管） |
+| git | `main` 分支，183 commit（实时值为准），工作区 clean，远端 `origin` = https://github.com/P1u2o0/javtube.git（**公开 · MIT**） |
+| 提交身份 | `P1u2o0 <<邮箱>>`（**仓库级** user.name/user.email；全局仍是 `WorkBuddy` 占位，别混用） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
 | dev 服务 | 需手动启动（`npm run dev`，见下）；2026-09-15 收尾时软件窗口已关闭 |
 | 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
-| 离线备份 | 工作区上级 `javtube_backup_20260915_post_b5b7.bundle`（git bundle 全历史，含到 B7/B5）+ `javtube_src_backup_20260915_post_b5b7.tar.gz`；另存 B5/B7 开工前的回滚点 `*_20260915_pre_b5b7.bundle` |
+| 离线备份 | 工作区上级 `javtube_backup_20260915_post_b5b7.bundle`（git bundle 全历史，含到 B7/B5）+ `javtube_src_backup_20260915_post_b5b7.tar.gz`；另存 B5/B7 开工前的回滚点 `*_20260915_pre_b5b7.bundle` |；**发布前回滚点** `javtube_backup_20260915_pre_rewrite.bundle`（改写历史前的完整旧历史）
 | 测试数据 | 2 部影片（SSNI-888 / MNGS-067），含封面与预览图 |
 
 ### ⚠️ 启动前必读：清掉 `ELECTRON_RUN_AS_NODE`
@@ -54,6 +55,8 @@ for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 # 打包 Win 安装包
 npm run build:win
 # GPU 驱动异常降级调试
+# git 推送走本机代理（直连 GitHub 会超时；仓库级配置，仅本仓库生效）
+git config http.proxy http://<代理地址> && git config https.proxy http://<代理地址>
 set JAVTUBE_DISABLE_GPU=1 && npm run dev
 ```
 
@@ -161,7 +164,7 @@ javtube_dev/
 3. **主色朱柿红 #d2401e**、暖纸白 + 墨黑主题、字体 Outfit 拉丁 + Noto Sans SC 中文
 4. **Tab 分隔符用中文逗号「，」**（标签字段约定）
 5. **数据库是 sql.js 不是 better-sqlite3**：SQL 全走主进程异步 IPC
-6. **文档中不出现任何"代码托管/远端仓库"措辞**（用户 9/8 决策，git 远端已删）
+6. **项目已公开**（GitHub `P1u2o0/javtube`，MIT）：文档可正常提及远端地址；但**内部审计 / 性能计划类文档不入库** —— `docs/` 已写进 `.gitignore` 并从全部历史清除，新增内部文档放 `docs/` 即自动忽略；提交信息与文档中不得出现账号、token、Cookie 等凭据
 
 ---
 
