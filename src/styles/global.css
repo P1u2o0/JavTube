@@ -126,7 +126,6 @@
   --overlay-hover: rgba(29, 28, 26, 0.42);        /* 卡片悬停遮罩 */
   --overlay-badge: rgba(29, 28, 26, 0.62);        /* 角标底 */
   --overlay-strong: rgba(29, 28, 26, 0.7);        /* 深角标底 */
-  --overlay-backdrop: rgba(22, 21, 19, 0.88);     /* 灯箱背板 */
   --overlay-glass: rgba(255, 255, 255, 0.14);     /* 灯箱玻璃钮底 */
   --overlay-glass-hover: rgba(255, 255, 255, 0.26);/* 灯箱玻璃钮 hover */
   --shade-strong: rgba(22, 21, 19, 0.72);         /* 卡片底部遮罩（深） */
