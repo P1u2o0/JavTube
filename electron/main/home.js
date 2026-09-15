@@ -75,6 +75,17 @@ function registerHomeIpc(ipcMain, db) {
          FROM movies`
       )[0])
 
+      // === 预处理：把每部影片的多值字段（标签/系列/女优）预先拆好缓存 ===
+      // 原实现对同一字段反复 splitMulti：hitInterest 被调 2n 次、categories
+      // 又对每个候选标签各扫一遍全表，合计约 12n 次字符串拆分 —— 库大时首页明显变慢。
+      // 这里一次性拆好，后续全部复用。
+      const prepared = all.map(m => ({
+        m,
+        tags: splitMulti(m.bq),
+        series: splitMulti(m.xl),
+        actresses: splitMulti(m.yid)
+      }))
+
       // === 近期观看：按播放时间倒序取最近 N 部 ===
       const recent = all
         .filter(m => m.play_time)
@@ -92,11 +103,11 @@ function registerHomeIpc(ipcMain, db) {
         for (const a of splitMulti(m.yid)) actressSet.add(a)
       }
 
-      // 影片是否与画像有交集（任一类匹配即算）
-      const hitInterest = (m) => {
-        if (splitMulti(m.bq).some(t => tagFreq.has(t))) return true
-        if (splitMulti(m.xl).some(s => seriesSet.has(s))) return true
-        if (splitMulti(m.yid).some(a => actressSet.has(a))) return true
+      // 影片是否与画像有交集（任一类匹配即算）—— 复用预处理结果，不再重复 split
+      const hitInterest = (p) => {
+        if (p.tags.some(t => tagFreq.has(t))) return true
+        if (p.series.some(s => seriesSet.has(s))) return true
+        if (p.actresses.some(a => actressSet.has(a))) return true
         return false
       }
 
@@ -107,7 +118,7 @@ function registerHomeIpc(ipcMain, db) {
         // 首选：同类且未近期观看；为空时逐级兜底，避免「库很小且全部看过」
         // 时轮播整块消失（2026-09-14 修复）：
         //   ① 未近期观看的全部影片 ② 全部影片（保底仍有轮播）
-        let pool = all.filter(m => !recentIds.has(m.id) && hitInterest(m))
+        let pool = prepared.filter(p => !recentIds.has(p.m.id) && hitInterest(p)).map(p => p.m)
         if (!pool.length) pool = all.filter(m => !recentIds.has(m.id))
         if (!pool.length) pool = all.slice()
         heroCache = sample(pool, HERO_COUNT)
@@ -117,8 +128,8 @@ function registerHomeIpc(ipcMain, db) {
       // === 绿区：全库标签按出现频率取前 5（不基于用户画像），优先 4 字以内；
       //          每个类别随机挑一部有封面的影片作背景图（单张）===
       const allTagFreq = new Map()
-      for (const m of all) {
-        for (const t of splitMulti(m.bq)) {
+      for (const p of prepared) {
+        for (const t of p.tags) {
           allTagFreq.set(t, (allTagFreq.get(t) || 0) + 1)
         }
       }
@@ -126,9 +137,21 @@ function registerHomeIpc(ipcMain, db) {
         .filter(([t]) => t.length <= 4)   // 4 字以内（标签名用于卡片显示）
         .sort((a, b) => b[1] - a[1])
         .slice(0, CATEGORY_COUNT)
+      // 一次遍历同时收集「每个候选标签下、有封面的影片」
+      // （原实现是 topTags.map 里对每个标签再 all.filter 一遍 → 5n 次 split + 遍历）
+      const topTagSet = new Set(topTags.map(([t]) => t))
+      const tagMembers = new Map()
+      for (const p of prepared) {
+        if (!p.m.cover) continue
+        for (const t of p.tags) {
+          if (!topTagSet.has(t)) continue
+          let list = tagMembers.get(t)
+          if (!list) { list = []; tagMembers.set(t, list) }
+          list.push(p.m)
+        }
+      }
       const categories = topTags.map(([tag, count]) => {
-        const members = all.filter(m => splitMulti(m.bq).includes(tag) && m.cover)
-        const bg = sample(members, 1)[0]   // 随机一部有封面的作背景
+        const bg = sample(tagMembers.get(tag) || [], 1)[0]   // 随机一部有封面的作背景
         return {
           tag,
           count,
@@ -140,8 +163,9 @@ function registerHomeIpc(ipcMain, db) {
       // 不足 8 部时用「其余影片按添加时间倒序」补足——避免库较小时该区域空白
       // （语义仍是「近期上新」，补足项即最新添加的影片）
       // 不足 8 部时按实际数量返回，首页留出空位（不补足无关影片）
-      const arrivals = all
-        .filter(m => !hitInterest(m))
+      const arrivals = prepared
+        .filter(p => !hitInterest(p))
+        .map(p => p.m)
         .sort((a, b) => String(b.tjrq || '').localeCompare(String(a.tjrq || '')))
         .slice(0, ARRIVAL_COUNT)
 
