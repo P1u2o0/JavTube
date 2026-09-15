@@ -132,14 +132,15 @@ function slotStyle(i, ph = false) {
   const depth = abs === 0 ? 0 : abs === 1 ? 180 : 320
   const x     = off ? sign * 900 : (abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480))
   const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
-  const opacity = off ? 0 : (abs === 0 ? 1 : abs === 1 ? 0.75 : 0.4)
+  // 两侧弱化不再用「海报透明」，改用「纯白遮罩」（海报本体保持不透明）
+  const veil = abs === 0 ? 0 : abs === 1 ? 0.5 : 0.74
   return {
     // 两侧不倾斜（无 rotateY）：仅水平位移 + 纵深后撤 + 缩放
     // perspective() 内联进 transform，避免父级 perspective+overflow 压平 3D
     transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
-    opacity: ph ? opacity * 0.85 : opacity,
+    opacity: off ? 0 : 1,          // 本体不透明：只移出屏外时隐藏
     zIndex: 10 - abs - (ph ? 1 : 0),
-    '--shade': off ? 1 : (abs === 0 ? 0 : abs === 1 ? 0.35 : 0.6),   // 遮罩强度
+    '--shade': off ? 0 : (ph ? veil + 0.1 : veil),   // 白色遮罩强度（中心 0，越外越白）
     pointerEvents: ph || off ? 'none' : undefined
   }
 }
@@ -245,11 +246,12 @@ onBeforeUnmount(stopTimer)
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .slot img:hover { transform: translateY(-3px); }
-/* 立体遮罩：非中心海报盖暗角渐变，强化前后纵深；中心时透明（--shade=0） */
+/* 白色遮罩：非中心海报盖纯白半透明层（替代原透明弱化 + 暗角），
+   越靠外越白，与暖纸白底色自然衔接；中心时完全透明（--shade=0） */
 .shade {
   position: absolute; inset: 0;
   border-radius: var(--r-md);
-  background: linear-gradient(135deg, rgba(22, 21, 19, 0.04) 0%, var(--overlay-badge) 100%);
+  background: #ffffff;
   opacity: var(--shade, 0);
   transition: opacity 300ms var(--ease-out);
   pointer-events: none;
