@@ -25,7 +25,8 @@
         <div class="flow">
           <!-- 所有海报常驻 DOM（无进出场），切换仅改内联 style → CSS transition 必然触发 -->
           <div class="stage">
-            <div v-for="(m, i) in hero" :key="m.id" class="slot" :style="slotStyle(i)">
+            <div v-for="(m, i) in hero" :key="m.id" class="slot"
+                 :ref="el => { if (el) slotEls[i] = el }" :style="slotStyle(i)">
               <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
               <div class="shade"></div>
             </div>
@@ -134,14 +135,11 @@ function slotStyle(i, ph = false) {
   const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
   // 两侧弱化不用「半透明」，而用「纯白遮罩」（海报本体保持实色）
   const veil = abs === 0 ? 0 : abs === 1 ? 0.5 : 0.74
-  // 极小幅度的透明度梯度（0.94 / 0.88）：只为切换瞬间提供淡入淡出手感，
-  // 幅度小到静止时读不出"半透明"，视觉上的弱化仍全部由白遮罩承担
-  const fade = abs === 0 ? 1 : abs === 1 ? 0.94 : 0.88
   return {
     // 两侧不倾斜（无 rotateY）：仅水平位移 + 纵深后撤 + 缩放
     // perspective() 内联进 transform，避免父级 perspective+overflow 压平 3D
     transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
-    opacity: off ? 0 : (ph ? fade * 0.96 : fade),
+    opacity: off ? 0 : 1,          // 静止态一律不透明；淡入淡出由切换时的 WAAPI 动画负责
     zIndex: 10 - abs - (ph ? 1 : 0),
     '--shade': off ? 0 : (ph ? veil + 0.1 : veil),   // 白色遮罩强度（中心 0，越外越白）
     pointerEvents: ph || off ? 'none' : undefined
@@ -163,20 +161,42 @@ async function load() {
   }
 }
 
+/** 轮播槽位 DOM 引用（常驻 DOM，索引与 hero 对应） */
+const slotEls = []
+
+/**
+ * 切换瞬间给「进入中心」的海报播一段淡入（WAAPI）。
+ * 为什么用 WAAPI 而不是常驻 CSS opacity：
+ *   - 常驻透明度会让两侧海报长期处于半透明态（与「用白遮罩弱化」的诉求冲突）
+ *   - WAAPI 只在切换瞬间叠加一段动画，播放结束自动回落到内联 opacity:1，
+ *     静止态完全不透明，白遮罩仍是唯一的弱化手段
+ * 时长 360ms、强 ease-out：起步快、收尾稳，丝滑且不拖沓。
+ */
+function playCenterFadeIn(idx) {
+  const el = slotEls[idx]
+  if (!el?.animate) return
+  el.animate(
+    [{ opacity: 0.22 }, { opacity: 1 }],
+    { duration: 360, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+  )
+}
+
 /** 切换轮播（dir=1 下一部 / -1 上一部；夹在有效范围内，不循环留空） */
 function step(dir) {
   const next = active.value + dir
   if (next < 0 || next >= hero.value.length) return   // 到边界即停（无影片处不循环）
   active.value = next
+  playCenterFadeIn(next)
 }
 
 /** 跳到指定轮播项 */
-function go(i) { active.value = i }
+function go(i) { active.value = i; playCenterFadeIn(i) }
 
 /** 点击槽位：当前（中心）海报进详情，其他海报移到中心 */
 function onSlotClick(i) {
   if (i === active.value) return goDetail(hero.value[i])
   active.value = i
+  playCenterFadeIn(i)
 }
 
 /** 打开影片详情 */
@@ -237,10 +257,8 @@ onBeforeUnmount(stopTimer)
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;
-  /* 位移 480ms 走完整段；透明度 240ms 稍滞后 60ms 起步 ——
-     切换时先"滑过去"、再"渐显"，既丝滑又不会拖成长淡出 */
-  transition: transform 480ms var(--ease-in-out),
-              opacity 240ms var(--ease-out) 60ms;
+  /* 位移 480ms（自然加减速）；淡入淡出由切换时的 WAAPI 动画负责 */
+  transition: transform 480ms var(--ease-in-out);
   will-change: transform, opacity;
 }
 .slot img {
