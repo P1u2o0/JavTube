@@ -11,7 +11,7 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **180 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **181 个 commit**（`git rev-list --count HEAD` 实时为准；纯文档提交会使该数字继续递增），工作区 clean，无 git 远端。
 
 ---
 
@@ -20,7 +20,7 @@
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，180 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
+| git | `main` 分支，181 commit（实时值为准），工作区 clean，**无远端**（用户决定不用代码托管） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
 | dev 服务 | 需手动启动（`npm run dev`，见下）；2026-09-15 收尾时软件窗口已关闭 |
 | 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
@@ -170,7 +170,7 @@ javtube_dev/
 > 完整明细见 `接续工作小结.md` §1.x（每批次对应 commit 与理由）。
 
 - **9/15｜代码审查（屎山梳理）→ 执行优化批次 B1~B7，全部完成**（审查报告见 commit `a219a80`：
-  3 硬缺陷 + 20 性能热点 + 16 处重复/死代码；B 系列逐批提交、逐批实测，收尾工作区 clean / 180 commit）——
+  3 硬缺陷 + 20 性能热点 + 16 处重复/死代码；B 系列逐批提交、逐批实测，收尾工作区 clean / 181 commit）——
   - **B1 硬缺陷**：`Library.vue` router 未定义（点结果页标题条「×」即抛 ReferenceError）→ 补 `useRouter`；
     preload 缺 `playMovie`（演员页点播放静默失效，异常被 safeCall 吞掉）→ 补别名；
     `db/settings.js` 备份时序错误（`persistSoon` 是延迟落盘，紧接着 `copyFileSync` 拷到的仍是旧库）→ 改同步 `persist(db)` 后再拷
