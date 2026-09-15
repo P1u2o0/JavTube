@@ -741,8 +741,11 @@ onMounted(async () => {
   line-height: 1.7;
   word-break: break-all;
 }
-/* 标签列表：自动换行排列，chip 与行内文字垂直居中 */
-.tag-list { white-space: normal; display: flex; flex-wrap: wrap; align-items: center; }
+/* 标签列表：自动换行排列，chip 与行内文字垂直居中。
+   TagChip 自带 3px 上下外边距，会让标签行盒比纯文字行"虚高"，
+   导致该行与相邻行的视觉间距比其他行大 6px；这里用负 margin 抵消，
+   使标签单行/多行时的行间距都与其他信息行严格相同。 */
+.tag-list { white-space: normal; display: flex; flex-wrap: wrap; align-items: center; margin: -3px 0; }
 .preview-strip {
   margin-top: 16px;
   display: flex; align-items: center; gap: 8px;
@@ -836,6 +839,4 @@ onMounted(async () => {
   pointer-events: none;
 }
 
-/* 标签列表：自动换行排列（TagChip 自带外边距） */
-.tag-list { white-space: normal; display: flex; flex-wrap: wrap; align-items: center; }
 </style>
