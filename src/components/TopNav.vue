@@ -198,7 +198,7 @@ function onSearch() {
   padding: 0 158px 0 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  height: 60px;
+  height: 48px;
   flex-shrink: 0;
   /* 顶栏可拖拽移动窗口（子交互元素需 no-drag，否则点不动） */
   -webkit-app-region: drag;

@@ -151,7 +151,7 @@ function createWindow() {
       titleBarOverlay: {
         color: '#ffffff',        // 底色：与 TopNav 的 --surface 白一致
         symbolColor: '#22211f',  // 按钮符号：墨黑（--text）
-        height: 60               // 与 .topnav 高度一致
+        height: 48               // 与 .topnav 高度一致
       },
       backgroundColor: '#fafafa', // 背景色，避免加载白屏
       autoHideMenuBar: true,      // 自动隐藏菜单栏
