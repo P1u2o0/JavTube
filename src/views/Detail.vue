@@ -157,10 +157,6 @@
     <Teleport to="body">
       <transition name="lb-fade">
         <div v-if="lightboxShow" class="lightbox" @click.self="closeLightbox" @wheel.prevent="onWheel">
-          <!-- 关闭按钮（右上角） -->
-          <button class="lb-close" aria-label="关闭" @click="closeLightbox">
-            <AppIcon name="close" :size="20" />
-          </button>
           <!-- 左右切换按钮 -->
           <button class="lb-arrow lb-prev" aria-label="上一张" @click.stop="stepLightbox(-1)">
             <AppIcon name="back" :size="22" />
@@ -780,19 +776,6 @@ onMounted(async () => {
   transition: transform var(--dur-fast) var(--ease-out);
   cursor: grab;
 }
-/* 关闭按钮：右上角半透明圆钮 */
-.lb-close {
-  position: absolute; top: 20px; right: 24px;
-  width: var(--icon-btn-lg); height: var(--icon-btn-lg);
-  border: none; border-radius: 50%;
-  background: var(--overlay-glass);
-  color: rgba(255, 255, 255, 0.9);
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: background var(--dur-fast) ease;
-}
-.lb-close:hover { background: var(--overlay-glass-hover); }
-.lb-close:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 /* 左右切换按钮：两侧居中半透明圆钮，hover 放大 */
 .lb-arrow {
   position: absolute; top: 50%;
