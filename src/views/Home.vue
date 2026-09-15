@@ -258,6 +258,11 @@ onBeforeUnmount(stopTimer)
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;
+  /* 圆角 + 裁剪 + 阴影统一在槽位层：图片与白色遮罩都被裁到同一圆角，
+     消除二者边缘的亚像素缝隙（此前遮罩顶部会漏出一条线） */
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--sh-3);
   /* 位移 420ms + iOS 抽屉曲线（起步快、中段顺、收尾缓）：
      之前的 --ease-in-out（0.77,0,0.175,1）前 20% 几乎不动，跟手轮播用它会明显迟滞 */
   transition: transform 420ms var(--ease-drawer);
@@ -265,12 +270,11 @@ onBeforeUnmount(stopTimer)
 }
 .slot img {
   width: 100%; height: 100%; object-fit: cover; display: block;
-  border-radius: var(--r-md);
-  box-shadow: var(--sh-3);
+  /* 圆角与阴影已上移到 .slot（统一裁剪，避免与遮罩之间出现缝隙） */
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out);
 }
-.slot img:hover { transform: translateY(-3px); }
+/* 注：轮播海报不做 hover 位移 —— 海报本身在滑动，再叠加 translateY 会显得跳动，
+   且在自动轮播时鼠标与海报的相对位置不断变化，会反复触发/取消 hover 造成顿挫 */
 /* 白色遮罩：非中心海报盖纯白半透明层（替代原透明弱化 + 暗角），
    越靠外越白，与暖纸白底色自然衔接；中心时完全透明（--shade=0） */
 .shade {
