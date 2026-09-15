@@ -97,9 +97,12 @@ onMounted(async () => {
     const next = hasVisibleOverlay()
     if (next === titleBarDimmed) return                     // 状态未变则跳过，避免频繁 IPC
     titleBarDimmed = next
+    // 遮罩态用 EP 遮罩同值同材质（--el-overlay-color-lighter = #00000080，半透明黑）：
+    // 之前写不透明墨黑 #1d1c1a，视觉上是一块死黑，与页面遮罩（半透明、内容隐约可见）对不上。
+    // 半透明色会与窗口底色叠加，观感与页面遮罩保持一致。
     window.api?.setTitleBarOverlay?.(next
-      ? { color: '#1d1c1a', symbolColor: '#ffffff' }        // 遮罩态：墨黑底 + 白符号
-      : { color: '#ffffff', symbolColor: '#22211f' })       // 常态：白底 + 墨黑符号（与顶栏一致）
+      ? { color: 'rgba(0, 0, 0, 0.5)', symbolColor: '#ffffff' }   // 遮罩态：半透明黑 + 白符号
+      : { color: '#ffffff', symbolColor: '#22211f' })             // 常态：白底 + 墨黑符号（与顶栏一致）
   }
   // 先同步一次，确保初始态为「白底墨符号」
   syncTitleBar()
