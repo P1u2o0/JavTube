@@ -28,22 +28,32 @@ const WEB_SOURCES = [
   { id: 4, name: 'AVSOX', url: 'https://avsox.click/cn' }
 ]
 
+// 欧美分类路径缓存（首次抓取后复用；见 scrapeJavBus 中 type==='欧美' 分支）
+let omPathCache = ''
+
 // 繁体→简体字符映射表 (从 AS3 源码移植)
 // TW_STR 和 CN_STR 中的字符一一对应，用于将繁体中文转换为简体中文
 const TW_STR = '嘔觸蠻橫嬌處軌癢運動爛殘畫惡劇學姦雙騷擾戀癡侶亂倫藝獵豔組優総編時間謝訪問焼専專縦雑誌幫員亞講師鬥檢臉兒書輕車婦醫種職業賽場親蕩務遊戲級裝戰襪著貓緊體圍連褲識喪傭鏡蘿變無條貧為顏騎糞陰語飲濫槍宮頸輪異鴨腸監藥愛縛陽類別給觀眾屬價複質視紹馬賽經數國進稱攝餘寫獨製單爐門轉機薦頻設項係驗懺軟養換湯診貞鏈預覽圖實溫窺隸曬樂誼賦幹紋絕頂純歷濕護禮儀飛漢隊媽絲過飾莖腳兩約會後綁戶調脫導釘環輔鉤蠟燭碼綜選電紀錄險擬懸鍾與開奧龜紅訕捲髮緻紗膚漁網氣標題長發懷舊週暢銷騙綠採訪聞態對繪聖誕萬聖節歐頭藍個豐滿線勻翹號達傳臥側擴張疊帶膠襯點灘辦庫廳廚獄園圖館尋歡維繼閨續潤劑褻'
 const CN_STR = '呕触蛮横娇处轨痒运动烂残画恶剧学奸双骚扰恋痴侣乱伦术猎艳组优总编时间谢访问烧专专纵杂志帮员亚讲师斗检脸儿书轻车妇医种职业赛场亲荡务游戏级装战袜着猫紧体围连裤识丧佣镜萝变无条贫为颜骑粪阴语饮滥枪宫颈轮异鸭肠监药爱缚阳类别给观众属价复质视绍马赛经数国进称摄余写独制单炉门转机荐频设项系验忏软养换汤诊贞链预览图实温窥隶晒乐谊赋干纹绝顶纯历湿护礼仪飞汉队妈丝过饰茎脚两约会后绑户调脱导钉环辅钩蜡烛码综选电纪录险拟悬钟与开奥龟红讪卷发致纱肤鱼网气标题长发怀旧周畅销骗绿采访闻态对绘圣诞万圣节欧头蓝个丰满线匀翘号达传卧侧扩张叠带胶衬点滩办库厅厨狱园图馆寻欢维继闺续润剂亵'
 
+// 繁→简查找表（模块加载时构建一次）。
+// 原实现在 twToCn 里对每个字符执行 TW_STR.indexOf(ch) —— TW_STR 约 450 字，
+// 等于每次转换都做全表扫描；改为 Map 后单字符查找 O(1)。
+const TW_CN_MAP = (() => {
+  const m = new Map()
+  for (let i = 0; i < TW_STR.length; i++) m.set(TW_STR[i], CN_STR[i])
+  return m
+})()
+
 /**
- * 繁体中文转简体中文。
- * 遍历字符串中每个字符，在 TW_STR 中查找，找到则用 CN_STR 中对应位置的字符替换。
+ * 繁体中文转简体中文（查 TW_CN_MAP）。
  * @param {string} str - 待转换的繁体字符串
  * @returns {string} 转换后的简体字符串
  */
 function twToCn(str) {
   let result = ''
   for (const ch of str) {
-    const idx = TW_STR.indexOf(ch)
-    result += idx !== -1 ? CN_STR[idx] : ch
+    result += TW_CN_MAP.get(ch) || ch
   }
   return result
 }
@@ -169,13 +179,18 @@ async function scrapeJavBus(ph, type, opts = {}) {
   let targetUrl
 
   if (type === '欧美') {
-    // 欧美影片需要先从首页获取欧美分类的 URL 路径
-    const homeHtml = await fetchHtml(baseUrl, { proxy })
-    const omUrl = inteHandler(deleteSpace(homeHtml), '<li class="hidden-md hidden-sm">', '</li>', [0, 0, 0])
-    let omPath = inteHandler(omUrl, '<a href="', '">', [0, 0, 0])
-    // 路径处理：去除首尾斜杠，将 org 替换为 hair
-    omPath = omPath.replace(/^\/+|\/+$/g, '').replace('org', 'hair')
-    targetUrl = omPath + '/' + ph.replace(/\./g, '-')
+    // 欧美分类路径（首页那个隐藏 li 里的分类链接）。
+    // 该路径是站点固定的分类地址，不是动态令牌 —— 因此只在首次请求一次并缓存，
+    // 避免每部欧美影片都白拉一次完整首页（数百 KB + 限速等待）。
+    if (!omPathCache) {
+      const homeHtml = await fetchHtml(baseUrl, { proxy })
+      const omUrl = inteHandler(deleteSpace(homeHtml), '<li class="hidden-md hidden-sm">', '</li>', [0, 0, 0])
+      let omPath = inteHandler(omUrl, '<a href="', '">', [0, 0, 0])
+      // 路径处理：去除首尾斜杠，将 org 替换为 hair
+      omPath = omPath.replace(/^\/+|\/+$/g, '').replace('org', 'hair')
+      omPathCache = omPath
+    }
+    targetUrl = omPathCache + '/' + ph.replace(/\./g, '-')
   } else {
     // 非欧美影片直接拼接番号
     targetUrl = baseUrl + '/' + ph
