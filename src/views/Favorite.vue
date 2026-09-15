@@ -27,6 +27,7 @@
       :total="store.total"
       :page="store.page"
       :pageSize="store.pageSize"
+      :cols="store.colsPerRow"
       :selectMode="store.selectMode"
       :selectedIds="store.selectedIds"
       @page="onPageChange"

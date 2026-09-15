@@ -79,6 +79,22 @@ onMounted(async () => {
     const el = document.activeElement
     if (el instanceof HTMLElement && el !== document.body) el.blur()
   })
+
+  // 弹窗遮罩同步到窗口按钮区（2026-09-15）：
+  // titleBarOverlay 属窗口装饰层、位于页面之上，页面内的 .el-overlay 盖不到它，
+  // 所以弹窗打开/关闭时通知主进程切换该区域配色，避免「整屏压暗、唯独右上角仍发白」。
+  let titleBarDimmed = false
+  const syncTitleBar = () => {
+    const next = !!document.querySelector('.el-overlay')   // 任一弹窗（dialog/drawer/message-box）存在
+    if (next === titleBarDimmed) return                     // 状态未变则跳过，避免频繁 IPC
+    titleBarDimmed = next
+    window.api?.setTitleBarOverlay?.(next
+      ? { color: '#1d1c1a', symbolColor: '#ffffff' }        // 遮罩态：墨黑底 + 白符号
+      : { color: '#ffffff', symbolColor: '#22211f' })       // 常态：白底 + 墨黑符号（与顶栏一致）
+  }
+  // 只观察子节点增删（弹窗挂载/卸载），不观察属性变化，开销可控
+  const mo = new MutationObserver(syncTitleBar)
+  mo.observe(document.body, { childList: true, subtree: true })
 })
 </script>
 

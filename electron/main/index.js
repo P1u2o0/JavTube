@@ -167,6 +167,17 @@ function createWindow() {
       }
     })
     console.log('[main] BrowserWindow constructed. id=', mainWindow.id)
+
+    // 动态设置标题栏覆盖层配色（2026-09-15，供页面弹窗遮罩时压暗右上角按钮区）。
+    // titleBarOverlay 属于窗口装饰层、位于页面之上，页面内的遮罩盖不到它，
+    // 因此弹窗打开/关闭时由渲染进程通知主进程切换配色，保持整体协调。
+    ipcMain.removeHandler('window:setTitleBarOverlay')
+    ipcMain.handle('window:setTitleBarOverlay', (_e, opts) => {
+      try {
+        mainWindow?.setTitleBarOverlay?.(opts || {})
+        return { ok: true }
+      } catch (e) { return { ok: false, error: e.message } }
+    })
   } catch (e) {
     console.error('[main] FAILED BrowserWindow constructor:', e?.stack || e)
     throw e

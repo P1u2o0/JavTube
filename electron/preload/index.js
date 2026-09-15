@@ -149,6 +149,12 @@ contextBridge.exposeInMainWorld('api', {
    */
   getActorFilms: (name) => ipcRenderer.invoke(IPC.ACTOR_FILMS, name),
 
+  /**
+   * 动态设置标题栏覆盖层配色（弹窗遮罩时压暗右上角窗口按钮区）
+   * @param {{color?:string, symbolColor?:string, height?:number}} opts
+   */
+  setTitleBarOverlay: (opts) => ipcRenderer.invoke('window:setTitleBarOverlay', opts),
+
   // === 网址相关接口 ===
 
   /**
