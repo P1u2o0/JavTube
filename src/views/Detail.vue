@@ -761,6 +761,7 @@ onMounted(async () => {
 /* 全屏遮罩：点击空白处关闭；淡入淡出过渡（背景慢慢变暗/变亮） */
 .lightbox {
   position: fixed; inset: 0;
+  top: 60px;   /* 与 el-dialog 遮罩一致：从顶栏下方开始，顶栏与窗口按钮区不受影响 */
   z-index: 3000;
   background: var(--overlay-backdrop);
   display: flex; align-items: center; justify-content: center;
