@@ -103,9 +103,18 @@ onMounted(async () => {
   }
   // 先同步一次，确保初始态为「白底墨符号」
   syncTitleBar()
-  // 只观察子节点增删（弹窗挂载/卸载），不观察属性变化，开销可控
+  // 监听范围必须同时包含 childList 与 attributes：
+  //   - 弹窗挂载/卸载 → childList
+  //   - 遮罩显隐（EP 通过改 style/class 切换 display）→ attributes
+  // 若只监听 childList，会漏掉「遮罩从可见变隐藏」这一步，
+  // 导致打开过一次弹窗后永远停在遮罩态（窗口按钮一直发黑）。
   const mo = new MutationObserver(syncTitleBar)
-  mo.observe(document.body, { childList: true, subtree: true })
+  mo.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']   // 只关心这两个，控制开销
+  })
 })
 </script>
 
