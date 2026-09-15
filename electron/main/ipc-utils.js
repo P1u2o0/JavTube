@@ -61,26 +61,32 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
     try {
       // 支持的视频文件扩展名列表（定义于 constants.js）
       const results = []
-      // 递归遍历目录
-      function walk(dir) {
-        let files
-        try { files = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
-        for (const f of files) {
+      const fsp = fs.promises
+      // 异步递归遍历目录：
+      // 原实现用 readdirSync + statSync 同步走完整棵目录树，几万文件时会
+      // 把主进程事件循环完全占住（窗口无响应、所有 IPC 排队）。
+      // 改为 async/await 后事件循环可继续处理其他 IPC；同一层的文件并发 stat。
+      async function walk(dir) {
+        let entries
+        try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
+        const tasks = []
+        for (const f of entries) {
           const full = path.join(dir, f.name)
-          if (f.isDirectory()) walk(full)  // 递归进入子目录
-          else if (f.isFile()) {
-            const ext = path.extname(f.name).toLowerCase()
-            // 检查是否为视频文件
-            if (VIDEO_EXTS.includes(ext)) {
-              let sz = 0
-              try { sz = fs.statSync(full).size } catch {}
-              // 返回文件路径、文件名、扩展名（不含点）和文件大小
-              results.push({ path: full, name: f.name, ext: ext.slice(1), size: sz })
-            }
-          }
+          if (f.isDirectory()) { tasks.push(walk(full)); continue }   // 子目录
+          if (!f.isFile()) continue
+          const ext = path.extname(f.name).toLowerCase()
+          // 检查是否为视频文件
+          if (!VIDEO_EXTS.includes(ext)) continue
+          // 返回文件路径、文件名、扩展名（不含点）和文件大小
+          tasks.push((async () => {
+            let sz = 0
+            try { sz = (await fsp.stat(full)).size } catch {}
+            results.push({ path: full, name: f.name, ext: ext.slice(1), size: sz })
+          })())
         }
+        await Promise.all(tasks)
       }
-      walk(dirPath)
+      await walk(dirPath)
       return { ok: true, data: results }
     } catch (e) { return { ok: false, error: e.message } }
   })

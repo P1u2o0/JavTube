@@ -84,7 +84,13 @@ function setupCoverProtocol(dataDir) {
       // 必须是图片扩展名
       if (!isImg(resolved)) return new Response('not an image', { status: 415 })
       // 文件必须存在且是文件
-      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+      // 原实现 existsSync + statSync 是两次同步磁盘调用（一屏 20 张封面即 40 次），
+      // 合并为一次异步 stat。
+      try {
+        if (!(await fs.promises.stat(resolved)).isFile()) {
+          return new Response('not found', { status: 404 })
+        }
+      } catch {
         return new Response('not found', { status: 404 })
       }
       // 用 net.fetch 走本地文件协议交给 Electron 处理，返回标准 Response

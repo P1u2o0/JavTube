@@ -160,31 +160,42 @@ async function initDb(dataDir) {
     value TEXT             -- 设置项值
   )`)
 
-  // 兼容旧库：添加 play_time 列（最近播放时间，ISO 8601 格式，见 movies:recordPlay）
-  // 如果列已存在，ALTER TABLE 会报错，用 try-catch 忽略
-  try { db.run('ALTER TABLE movies ADD COLUMN play_time TEXT') } catch {}
+  // === 兼容旧库：按需补列 ===
+  // 原实现固定跑 11 条 ALTER TABLE，列已存在时靠抛异常跳过 ——
+  // 等于每次启动都做 11 次"必失败"的 DDL 解析。改为先查 PRAGMA 拿现有列，只补缺失的。
+  // PRAGMA table_info 的列顺序：cid, name, type, notnull, dflt_value, pk → name 在下标 1。
+  const ensureColumns = (table, cols) => {
+    const info = db.exec(`PRAGMA table_info(${table})`)
+    const exist = new Set(info[0] ? info[0].values.map(v => v[1]) : [])
+    for (const [name, decl] of cols) {
+      if (exist.has(name)) continue
+      try { db.run(`ALTER TABLE ${table} ADD COLUMN ${name} ${decl}`) } catch {}
+    }
+  }
 
-  // 2026-09-09 新增列（刮削增强功能，均为 ALTER 兼容旧库，列已存在时忽略）：
-  //   previews — 预览图本地相对路径的 JSON 数组（如 ["covers/previews/IPX-1-1.jpg",...]）
-  //   want     — 想看人数（来源 JAVDB）
-  //   watched  — 看过人数（来源 JAVDB）
-  //   score    — 评分（来源 JAVDB，如 4.53）
-  try { db.run("ALTER TABLE movies ADD COLUMN previews TEXT") } catch {}
-  try { db.run("ALTER TABLE movies ADD COLUMN want INTEGER DEFAULT 0") } catch {}
-  try { db.run("ALTER TABLE movies ADD COLUMN watched INTEGER DEFAULT 0") } catch {}
-  try { db.run("ALTER TABLE movies ADD COLUMN score REAL DEFAULT 0") } catch {}
-  // 2026-09-09 下午新增（详情页改版）：
-  //   duration   — 影片时长（分钟）：刮削到「長度/時長」时写入；无刮削值时由视频文件解析补齐
-  //   play_count — 观看次数：recordPlay 每次播放 +1（供「观看次数」排序）
-  try { db.run("ALTER TABLE movies ADD COLUMN duration INTEGER DEFAULT 0") } catch {}
-  try { db.run("ALTER TABLE movies ADD COLUMN play_count INTEGER DEFAULT 0") } catch {}
-
-  // 2026-09-14 新增（演员头像）：
-  //   cast_json — 影片演员列表 JSON：[{name,gender,avatar},...]
-  //               gender: 'f' 女优 / 'm' 男优；avatar 为本地相对路径（空则前端按性别用默认剪影）
-  try { db.run("ALTER TABLE movies ADD COLUMN cast_json TEXT") } catch {}
-  //   actress.gender — 女优/男优标记（'f' 默认 / 'm'），用于演员页与默认剪影选择
-  try { db.run("ALTER TABLE actress ADD COLUMN gender TEXT DEFAULT 'f'") } catch {}
+  // movies 表的历史增量列：
+  //   play_time  — 最近播放时间（ISO 8601，见 movies:recordPlay）
+  //   previews   — 预览图本地相对路径的 JSON 数组
+  //   want       — 想看人数（来源 JAVDB）
+  //   watched    — 看过人数（来源 JAVDB）
+  //   score      — 评分（来源 JAVDB）
+  //   duration   — 影片时长（分钟）
+  //   play_count — 观看次数（recordPlay 累加）
+  //   cast_json  — 演员列表 JSON：[{name,gender,avatar},...]
+  ensureColumns('movies', [
+    ['play_time', 'TEXT'],
+    ['previews', 'TEXT'],
+    ['want', 'INTEGER DEFAULT 0'],
+    ['watched', 'INTEGER DEFAULT 0'],
+    ['score', 'REAL DEFAULT 0'],
+    ['duration', 'INTEGER DEFAULT 0'],
+    ['play_count', 'INTEGER DEFAULT 0'],
+    ['cast_json', 'TEXT']
+  ])
+  // actress.gender — 女优/男优标记（'f' 默认 / 'm'），用于演员页与默认剪影选择
+  ensureColumns('actress', [
+    ['gender', "TEXT DEFAULT 'f'"]
+  ])
 
   // 写入默认设置项（仅在不存在时插入）
   const defaults = [

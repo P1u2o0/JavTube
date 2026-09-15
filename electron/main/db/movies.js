@@ -250,7 +250,10 @@ function registerMovieIpc(ipcMain, db) {
   // 批量删除影片
   ipcMain.handle(IPC.MOVIES_DELETE_MANY, (_e, ids) => {
     try {
-      for (const id of (ids||[])) db.run('DELETE FROM movies WHERE id=?', [Number(id)])
+      // 单条 IN 替代逐条 DELETE（sql.js 无批量 API，IN 可一次完成）
+      const list = (ids || []).map(Number).filter(Number.isFinite)
+      if (!list.length) return { ok: true }
+      db.run(`DELETE FROM movies WHERE id IN (${list.map(() => '?').join(',')})`, list)
       persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -260,7 +263,10 @@ function registerMovieIpc(ipcMain, db) {
   ipcMain.handle(IPC.MOVIES_BATCH_FAV, (_e, { ids, isFav }) => {
     try {
       const val = isFav ? FAV_Y : FAV_N
-      for (const id of (ids||[])) db.run('UPDATE movies SET cl=? WHERE id=?', [val, Number(id)])
+      // 单条 IN 替代逐条 UPDATE
+      const list = (ids || []).map(Number).filter(Number.isFinite)
+      if (!list.length) return { ok: true }
+      db.run(`UPDATE movies SET cl=? WHERE id IN (${list.map(() => '?').join(',')})`, [val, ...list])
       persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -271,17 +277,29 @@ function registerMovieIpc(ipcMain, db) {
     try {
       const list = Array.isArray(tags) ? tags : []
       if (!list.length) return { ok: true }
-      for (const id of (ids||[])) {
-        // 获取当前标签
-        const r0 = db.exec('SELECT bq FROM movies WHERE id=?', [Number(id)])
-        const cur = firstScalar(r0[0]) || ''
-        // 解析现有标签为 Set（去重）
-        const existing = new Set(cur.split(/[，,]/).map(s => s.trim()).filter(Boolean))
-        // 追加新标签
-        for (const t of list) existing.add(t)
-        // 拼接为字符串并更新（不要额外追加尾部分隔符，避免 bq 字段尾部残留逗号）
-        const newBq = Array.from(existing).join(TAG_DELIM)
-        db.run('UPDATE movies SET bq=? WHERE id=?', [newBq, Number(id)])
+      const idList = (ids || []).map(Number).filter(Number.isFinite)
+      if (!idList.length) return { ok: true }
+      // 一次批量取回现有标签（原实现是每个 id 各查一次 SELECT）
+      const r0 = db.exec(
+        `SELECT id, bq FROM movies WHERE id IN (${idList.map(() => '?').join(',')})`,
+        idList
+      )
+      const cur = rows(r0 ? r0[0] : undefined)
+      // UPDATE 包在事务里，避免逐条提交的开销
+      db.run('BEGIN')
+      try {
+        for (const row of cur) {
+          // 解析现有标签为 Set（去重）
+          const existing = new Set(String(row.bq || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+          // 追加新标签
+          for (const t of list) existing.add(t)
+          // 拼接为字符串并更新（不要额外追加尾部分隔符，避免 bq 字段尾部残留逗号）
+          db.run('UPDATE movies SET bq=? WHERE id=?', [Array.from(existing).join(TAG_DELIM), row.id])
+        }
+        db.run('COMMIT')
+      } catch (e) {
+        db.run('ROLLBACK')
+        throw e
       }
       persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
