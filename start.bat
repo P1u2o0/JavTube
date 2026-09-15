@@ -8,5 +8,5 @@ if not exist "node_modules\electron\dist\electron.exe" (
   pause
   exit /b 1
 )
-start "" /b "<工具目录>\binaries\node\versions\22.22.2-2\npm.cmd" run dev
+start "" /b cmd /c npm run dev
 echo JavTube dev 已启动（关闭本窗口不影响运行）
