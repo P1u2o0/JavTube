@@ -12,7 +12,7 @@ const fs = require('fs')
 const path = require('path')
 const { session } = require('electron')
 // db 层通用工具（落盘收口）
-const { persistSoon } = require('./util')
+const { persistSoon, persist } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -142,8 +142,10 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
   ipcMain.handle(IPC.SETTINGS_BACKUP, (_e, targetPath) => {
     try {
       if (!targetPath || !db._dbPath) return { ok: false, error: 'invalid path' }
-      // 先强制保存内存数据库到磁盘，确保数据最新
-      persistSoon(db)
+      // 必须先「同步」落盘再拷贝：
+      // persistSoon 只是把落盘推迟到本轮事件循环之后（setImmediate），
+      // 紧接着 copyFileSync 拷到的仍是磁盘上的旧库 → 备份会丢最近操作。
+      persist(db)
       // 复制数据库文件到目标路径
       fs.copyFileSync(db._dbPath, targetPath)
       return { ok: true }

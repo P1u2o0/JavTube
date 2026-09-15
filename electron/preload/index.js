@@ -245,6 +245,12 @@ contextBridge.exposeInMainWorld('api', {
   playVideo: (p) => ipcRenderer.invoke(IPC.UTILS_PLAY_VIDEO, p),
 
   /**
+   * playVideo 的别名（演员影片页 actor:films 用的是 playMovie 命名）
+   * @param {string} p - 视频文件路径
+   */
+  playMovie: (p) => ipcRenderer.invoke(IPC.UTILS_PLAY_VIDEO, p),
+
+  /**
    * 扫描目录中的视频文件
    * @param {string} dir - 目录路径
    * @returns {Promise<Object>} { ok, data }

@@ -49,11 +49,14 @@
 
 <script setup>
 import { onMounted, ref, watch, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { buildScrapeUpdate, safeCall } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
+
+// 路由实例（clearFilterTitle 用它跳回全部影片列表）
+const router = useRouter()
 import { useScrapeStore } from '@/store/scrape'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
