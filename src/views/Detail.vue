@@ -188,7 +188,7 @@ import { useScrapeStore } from '@/store/scrape'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, buildScrapeUpdate, safeCall } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate, safeCall, splitTags } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -334,12 +334,12 @@ const isFav = computed(() => m.value?.cl === 'y')
 /**
  * 计算属性：标签列表（按逗号分割 bq 字段）
  */
-const tags = computed(() => (m.value?.bq || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+const tags = computed(() => splitTags(m.value?.bq))
 
 /**
  * 计算属性：女优列表（按逗号分割 yid 字段）
  */
-const actressList = computed(() => (m.value?.yid || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+const actressList = computed(() => splitTags(m.value?.yid))
 
 /** 跳转该女优的影片列表页（演员栏点击名字时） */
 function goActor(name) {
@@ -349,12 +349,12 @@ function goActor(name) {
 /**
  * 计算属性：导演列表（按逗号分割 dy 字段）
  */
-const directorList = computed(() => (m.value?.dy || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+const directorList = computed(() => splitTags(m.value?.dy))
 
 /**
  * 计算属性：片商列表（按逗号分割 ps 制作商字段）
  */
-const psList = computed(() => (m.value?.ps || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+const psList = computed(() => splitTags(m.value?.ps))
 
 /**
  * 计算属性：五角星填充数量（一颗星一分，四舍五入，范围 0-5）

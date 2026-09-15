@@ -35,25 +35,13 @@
         <TagChip label="全部" :selected="selectedTags.length === 0" @click="clearTags" />
         <!-- 排序按钮并入本行右侧（与片库页同款） -->
         <div class="filter-tools">
-          <el-dropdown trigger="click" @command="onSortCommand">
-            <el-button class="sort-btn">
-              <AppIcon v-if="sort.random" name="shuffle" :size="14" style="margin-right:5px" />
-              <span>{{ sortLabel }}</span>
-              <span v-if="sortArrow" class="sort-dir" :class="sort.order === 'ASC' ? 'asc' : 'desc'">
-                <AppIcon name="back" :size="12" />
-              </span>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="tjrq" :class="{ 'sort-active': !sort.random && sort.by === 'tjrq' }">添加日期</el-dropdown-item>
-                <el-dropdown-item command="fxrq" :class="{ 'sort-active': !sort.random && sort.by === 'fxrq' }">发行日期</el-dropdown-item>
-                <el-dropdown-item command="want" :class="{ 'sort-active': !sort.random && sort.by === 'want' }">想看人数</el-dropdown-item>
-                <el-dropdown-item command="watched" :class="{ 'sort-active': !sort.random && sort.by === 'watched' }">看过人数</el-dropdown-item>
-                <el-dropdown-item command="score" :class="{ 'sort-active': !sort.random && sort.by === 'score' }">评分</el-dropdown-item>
-                <el-dropdown-item command="random" divided :class="{ 'sort-active': sort.random }">随机排序</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <!-- 排序下拉：与片库页共用同一受控组件 -->
+          <SortDropdown
+            :by="sort.by"
+            :order="sort.order"
+            :random="sort.random"
+            @change="onSortChange"
+          />
           <span class="result-count">共 <b>{{ shownFilms.length }}</b> 部</span>
         </div>
       </div>
@@ -97,10 +85,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { resolveCover, safeCall } from '@/utils/global'
+import { resolveCover, safeCall, splitTags } from '@/utils/global'
 import MovieCard from '@/components/MovieCard.vue'
 import TagChip from '@/components/TagChip.vue'
-import AppIcon from '@/components/AppIcon.vue'
+import SortDropdown from '@/components/SortDropdown.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -146,7 +134,7 @@ const metaText = computed(() => {
 const tagList = computed(() => {
   const freq = new Map()
   for (const m of films.value) {
-    for (const t of String(m.bq || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)) {
+    for (const t of splitTags(m.bq)) {
       freq.set(t, (freq.get(t) || 0) + 1)
     }
   }
@@ -193,19 +181,12 @@ function toggleTag(t) {
 /** 清除所有标签筛选 */
 function clearTags() { selectedTags.value = []; page.value = 1 }
 
-// 排序按钮文案（与片库页 StatusBar 一致）
-const sortLabel = computed(() => {
-  if (sort.value.random) return '随机排序'
-  return { tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数', score: '评分' }[sort.value.by] || '发行日期'
-})
-const sortArrow = computed(() => (sort.value.random ? '' : (sort.value.order === 'ASC' ? '↑' : '↓')))
-
 /** 标签筛选 + 排序后的影片（语义与片库页一致：点当前项切正倒序、随机打乱） */
 const shownFilms = computed(() => {
   let list = films.value
   if (selectedTags.value.length) {
     list = list.filter(m => {
-      const tags = String(m.bq || '').split(/[，,]/).map(s => s.trim())
+      const tags = splitTags(m.bq)
       return selectedTags.value.every(t => tags.includes(t))   // AND（与片库标签逻辑一致）
     })
   }
@@ -236,17 +217,12 @@ const pagedFilms = computed(() => {
 })
 
 /**
- * 排序命令处理（与片库页 StatusBar 一致）：
- * 点当前字段切正序/倒序；点其他字段默认降序；随机进入随机模式
+ * 排序变更：把 SortDropdown 算好的新状态写回本页本地 sort，
+ * 并回到第 1 页（与片库页共用同一组件，这里只负责各自的写回目标）
+ * @param {{by: string, order: string, random: boolean}} next - 新的排序状态
  */
-function onSortCommand(cmd) {
-  if (cmd === 'random') {
-    sort.value = { by: sort.value.by, order: sort.value.order, random: true }
-  } else if (sort.value.by === cmd && !sort.value.random) {
-    sort.value = { by: cmd, order: sort.value.order === 'DESC' ? 'ASC' : 'DESC', random: false }
-  } else {
-    sort.value = { by: cmd, order: 'DESC', random: false }
-  }
+function onSortChange(next) {
+  sort.value = next
   page.value = 1
 }
 /** 点击卡片：进入详情 */
@@ -349,13 +325,7 @@ onMounted(async () => {
 }
 .cat-tags { display: flex; flex-wrap: wrap; gap: 2px 5px; flex: 1; }
 
-/* ===== ③ 排序按钮（已并入标签面板 header 右侧；样式与片库页一致） ===== */
-.sort-btn { flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.sort-dir { display: inline-flex; margin-left: 5px; }
-.sort-dir :deep(svg) { transition: transform var(--dur-fast) var(--ease-out); }
-.sort-dir.desc :deep(svg) { transform: rotate(-90deg); }
-.sort-dir.asc :deep(svg) { transform: rotate(90deg); }
-.sort-active { color: var(--accent); font-weight: 600; }
+/* ===== ③ 排序按钮（已并入标签面板 header 右侧；实现与样式共用 SortDropdown.vue） ===== */
 
 /* ===== ④ 影片网格 ===== */
 .actor-grid { display: grid; gap: 14px; }

@@ -204,6 +204,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
+import { splitTags } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
 
 // 组件 props / emit：支持 v-model 控制对话框显隐
@@ -339,7 +340,7 @@ async function saveAll() {
   if (!rb.ok) return ElMessage.error(rb.error)
   // 标签类别（补齐 9 大类）
   const cats = catRows.value
-    .map(r => ({ cat: (r.cat || '').trim(), tags: (r.tags || '').split(/[，,]/).map(s => s.trim()).filter(Boolean) }))
+    .map(r => ({ cat: (r.cat || '').trim(), tags: splitTags(r.tags) }))
     .filter(c => c.cat)
   let i = 1
   while (cats.length < 9) {

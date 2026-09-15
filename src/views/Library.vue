@@ -50,9 +50,9 @@
 <script setup>
 import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { buildScrapeUpdate, safeCall } from '@/utils/global'
+import { buildScrapeUpdate } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
 
 // 路由实例（clearFilterTitle 用它跳回全部影片列表）
@@ -70,8 +70,10 @@ const scrapeStore = useScrapeStore()
 // 当前路由信息，用于读取 query 参数
 const route = useRoute()
 // 公共列表交互：批量选中切换 / 翻页 / 详情跳转（翻页时携带路由筛选参数不丢条件）
-const { onToggle, onPageChange, onDetail } = useMovieList(store, {
-  buildLoadArgs: () => ({ append: false, extraFilter: routeExtra() })
+// onPlay / onBatchDelete / onBatchFav 由 composable 统一提供（见 useMovieList）
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav } = useMovieList(store, {
+  buildLoadArgs: () => ({ append: false, extraFilter: routeExtra() }),
+  onRefresh: () => onRefresh()
 })
 
 /**
@@ -128,17 +130,6 @@ async function onSortChange() {
  * @param {Object} m - 要编辑的影片对象
  */
 /**
- * 播放影片
- * @param {Object} m - 影片对象，需包含 py（视频文件路径）和 id
- */
-async function onPlay(m) {
-  if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  const r = await window.api.playVideo(m.py).catch(() => null)
-  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
-  safeCall(window.api.recordPlay(m.id))
-}
-
-/**
  * 卡片点击处理（根据模式分发）
  * - 批量选择模式下：切换选中状态
  * - 普通模式下：根据用户设置（点击动作）决定播放或进入详情
@@ -163,30 +154,6 @@ function onCardClick(m) {
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id) }
-
-/**
- * 批量删除选中影片
- */
-async function onBatchDelete() {
-  try {
-    await ElMessageBox.confirm(`确定删除选中的 ${store.selectedIds.length} 项？`, '批量删除', { type: 'warning' })
-    const r = await window.api.deleteMovies([...store.selectedIds])
-    if (!r.ok) return ElMessage.error(r.error)
-    store.selectedIds = []
-    ElMessage.success('已删除')
-    await onRefresh()
-  } catch {}
-}
-
-/**
- * 批量设置收藏状态
- * @param {boolean} isFav - 是否收藏
- */
-async function onBatchFav(isFav) {
-  if (!window.api) return
-  const r = await window.api.batchSetFavorite([...store.selectedIds], isFav)
-  if (r.ok) { ElMessage.success('操作成功'); await onRefresh() }
-}
 
 /**
  * 批量刮削选中的影片元数据

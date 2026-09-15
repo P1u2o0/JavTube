@@ -41,9 +41,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { safeCall } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
@@ -51,8 +49,10 @@ import MovieGrid from '@/components/MovieGrid.vue'
 // Pinia store 实例
 const store = useMoviesStore()
 // 公共列表交互：批量选中切换 / 翻页（历史页固定加载 historyOnly）/ 详情跳转
-const { onToggle, onPageChange, onDetail } = useMovieList(store, {
-  buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true } })
+// onPlay / onBatchDelete / onBatchFav 由 composable 统一提供
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav } = useMovieList(store, {
+  buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true } }),
+  onRefresh: () => loadHistory()
 })
 
 
@@ -77,17 +77,6 @@ async function onSortChange() {
 }
 
 /**
- * 播放影片并记录播放
- * @param {Object} m - 影片对象，需包含 py（视频路径）和 id
- */
-async function onPlay(m) {
-  if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  const r = await window.api.playVideo(m.py).catch(() => null)
-  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
-  safeCall(window.api.recordPlay(m.id))
-}
-
-/**
  * 卡片点击处理（直接进入详情页）
  *   （onDetail 由 useMovieList composable 提供）
  * @param {Object} m - 影片对象
@@ -99,30 +88,6 @@ function onCardClick(m) { onDetail(m) }
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id) }
-
-/**
- * 批量删除选中影片
- */
-async function onBatchDelete() {
-  try {
-    await ElMessageBox.confirm(`确定删除选中的 ${store.selectedIds.length} 项？`, '批量删除', { type: 'warning' })
-    const r = await window.api.deleteMovies([...store.selectedIds])
-    if (!r.ok) return ElMessage.error(r.error)
-    store.selectedIds = []
-    ElMessage.success('已删除')
-    await loadHistory()
-  } catch {}
-}
-
-/**
- * 批量设置收藏状态
- * @param {boolean} isFav - 是否收藏
- */
-async function onBatchFav(isFav) {
-  if (!window.api) return
-  const r = await window.api.batchSetFavorite([...store.selectedIds], isFav)
-  if (r.ok) { ElMessage.success('操作成功'); await loadHistory() }
-}
 
 /**
  * 组件挂载时：初始化 store、设置按播放时间倒序、加载历史

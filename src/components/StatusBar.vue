@@ -8,26 +8,14 @@
 <template>
   <!-- 状态栏主体 -->
   <div class="statusbar">
-    <!-- 排序选择（2026-09-10 优化）：点击当前排序项可切换正序/倒序；含随机排序 -->
-    <el-dropdown trigger="click" @command="onSortCommand">
-      <el-button class="sort-btn">
-        <AppIcon v-if="store.sort.random" name="shuffle" :size="14" style="margin-right:5px" />
-        <span>{{ sortLabel }}</span>
-        <span v-if="sortArrow" class="sort-dir" :class="store.sort.order === 'ASC' ? 'asc' : 'desc'">
-          <AppIcon name="back" :size="12" />
-        </span>
-      </el-button>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item command="tjrq" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'tjrq' }">添加日期</el-dropdown-item>
-          <el-dropdown-item command="fxrq" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'fxrq' }">发行日期</el-dropdown-item>
-          <el-dropdown-item command="want" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'want' }">想看人数</el-dropdown-item>
-          <el-dropdown-item command="watched" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'watched' }">看过人数</el-dropdown-item>
-          <el-dropdown-item command="score" :class="{ 'sort-active': !store.sort.random && store.sort.by === 'score' }">评分</el-dropdown-item>
-          <el-dropdown-item command="random" divided :class="{ 'sort-active': store.sort.random }">随机排序</el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+    <!-- 排序选择（2026-09-10 优化）：点击当前排序项可切换正序/倒序；含随机排序。
+         已抽为受控组件，与演员影片页共用同一份实现 -->
+    <SortDropdown
+      :by="store.sort.by"
+      :order="store.sort.order"
+      :random="store.sort.random"
+      @change="onSortChange"
+    />
     <!-- 左侧：显示搜索结果总数 -->
     <div class="left">共找到 <b>{{ total }}</b> 个结果</div>
     <!-- 批量操作区域：仅在多选模式下显示 -->
@@ -66,10 +54,10 @@
 <script setup>
 // 引入影片数据仓库（Pinia store）
 import { useMoviesStore } from '@/store/movies'
-// 引入统一图标组件
+// 引入统一图标组件（批量操作按钮用）
 import AppIcon from '@/components/AppIcon.vue'
-// 引入 Vue 响应式 API
-import { computed, ref } from 'vue'
+// 引入排序下拉组件（排序 UI 与状态推进已收拢在组件内，与演员影片页共用）
+import SortDropdown from '@/components/SortDropdown.vue'
 
 // 组件 props 定义
 // - total: 影片搜索结果总数
@@ -86,30 +74,15 @@ const emit = defineEmits(['toggle', 'batchDelete', 'batchFav', 'batchScrape', 's
 // 获取 store 实例
 const store = useMoviesStore()
 
-// 排序按钮显示文案：随机模式显示「随机排序」，否则显示当前字段名
-const sortLabel = computed(() => {
-  if (store.sort.random) return '随机排序'
-  return { tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数', score: '评分' }[store.sort.by] || '添加日期'
-})
-// 方向箭头（随机模式无方向）
-const sortArrow = computed(() => (store.sort.random ? '' : (store.sort.order === 'ASC' ? '↑' : '↓')))
-
 /**
- * 排序命令处理（el-dropdown）：
- * - 点击当前字段：切换正序/倒序
- * - 点击其他字段：默认降序
- * - 随机：进入随机模式
- * 变更后通知父页面按各自筛选场景重新加载列表
+ * 排序变更：把组件算好的新状态写回共享 store.sort，
+ * 并通知父页面按各自筛选场景重新加载列表。
+ * （「下一状态」的计算已收拢到 SortDropdown 组件内）
+ * @param {{by: string, order: string, random: boolean}} next - 新的排序状态
  */
-function onSortCommand(cmd) {
-  if (cmd === 'random') {
-    store.sort = { by: store.sort.by, order: store.sort.order, random: true }
-  } else if (store.sort.by === cmd && !store.sort.random) {
-    store.sort = { by: cmd, order: store.sort.order === 'DESC' ? 'ASC' : 'DESC', random: false }
-  } else {
-    store.sort = { by: cmd, order: 'DESC', random: false }
-  }
-  emit('sortChange', cmd)
+function onSortChange(next) {
+  store.sort = next
+  emit('sortChange')
 }
 
 // 多选模式开关变化处理函数
@@ -143,13 +116,8 @@ function invert() {
 </script>
 
 <style scoped>
-.sort-dir { display: inline-flex; margin-left: 5px; }
-.sort-dir :deep(svg) { transition: transform var(--dur-fast) var(--ease-out); }
-.sort-dir.desc :deep(svg) { transform: rotate(-90deg); }  /* 左箭头 → 下 */
-.sort-dir.asc :deep(svg) { transform: rotate(90deg); }   /* 左箭头 → 上 */
-.sort-btn { margin-right: 14px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-/* 下拉菜单当前排序项高亮 */
-.sort-active { color: var(--accent); font-weight: 600; }
+/* 排序按钮与左侧结果数之间的间距（其余排序样式已随组件迁至 SortDropdown.vue） */
+.statusbar :deep(.sort-btn) { margin-right: 14px; }
 /* 状态栏主体：统一面板样式 */
 .statusbar {
   display: flex; align-items: center;

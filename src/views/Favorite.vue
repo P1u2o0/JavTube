@@ -40,9 +40,7 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { safeCall } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
@@ -51,8 +49,10 @@ import MovieGrid from '@/components/MovieGrid.vue'
 // Pinia store 实例，管理影片数据与状态
 const store = useMoviesStore()
 // 公共列表交互：批量选中切换 / 翻页（收藏页固定加载 onlyFavorite）
-const { onToggle, onPageChange } = useMovieList(store, {
-  buildLoadArgs: () => ({ onlyFavorite: true })
+// onPlay / onBatchDelete / onBatchFav / onDetail 由 composable 统一提供
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav } = useMovieList(store, {
+  buildLoadArgs: () => ({ onlyFavorite: true }),
+  onRefresh: () => onRefresh()
 })
 
 /**
@@ -70,44 +70,10 @@ async function onSortChange() {
 }
 
 /**
- * 播放影片并记录播放（B2 修复：与其他页面行为对齐，收藏页播放同样记入观看历史）
- * @param {Object} m - 影片对象，需包含 py（视频路径）和 id
- */
-async function onPlay(m) {
-  if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-  const r = await window.api.playVideo(m.py).catch(() => null)
-  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
-  safeCall(window.api.recordPlay(m.id))
-}
-
-/**
  * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
-
-/**
- * 批量删除选中影片
- */
-async function onBatchDelete() {
-  try {
-    await ElMessageBox.confirm(`删除 ${store.selectedIds.length} 项？`)
-    const r = await window.api.deleteMovies([...store.selectedIds])
-    if (!r.ok) return ElMessage.error(r.error)
-    store.selectedIds = []
-    ElMessage.success('已删除')
-    await onRefresh()
-  } catch {}
-}
-
-/**
- * 批量设置收藏状态
- * @param {boolean} f - 是否收藏
- */
-async function onBatchFav(f) {
-  const r = await window.api.batchSetFavorite([...store.selectedIds], f)
-  if (r.ok) onRefresh()
-}
 
 /**
  * 组件挂载时：初始化 store、加载标签、加载收藏影片

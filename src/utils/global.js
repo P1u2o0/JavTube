@@ -93,6 +93,17 @@ export function safeCall(promise) {
 }
 
 /**
+ * 按中英文逗号拆分多值字段（标签/演员/导演/片商/系列等），去除首尾空白与空项。
+ * 此前这段语义在前端手写了 7 遍（Detail ×4、ActorFilms ×2、SettingsDialog ×1），
+ * 分隔符规则一旦调整就要改多处，且其中一处漏了 filter(Boolean) 导致行为不一致。
+ * @param {string} v - 原始字段值（如 "潮吹，巨乳"）
+ * @returns {string[]} 拆分后的非空项数组
+ */
+export function splitTags(v) {
+  return String(v || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)
+}
+
+/**
  * 将刮削结果对象转换为影片更新字段对象（仅保留有值的字段）。
  * 原 Library.vue（onBatchScrape）与 Detail.vue（onScrape）各有一份相同的
  * 10 字段映射，提取为公共函数消除重复。映射关系与原实现逐字段一致：
