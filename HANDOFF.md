@@ -11,7 +11,7 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **181 个 commit**（`git rev-list --count HEAD` 实时为准；纯文档提交会使该数字继续递增），工作区 clean；远端 `origin` → https://github.com/P1u2o0/javtube.git（**公开仓库 · MIT**）。
+数据全部保存在本机，不上传任何内容。当前 main 分支约 **184 个 commit**（以 `git rev-list --count HEAD` 实时值为准），工作区 clean；远端 `origin` → https://github.com/P1u2o0/javtube.git（**公开仓库 · MIT**）。
 
 ---
 
@@ -20,7 +20,7 @@
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，183 commit（实时值为准），工作区 clean，远端 `origin` = https://github.com/P1u2o0/javtube.git（**公开 · MIT**） |
+| git | `main` 分支，约 184 commit（实时值为准），工作区 clean，远端 `origin` = https://github.com/P1u2o0/javtube.git（**公开 · MIT**） |
 | 提交身份 | `P1u2o0 <<邮箱>>`（**仓库级** user.name/user.email；全局仍是 `WorkBuddy` 占位，别混用） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
 | dev 服务 | 需手动启动（`npm run dev`，见下）；2026-09-15 收尾时软件窗口已关闭 |
@@ -55,9 +55,9 @@ for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 # 打包 Win 安装包
 npm run build:win
 # GPU 驱动异常降级调试
+set JAVTUBE_DISABLE_GPU=1 && npm run dev
 # git 推送走本机代理（直连 GitHub 会超时；仓库级配置，仅本仓库生效）
 git config http.proxy http://<代理地址> && git config https.proxy http://<代理地址>
-set JAVTUBE_DISABLE_GPU=1 && npm run dev
 ```
 
 ---
