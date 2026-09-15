@@ -9,6 +9,9 @@ out/
 data/
 covers/
 
+# 内部文档（审计报告/性能计划，仅本地保留，不公开）
+docs/
+
 # 日志与系统文件
 *.log
 Thumbs.db
