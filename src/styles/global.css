@@ -433,6 +433,12 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 .el-empty__description p { color: var(--muted); }
 .el-alert { border-radius: var(--r-sm) !important; }
 
+/* ====== 弹窗遮罩范围（2026-09-15） ======
+   EP 的 .el-overlay 默认 inset:0（含顶栏）。此处下移到顶栏之下，
+   让「遮罩只作用于页面内容，顶栏与右上角窗口按钮区不受影响」——
+   同时也省去了动态改 titleBarOverlay 配色的那套复杂度。 */
+.el-overlay { top: 60px !important; }
+
 /* ====== 页面布局容器 ====== */
 .page-container {
   width: 100%;

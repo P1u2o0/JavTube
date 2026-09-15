@@ -80,47 +80,11 @@ onMounted(async () => {
     if (el instanceof HTMLElement && el !== document.body) el.blur()
   })
 
-  // 弹窗遮罩同步到窗口按钮区（2026-09-15）：
-  // titleBarOverlay 属窗口装饰层、位于页面之上，页面内的 .el-overlay 盖不到它，
-  // 所以弹窗打开/关闭时通知主进程切换该区域配色，避免「整屏压暗、唯独右上角仍发白」。
-  let titleBarDimmed = false
-  /**
-   * 是否存在「可见的」弹窗遮罩。
-   * 注意：Element Plus 的 el-dialog 关闭后 overlay 元素会留在 DOM 里（display:none），
-   * 因此不能只判断存在性 —— 否则关掉弹窗后会被误判为仍在遮罩态，窗口按钮一直发黑。
-   */
-  const hasVisibleOverlay = () => Array.from(document.querySelectorAll('.el-overlay')).some((el) => {
-    const st = getComputedStyle(el)
-    return st.display !== 'none' && st.visibility !== 'hidden'
-  })
-  const syncTitleBar = () => {
-    const next = hasVisibleOverlay()
-    if (next === titleBarDimmed) return                     // 状态未变则跳过，避免频繁 IPC
-    titleBarDimmed = next
-    // 遮罩态颜色 = 「顶栏白」与「EP 遮罩」的合成值，取不透明色：
-    //   遮罩 = --el-overlay-color-lighter (#00000080，50% 黑)；
-    //   按钮区紧邻顶栏（--surface 纯白 #ffffff）→ 合成 = 50% 白 = #808080。
-    // 为什么不用 rgba：Windows 下 titleBarOverlay 会忽略 alpha，导致调用无效、
-    // 按钮区停在旧色（实测截图取色为 #202020，而遮罩区是 #7b7a79，明显对不上）。
-    // 实测佐证：截图遮罩区 #7b7a79 ≈ 暖纸白 #f6f5f2 + 50% 黑，与计算完全吻合。
-    window.api?.setTitleBarOverlay?.(next
-      ? { color: '#808080', symbolColor: '#ffffff' }   // 遮罩态：与遮罩同灰 + 白符号
-      : { color: '#ffffff', symbolColor: '#22211f' })  // 常态：白底 + 墨黑符号（与顶栏一致）
-  }
-  // 先同步一次，确保初始态为「白底墨符号」
-  syncTitleBar()
-  // 监听范围必须同时包含 childList 与 attributes：
-  //   - 弹窗挂载/卸载 → childList
-  //   - 遮罩显隐（EP 通过改 style/class 切换 display）→ attributes
-  // 若只监听 childList，会漏掉「遮罩从可见变隐藏」这一步，
-  // 导致打开过一次弹窗后永远停在遮罩态（窗口按钮一直发黑）。
-  const mo = new MutationObserver(syncTitleBar)
-  mo.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['style', 'class']   // 只关心这两个，控制开销
-  })
+  // 注（2026-09-15）：此处原先有一段「弹窗遮罩同步窗口按钮区配色」的逻辑
+  // （MutationObserver 监听 .el-overlay → 调 setTitleBarOverlay 切换颜色）。
+  // 因 Windows 的 titleBarOverlay 忽略 alpha、且需处理 overlay 常驻 DOM 的可见性判断，
+  // 复杂度高且效果不佳，已改为「遮罩只覆盖顶栏之下的页面区域」（见 global.css），
+  // 顶栏与窗口按钮区保持常白，无需任何动态改色。
 })
 </script>
 
