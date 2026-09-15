@@ -84,14 +84,25 @@ onMounted(async () => {
   // titleBarOverlay 属窗口装饰层、位于页面之上，页面内的 .el-overlay 盖不到它，
   // 所以弹窗打开/关闭时通知主进程切换该区域配色，避免「整屏压暗、唯独右上角仍发白」。
   let titleBarDimmed = false
+  /**
+   * 是否存在「可见的」弹窗遮罩。
+   * 注意：Element Plus 的 el-dialog 关闭后 overlay 元素会留在 DOM 里（display:none），
+   * 因此不能只判断存在性 —— 否则关掉弹窗后会被误判为仍在遮罩态，窗口按钮一直发黑。
+   */
+  const hasVisibleOverlay = () => Array.from(document.querySelectorAll('.el-overlay')).some((el) => {
+    const st = getComputedStyle(el)
+    return st.display !== 'none' && st.visibility !== 'hidden'
+  })
   const syncTitleBar = () => {
-    const next = !!document.querySelector('.el-overlay')   // 任一弹窗（dialog/drawer/message-box）存在
+    const next = hasVisibleOverlay()
     if (next === titleBarDimmed) return                     // 状态未变则跳过，避免频繁 IPC
     titleBarDimmed = next
     window.api?.setTitleBarOverlay?.(next
       ? { color: '#1d1c1a', symbolColor: '#ffffff' }        // 遮罩态：墨黑底 + 白符号
       : { color: '#ffffff', symbolColor: '#22211f' })       // 常态：白底 + 墨黑符号（与顶栏一致）
   }
+  // 先同步一次，确保初始态为「白底墨符号」
+  syncTitleBar()
   // 只观察子节点增删（弹窗挂载/卸载），不观察属性变化，开销可控
   const mo = new MutationObserver(syncTitleBar)
   mo.observe(document.body, { childList: true, subtree: true })
