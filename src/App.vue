@@ -97,12 +97,15 @@ onMounted(async () => {
     const next = hasVisibleOverlay()
     if (next === titleBarDimmed) return                     // 状态未变则跳过，避免频繁 IPC
     titleBarDimmed = next
-    // 遮罩态用 EP 遮罩同值同材质（--el-overlay-color-lighter = #00000080，半透明黑）：
-    // 之前写不透明墨黑 #1d1c1a，视觉上是一块死黑，与页面遮罩（半透明、内容隐约可见）对不上。
-    // 半透明色会与窗口底色叠加，观感与页面遮罩保持一致。
+    // 遮罩态颜色 = 「顶栏白」与「EP 遮罩」的合成值，取不透明色：
+    //   遮罩 = --el-overlay-color-lighter (#00000080，50% 黑)；
+    //   按钮区紧邻顶栏（--surface 纯白 #ffffff）→ 合成 = 50% 白 = #808080。
+    // 为什么不用 rgba：Windows 下 titleBarOverlay 会忽略 alpha，导致调用无效、
+    // 按钮区停在旧色（实测截图取色为 #202020，而遮罩区是 #7b7a79，明显对不上）。
+    // 实测佐证：截图遮罩区 #7b7a79 ≈ 暖纸白 #f6f5f2 + 50% 黑，与计算完全吻合。
     window.api?.setTitleBarOverlay?.(next
-      ? { color: 'rgba(0, 0, 0, 0.5)', symbolColor: '#ffffff' }   // 遮罩态：半透明黑 + 白符号
-      : { color: '#ffffff', symbolColor: '#22211f' })             // 常态：白底 + 墨黑符号（与顶栏一致）
+      ? { color: '#808080', symbolColor: '#ffffff' }   // 遮罩态：与遮罩同灰 + 白符号
+      : { color: '#ffffff', symbolColor: '#22211f' })  // 常态：白底 + 墨黑符号（与顶栏一致）
   }
   // 先同步一次，确保初始态为「白底墨符号」
   syncTitleBar()
