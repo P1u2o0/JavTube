@@ -132,13 +132,16 @@ function slotStyle(i, ph = false) {
   const depth = abs === 0 ? 0 : abs === 1 ? 180 : 320
   const x     = off ? sign * 900 : (abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480))
   const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
-  // 两侧弱化不再用「海报透明」，改用「纯白遮罩」（海报本体保持不透明）
+  // 两侧弱化不用「半透明」，而用「纯白遮罩」（海报本体保持实色）
   const veil = abs === 0 ? 0 : abs === 1 ? 0.5 : 0.74
+  // 极小幅度的透明度梯度（0.94 / 0.88）：只为切换瞬间提供淡入淡出手感，
+  // 幅度小到静止时读不出"半透明"，视觉上的弱化仍全部由白遮罩承担
+  const fade = abs === 0 ? 1 : abs === 1 ? 0.94 : 0.88
   return {
     // 两侧不倾斜（无 rotateY）：仅水平位移 + 纵深后撤 + 缩放
     // perspective() 内联进 transform，避免父级 perspective+overflow 压平 3D
     transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
-    opacity: off ? 0 : 1,          // 本体不透明：只移出屏外时隐藏
+    opacity: off ? 0 : (ph ? fade * 0.96 : fade),
     zIndex: 10 - abs - (ph ? 1 : 0),
     '--shade': off ? 0 : (ph ? veil + 0.1 : veil),   // 白色遮罩强度（中心 0，越外越白）
     pointerEvents: ph || off ? 'none' : undefined
@@ -234,8 +237,10 @@ onBeforeUnmount(stopTimer)
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;
+  /* 位移 480ms 走完整段；透明度 240ms 稍滞后 60ms 起步 ——
+     切换时先"滑过去"、再"渐显"，既丝滑又不会拖成长淡出 */
   transition: transform 480ms var(--ease-in-out),
-              opacity 300ms var(--ease-out);
+              opacity 240ms var(--ease-out) 60ms;
   will-change: transform, opacity;
 }
 .slot img {
