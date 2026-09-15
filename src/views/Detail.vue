@@ -392,14 +392,6 @@ async function copyCode() {
  */
 function fmt(n) { return Number(n || 0).toLocaleString() }
 
-/**
- * 计算属性：类型标记文本（中字/流出/破解等）
- */
-const flagsText = computed(() => {
-  if (!m.value) return ''
-  const labels = [['zz','中字'],['lc','流出'],['pj','破解'],['dt','单体'],['hj','合集'],['dm','动漫'],['vr','VR'],['sd','3D']]
-  return labels.filter(([k]) => m.value[k] === 'y').map(([,n]) => n).join('，') || '—'
-})
 
 /**
  * 加载影片详情数据
@@ -430,7 +422,6 @@ async function onPlay() {
   const r = await window.api.playVideo(m.value.py).catch(() => null)
   if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
   safeCall(window.api.recordPlay(m.value.id))
-  store.dirty = true
 }
 
 /**
@@ -466,7 +457,6 @@ async function onSaveEdit(data) {
   const r = await window.api.updateMovie(m.value.id, JSON.parse(JSON.stringify(data)))
   if (r.ok) {
     ElMessage.success('保存成功')
-    store.dirty = true
     editShow.value = false
     await load(m.value.id)
   } else ElMessage.error(r.error)
@@ -489,7 +479,6 @@ async function onScrape() {
       if (ur.ok) {
         scrapeStore.done(key, true)
         ElMessage.success(`刮削成功（来源: ${r.data.source}）`)
-        store.dirty = true
         await load(m.value.id)
         await store.loadAllDbTags()  // 刷新标签统计（标签按影片数量排序，见 TagFilter.byUsage）
       } else {
@@ -512,10 +501,6 @@ async function onScrape() {
  * 跳转到片库按标签筛选
  */
 function filterByTag(t) { router.push({ path: '/library', query: { tag: t } }) }
-/**
- * 跳转到片库按女优筛选
- */
-function filterByActress(a) { router.push({ path: '/library', query: { actress: a } }) }
 /**
  * 跳转到片库按厂商筛选
  */

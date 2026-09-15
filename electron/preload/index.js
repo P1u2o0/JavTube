@@ -97,14 +97,6 @@ contextBridge.exposeInMainWorld('api', {
    */
   batchAddTags: (ids, tags) => ipcRenderer.invoke(IPC.MOVIES_BATCH_TAGS, { ids, tags }),
 
-  /**
-   * 全局搜索（影片/女优/网址）
-   * @param {string} scope - 搜索范围（'actress'/'website'/其他为影片）
-   * @param {string} q - 搜索关键词
-   * @returns {Promise<Object>} { ok, scope, data }
-   */
-  search: (scope, q) => ipcRenderer.invoke(IPC.MOVIES_SEARCH, { scope, q }),
-
   // === 女优相关接口 ===
 
   /**
@@ -263,13 +255,6 @@ contextBridge.exposeInMainWorld('api', {
    * @returns {Promise<Object>} { ok, data }，data 为分钟数（0 表示无法解析）
    */
   readVideoDuration: (p) => ipcRenderer.invoke(IPC.UTILS_READ_DURATION, p),
-
-  /**
-   * 读取文件并返回 Base64 编码
-   * @param {string} p - 文件路径
-   * @returns {Promise<Object>} { ok, data }
-   */
-  readFileBase64: (p) => ipcRenderer.invoke(IPC.UTILS_READ_FILE_BASE64, p),
 
   // === 系统对话框接口 ===
 

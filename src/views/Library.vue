@@ -284,7 +284,6 @@ onMounted(async () => {
     // 无筛选条件时也必须重新加载全量列表：store.movies 是三个视图共享的，
     // 切到喜欢/历史页后它已被替换为子集数据，不重载会导致片库影片「消失」
     store.page = 1
-    store.dirty = false
     await store.loadMovies({ append: false, extraFilter: routeExtra() })
   }
   await tagsP

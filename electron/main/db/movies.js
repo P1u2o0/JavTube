@@ -325,28 +325,6 @@ function registerMovieIpc(ipcMain, db) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  // IPC: movies:search — 渲染进程 → 主进程
-  // 全局搜索：支持在影片、女优、网址三个范围内搜索
-  ipcMain.handle(IPC.MOVIES_SEARCH, (_e, { scope, q }) => {
-    try {
-      q = (q || '').trim()
-      if (!q) return { ok: true, scope, data: [] }
-      const like = `%${q}%`
-      let sql, args
-      if (scope === 'actress') {
-        // 搜索女优：按名称模糊匹配
-        sql = 'SELECT * FROM actress WHERE name LIKE ? ORDER BY id DESC LIMIT 50'; args = [like]
-      } else if (scope === 'website') {
-        // 搜索网址：按名称或 URL 模糊匹配
-        sql = 'SELECT * FROM websites WHERE name LIKE ? OR url LIKE ? ORDER BY id DESC LIMIT 50'; args = [like, like]
-      } else {
-        // 默认搜索影片：在番号、片名、标签中模糊匹配
-        sql = 'SELECT * FROM movies WHERE ph LIKE ? OR pm LIKE ? OR bq LIKE ? ORDER BY id DESC LIMIT 50'; args = [like, like, like]
-      }
-      const r = db.exec(sql, args)
-      return { ok: true, scope, data: rows(r[0]) }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
 }
 
 

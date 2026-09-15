@@ -23,7 +23,6 @@ module.exports = {
   MOVIES_GET_ALL_TAGS: 'movies:getAllTags',
   HOME_RECOMMEND: 'home:recommend',        // 首页推荐（轮播/类别按钮/近期上新）
   MOVIES_RECORD_PLAY: 'movies:recordPlay',
-  MOVIES_SEARCH: 'movies:search',
 
   // === 女优 ===
   ACTRESS_LIST: 'actress:list',
@@ -54,7 +53,6 @@ module.exports = {
   // === 工具 ===
   UTILS_PLAY_VIDEO: 'utils:playVideo',
   UTILS_SCAN_DIR: 'utils:scanDir',
-  UTILS_READ_FILE_BASE64: 'utils:readFileBase64',
   UTILS_READ_DURATION: 'utils:readDuration',
 
   // === 对话框 ===

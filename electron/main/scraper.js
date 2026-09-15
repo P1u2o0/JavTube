@@ -207,9 +207,6 @@ async function scrapeJavBus(ph, type, opts = {}) {
   // 提取发行日期
   let fxrq = inteHandler(data, '<span class="header">發行日期:</span>', '</p>', [0, 0, 0]).trim()
   // 提取时长并转换为秒（原页面显示为"分鐘"单位）
-  let sc = inteHandler(data, '<span class="header">長度:</span>', '</p>', [0, 0, 0])
-  sc = sc.replace('分鐘', '').trim()
-  sc = sc ? String(Number(sc) * 60) : ''
 
   // 提取导演
   let dy = inteHandler(data, '<span class="header">導演:</span>', '</a>', [0, 1, 1]).trim()
@@ -279,14 +276,15 @@ async function scrapeJavBus(ph, type, opts = {}) {
   // 提取预览图（样本图）大图 URL 列表（2026-09-09 新增）
   // JAVBUS 详情页 sample-waterfall 区块结构：<a class="sample-box" href="大图URL"><img src="缩略图"></a>
   const previews = []
+  const previewSet = new Set()   // 去重用（原 includes 为线性查找）
   const sampleRe = /class="sample-box"[^>]*href="([^"]+)"/g
   let sm
   while ((sm = sampleRe.exec(data)) !== null) {
     const url = sm[1]
-    if (url && url.startsWith('http') && !previews.includes(url)) previews.push(url)
+    if (url && url.startsWith('http') && !previewSet.has(url)) { previewSet.add(url); previews.push(url) }
   }
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, duration, previews, cast, source: 'JAVBUS' }
+  return { ph: phCode, pm, fl, fxrq, dy, ps, fx, xl, yy, bq, cover, duration, previews, cast, source: 'JAVBUS' }
 }
 
 /**
@@ -384,9 +382,6 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 提取发行日期
   let fxrq = inteHandler(inteHandler(detail, '<strong>日期:</strong>', '</div>', [0, 0, 0]), '<span class="value">', '</span>', [0, 0, 0])
   // 提取时长并转换为秒
-  let sc = inteHandler(inteHandler(detail, '<strong>時長:</strong>', '</div>', [0, 0, 0]), '<span class="value">', '</span>', [0, 0, 1])
-  sc = sc.replace('分鍾', '').trim()
-  sc = sc === 'N/A' ? '' : (sc ? String(Number(sc) * 60) : '')
 
   // 提取导演
   let dy = inteHandler(inteHandler(detail, '<strong>導演:</strong>', '</div>', [0, 0, 0]), '<span class="value">', '</span>', [0, 0, 1])
@@ -444,6 +439,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 实测 JAVDB 现行页面为：<div class="tile-images preview-images">…<img src="https://...jpg">
   // （旧实现只找 '<div class="preview-images">'，页面加 tile-images 类后恒失配 → 预览图恒空）
   const previews = []
+  const previewSet = new Set()   // 去重用（原 includes 为线性查找）
   let previewBlock = inteHandler(data, 'class="tile-images preview-images"', '</div>', [0, 0, 0])
   if (!previewBlock) previewBlock = inteHandler(data, '<div class="preview-images">', '</div>', [0, 0, 0])
   if (previewBlock) {
@@ -451,7 +447,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
     let im
     while ((im = imgRe.exec(previewBlock)) !== null) {
       const url = im[1]
-      if (url && url.startsWith('http') && !previews.includes(url)) previews.push(url)
+      if (url && url.startsWith('http') && !previewSet.has(url)) { previewSet.add(url); previews.push(url) }
     }
   }
 
@@ -476,7 +472,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
     if (scoreM) score = scoreM[1]
   }
 
-  return { ph: phCode, pm, fl, fxrq, sc, dy, ps, fx, xl, yy, bq, cover, vr, duration, previews, want, watched, score, cast, source: 'JAVDB' }
+  return { ph: phCode, pm, fl, fxrq, dy, ps, fx, xl, yy, bq, cover, vr, duration, previews, want, watched, score, cast, source: 'JAVDB' }
 }
 
 /**

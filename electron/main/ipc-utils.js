@@ -87,12 +87,6 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
 
   // === 读取文件并返回 Base64 ===
   // 渲染进程 → 主进程：读取文件二进制数据并转为 Base64 字符串（用于图片预览等）
-  ipcMain.handle(IPC.UTILS_READ_FILE_BASE64, (_e, filePath) => {
-    try {
-      const buf = fs.readFileSync(filePath)
-      return { ok: true, data: buf.toString('base64') }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
 
   // === 读取视频文件时长（分钟，2026-09-09 新增） ===
   // 渲染进程 → 主进程：解析 MP4/M4V/MOV 容器的 mvhd 得到时长；

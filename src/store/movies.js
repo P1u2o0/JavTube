@@ -32,12 +32,10 @@ export const useMoviesStore = defineStore('movies', {
                           //  initIfNeeded 加载设置后会被用户配置覆盖）
     colsPerRow: 5,        // 每行显示的影片卡片数
     loading: false,       // 加载中标志
-    dirty: false,         // 数据脏标志（标记数据有变动，需重新加载）
 
     // 筛选状态
     sort: { by: 'tjrq', order: 'DESC', random: false },  // 排序：字段、方向、随机模式
     tagSelected: [[], [], [], [], [], [], [], [], []],   // 9个类别选中的标签数组
-    collapsed: [false, false, false, false, false, false, false, false, false], // 各类别折叠状态
     searchQ: '',          // 当前搜索关键词（2026-09-09 新增：来自顶栏搜索，
                           //  loadMovies 会并入 filter.q，保证翻页/刷新不丢搜索条件）
 
