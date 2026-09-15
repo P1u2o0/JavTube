@@ -11,20 +11,20 @@
 
 `javtube_dev` 是 **Electron 30 + Vue 3 + Vite 5 + Element Plus + Pinia + sql.js** 写的
 **纯本地**影视库管理软件（JAV 元数据刮削 / 整理 / 九类标签筛选 / 播放）。
-数据全部保存在本机，不上传任何内容。当前 main 分支 **149 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
+数据全部保存在本机，不上传任何内容。当前 main 分支 **179 个 commit**（`git rev-list --count HEAD`），工作区 clean，无 git 远端。
 
 ---
 
-## 1. 当前状态快照（2026-09-13）
+## 1. 当前状态快照（2026-09-15）
 
 | 项 | 值 |
 |---|---|
 | 项目根 | `<项目根目录>\` |
-| git | `main` 分支，149 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
+| git | `main` 分支，179 commit，工作区 clean，**无远端**（用户决定不用代码托管） |
 | 运行时 | Node 22（`<工具目录>\binaries\node\versions\22.22.2-3\`，用绝对路径调用；版本目录会随会话变化，先 `ls versions/` 确认） |
-| dev 服务 | **已停止**，需要时手动启动（见下） |
+| dev 服务 | 需手动启动（`npm run dev`，见下）；2026-09-15 收尾时软件窗口已关闭 |
 | 数据目录（dev） | `node_modules\electron\dist\data\`（`app.db` + `covers\`） |
-| 离线备份 | 工作区上级 `javtube_backup_20260910_v2.bundle`（git bundle 全历史）+ 同名 `.tar.gz` 源码快照 |
+| 离线备份 | 工作区上级 `javtube_backup_20260915_post_b5b7.bundle`（git bundle 全历史，含到 B7/B5）+ `javtube_src_backup_20260915_post_b5b7.tar.gz`；另存 B5/B7 开工前的回滚点 `*_20260915_pre_b5b7.bundle` |
 | 测试数据 | 2 部影片（SSNI-888 / MNGS-067），含封面与预览图 |
 
 ### ⚠️ 启动前必读：清掉 `ELECTRON_RUN_AS_NODE`
@@ -148,6 +148,9 @@ javtube_dev/
 16. **刮削图片的网络路径按域名区分**——DMM 图床（awsimgsrc/pics.dmm.co.jp）经代理连接失败、直连正常；而 JAVBUS/JAVDB 主站图必须走代理。`downloadImage` 按域名决定优先顺序、另一种兜底
 17. **★ Cloudflare 与图床按客户端 TLS 指纹放行**——2026-09-13 实测（同一代理/同一 Cookie/同一时刻）：curl 全部 200，而 Electron `net.fetch`（JAVDB 403 / DMM 连接被关闭）与 Node `https`（JAVDB 403）都被拦。**因此刮削网络层改用系统 curl**（`net-curl.js`）。改 scraper 网络相关代码前先读该文件头注释；回归用 `npm run scrape:test`
 18. **JAVBUS 反爬态：返回 302 + 有效响应体**——不能加 `curl -L`（会跟随到 `/doc/driver-verify` 验证页，拿到无效内容）；按 200/302 都读响应体、由内容判定有效性
+19. **★ 删除变量/字段时必须 grep 全部引用**——2026-09-15 清理死代码时删了 `let sc`，却漏了两行 `sc = sc * 60`：`node --check` 查不出（语法合法），**运行时才报 `sc is not defined`**，靠 `npm run scrape:test` 兜住。**改主进程代码后必须跑 scrape:test 冒烟，不能只靠语法检查**
+20. **函数搬进 composable / 组件后必清死导入**——三视图的 `onPlay`/`onBatch*` 搬进 `useMovieList` 后，`ElMessage`/`ElMessageBox`/`safeCall` 在这些视图里只剩导入行（**Library 仍在用 ElMessage，别一起删**）；排序下拉抽成 `SortDropdown.vue` 后，ActorFilms 的 `AppIcon` 导入也变死
+21. **★ 用 CDP 验证 UI 时的三个假象**（2026-09-15 踩坑，做法已写进 `electron-cdp-screenshot` 技能）——① 窗口被遮挡时 Chrome 节流（rAF 完全不推进）→ `Page.captureScreenshot` **永不返回**，命令被 SIGTERM 且 **stdout 全空**（极易误判成"命令没跑"）→ 进度要写文件 + 每个 CDP 请求加超时；② 同一任务内设内联样式后**立即** `getComputedStyle` 读到的是**变更前**的值（节流时 pending transition 永不推进）→ 看起来像"样式改了没生效"，**别据此判定 CSS 坏了**，用页内 clone 探针验证级联；③ 本机 `prefers-reduced-motion: reduce` 为 true → `global.css` 降级动效块把 `transition-duration` 压成 `0.01ms !important`（`getComputedStyle().transitionDuration` 显示 `1e-05s`）属**正常**，不是 CSS 变量失效
 
 ---
 
@@ -162,10 +165,33 @@ javtube_dev/
 
 ---
 
-## 7. 近期批次摘要（2026-09-09 ~ 09-13）
+## 7. 近期批次摘要（2026-09-09 ~ 09-15）
 
 > 完整明细见 `接续工作小结.md` §1.x（每批次对应 commit 与理由）。
 
+- **9/15｜代码审查（屎山梳理）→ 执行优化批次 B1~B7，全部完成**（审查报告见 commit `a219a80`：
+  3 硬缺陷 + 20 性能热点 + 16 处重复/死代码；B 系列逐批提交、逐批实测，收尾工作区 clean / 179 commit）——
+  - **B1 硬缺陷**：`Library.vue` router 未定义（点结果页标题条「×」即抛 ReferenceError）→ 补 `useRouter`；
+    preload 缺 `playMovie`（演员页点播放静默失效，异常被 safeCall 吞掉）→ 补别名；
+    `db/settings.js` 备份时序错误（`persistSoon` 是延迟落盘，紧接着 `copyFileSync` 拷到的仍是旧库）→ 改同步 `persist(db)` 后再拷
+  - **B2 热路径 O(n²)→Set**：MovieGrid 卡片选中判断、`visibleCategories`、StatusBar `invert()`（页面外选中保留）
+  - **B3 首页聚合**：`home:recommend` 约 12n 次 `splitMulti` → 进 handler 先 `prepared[]` 预处理缓存三字段；
+    categories 候选由「每个标签各扫全表」改「一次遍历按标签累加」；筛选语义与随机结果不变
+  - **B4 死代码清理**（8 文件 / -73 行）：`movies:search` 整链路、`utils:readFileBase64`、`sc` 时长字段全链路、
+    `flagsText`、`filterByActress`、store 的 `dirty`/`collapsed`（含 4 处写入）、`previews.includes`→Set
+  - **B5 重复代码收敛**（10 文件）：新增 `utils/global.splitTags()`（前端 7 处手写拆分归一，
+    **顺带修掉 ActorFilms 一处漏 `filter(Boolean)`**）；三视图（Library/Favorite/History）的
+    `onPlay`/`onBatchDelete`/`onBatchFav` → `useMovieList`（新增 `onRefresh` 回调注入，因三者刷新函数不同名，
+    **顺带统一 Favorite 两处走样**：确认框缺标题与 warning 类型、`onBatchFav` 缺 API 守卫与成功提示）；
+    排序下拉 → 新受控组件 `SortDropdown.vue`（StatusBar + ActorFilms 共用，去重约 45×2 行，
+    父级各自写回 `store.sort` / 本地 ref）
+  - **B6 刮削**：`twToCn` 逐字符 `TW_STR.indexOf` 全表扫描 → 模块加载建 `TW_CN_MAP`；欧美片分类路径每部都拉首页 → 模块级 `omPathCache`。
+    **有意未做**（用户确认）：图片并发下载（限速策略未核实、防触发反爬）、选 javbus 仍跑 JAVDB 补统计（既有产品行为，属产品决策）
+  - **B7 主进程阻塞**：`ipc-utils.scanDir` 同步递归 → `fs.promises` 异步（原实现扫几万文件时占满事件循环、窗口无响应）；
+    封面协议 `existsSync`+`statSync` 两次同步调用 → 一次异步 `stat`；批量操作逐条 SQL → 单条 `IN(...)`（batchTags 另加 `BEGIN/COMMIT` 事务）；
+    启动 11 条「列已存在即抛错」的 ALTER → 先 `PRAGMA table_info` 只补缺失列
+  - **验证**：每批 `check:undefined` + `vite build`；改主进程的批次额外 `scrape:test`；B3/B5 用 CDP 实机核对
+  - **回滚点**：开工前 `javtube_backup_20260915_pre_b5b7.bundle`；全部完成后 `javtube_backup_20260915_post_b5b7.bundle`
 - **9/8**：8 轮工程重构（db 按领域拆分 / IPC 通道常量化 / 刮削映射公共函数 / index.js 拆分 / 写盘原子性）
 - **9/9**：搜索列表页、刮削预览图+统计+时长提取、详情页改版、结果页标题条、女优/导演/系列筛选、UI 对齐 EP 主题、8 轮实测修复
 - **9/10 上午**：设置页 → 弹窗（900×74vh 固定、五 tab 双栏网格、批量保存、注释精简 + show_tips 开关）
@@ -227,6 +253,9 @@ javtube_dev/
 7. **待评估**：Detail.vue（803 行）拆分出 PreviewLightbox.vue 独立组件
 
 > 已完成（勿重复）：~~settings.js/actress.js 的同步 persist 迁移到 persistSoon~~（9/11 完成）
+>
+> 已完成（勿重复）：**代码审查批次 B1~B7 全部完成**（3 硬缺陷 / 热路径 Set 化 / 首页聚合 / 死代码清理 /
+> 重复代码收敛 / 刮削两处 / 主进程阻塞），详见 §7 的 9/15 条目 —— 上表若与此重叠，以 §7 为准。
 
 ---
 
