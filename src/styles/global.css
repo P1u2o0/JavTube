@@ -190,6 +190,10 @@
   --el-box-shadow-lighter: 0 1px 2px rgba(50, 46, 38, .04);
   --el-box-shadow-dark: 0 4px 12px rgba(50, 46, 38, .07), 0 24px 56px rgba(50, 46, 38, .16);
 
+  /* 遮罩浓度（2026-09-15）：EP 默认 #00000080（50%）偏透，加深到 70%。
+     弹窗遮罩（.el-overlay）与详情页灯箱（.lightbox）都引用此变量 → 天然同步，不会跑偏。 */
+  --el-overlay-color-lighter: rgba(0, 0, 0, 0.7);
+
   /* Element Plus 过渡：曲线与时长对齐 Emil 设计工程规范 */
   --el-transition-duration: 220ms;
   --el-transition-duration-fast: 160ms;
