@@ -62,10 +62,13 @@ export const useMoviesStore = defineStore('movies', {
      * @returns {Array} 过滤后的类别数组
      */
     visibleCategories: (s) => {
+      // 先建一次 Set：原写法对每个候选标签做 allDbTags.includes() 线性查找，
+      // 标签上千时是「类别标签数 × 全库标签数」，标签栏首次渲染会卡。
+      const known = new Set(s.allDbTags)
       return s.categories.map((c, idx) => ({
         cat: c.cat,
         idx,
-        tags: c.tags.filter(t => s.allDbTags.includes(t))
+        tags: c.tags.filter(t => known.has(t))
       }))
     }
   },

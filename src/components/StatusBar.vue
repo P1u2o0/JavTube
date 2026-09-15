@@ -127,22 +127,18 @@ function selectAll() {
   store.selectedIds = ids
 }
 
-// 反选函数：反转当前页面影片的选中状态
-// 已选中的取消选中，未选中的加入选中
+// 反选函数：反转当前页面影片的选中状态（页面外的选中保持不变）
+// 原实现用 indexOf + splice 逐条查找搬移（每页 200 部 ≈ 2 万次比较 + 200 次数组搬移），
+// 改为 Set 差集：页面内已选中的剔除、未选中的补上，一次完成。
 function invert() {
-  // 获取当前页面所有影片 ID
   const pageIds = store.movies.map(m => m.id)
-  // 复制当前已选中列表
-  const newSel = [...store.selectedIds]
-  // 遍历当前页面影片，反转选中状态
-  for (const id of pageIds) {
-    const i = newSel.indexOf(id)
-    // 已选中则移除
-    if (i >= 0) newSel.splice(i, 1)
-    // 未选中则添加
-    else newSel.push(id)
-  }
-  store.selectedIds = newSel
+  const pageSet = new Set(pageIds)
+  const cur = new Set(store.selectedIds)
+  // 页面外的选中原样保留
+  const kept = [...cur].filter(id => !pageSet.has(id))
+  // 页面内：原本未选中的补进来（原本选中的已在 kept 之外，自然被剔除）
+  const added = pageIds.filter(id => !cur.has(id))
+  store.selectedIds = [...kept, ...added]
 }
 </script>
 

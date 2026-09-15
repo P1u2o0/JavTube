@@ -18,7 +18,7 @@
         :m="m"
         :style="{ '--i': i }"
         :selectMode="selectMode"
-        :isSel="selectedIds.includes(m.id)"
+        :isSel="selSet.has(m.id)"
         :showPlayCount="showPlayCount"
         @click="$emit('click', m)"
         @play="$emit('play', m)"
@@ -47,6 +47,7 @@
 
 <script setup>
 // 引入影片卡片子组件
+import { computed } from 'vue'
 import MovieCard from './MovieCard.vue'
 
 // 组件 props 定义
@@ -61,6 +62,11 @@ const props = defineProps({
   selectedIds: Array,  // 已选中的影片 ID 列表
   showPlayCount: Boolean // 是否显示播放次数角标（观看记录页）
 })
+
+// 选中集合：原先模板里写 selectedIds.includes(m.id)，
+// 每张卡片都线性扫一遍选中数组（每页 200 张 = 4 万次比较，且每次勾选都全量重算）。
+// 用 Set 后单次查找 O(1)，多选模式下的勾选/翻页明显变顺。
+const selSet = computed(() => new Set(props.selectedIds || []))
 
 // 定义 emit 事件：
 // - page: 分页切换事件，参数为目标页码
