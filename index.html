@@ -19,8 +19,8 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self';
                script-src 'self';
-               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-               font-src 'self' data: https://fonts.gstatic.com;
+               style-src 'self' 'unsafe-inline';
+               font-src 'self' data:;
                img-src 'self' data: file: blob: http: https: javtube-cover:;
                connect-src 'self' ws: wss: http: https:;"
     />
@@ -28,13 +28,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- 页面标题，显示在窗口标题栏 -->
     <title>JavTube</title>
-    <!-- 字体：Outfit（拉丁展示字）+ Noto Sans SC（中文正文），离线时回退系统字体 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- 字体：Inter（拉丁，本地托管于 src/assets/fonts）+ 系统中文（苹方/微软雅黑），离线可用 -->
   </head>
   <body>
     <!-- Vue 应用挂载点：Vue 实例会挂载到 id="app" 的 DOM 元素上 -->

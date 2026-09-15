@@ -215,7 +215,7 @@ function onSearch() {
 /* Logo 容器，可点击 */
 .logo { display: flex; align-items: center; cursor: pointer; }
 /* 应用图标样式 */
-.app-icon { height: 34px; width: auto; object-fit: contain; border-radius: 9px; }
+.app-icon { height: 34px; width: auto; object-fit: contain; border-radius: var(--r-sm); }
 /* 导航标签容器：撑满高度，让激活指示条贴合导航栏底边 */
 .tabs { display: flex; align-items: stretch; gap: 4px; height: 100%; }
 /* 单个导航标签 */
@@ -309,7 +309,7 @@ function onSearch() {
   position: absolute; top: -4px; right: -4px;
   min-width: 17px; height: 17px;
   padding: 0 4px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--accent);
   color: #fff;
   font-size: 11px; font-weight: 600;

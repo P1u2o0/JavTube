@@ -7,9 +7,41 @@
  *  - 暖调纸白底 + 墨黑主色 + 单一朱柿红强调色（收藏/喜欢语义）
  *  - 圆角收敛为四级：8（小件）/ 12（卡片面板）/ 16（弹层）/ pill（按钮输入）
  *  - 阴影三级，带暖色环境色，不用纯黑
- *  - 字体：Outfit（拉丁展示）+ Noto Sans SC（中文正文），离线回退系统字体
+ *  - 字体：Inter（拉丁，本地托管，最接近 Apple SF Pro）+ 系统中文（苹方/微软雅黑）
  * ============================================================
  */
+
+/* ====== 本地字体：Inter（最接近 Apple SF Pro 的开源字体）======
+   离线托管替代原 Google Fonts CDN（原外链在国内常加载失败 → 静默回退系统字体）。
+   中文交由系统字体（Microsoft YaHei UI / PingFang SC），不额外携带中文字库。 */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/inter-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/inter-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/inter-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/inter-700.woff2') format('woff2');
+}
 
 /* ====== 设计令牌 ====== */
 :root {
@@ -42,7 +74,7 @@
 
   /* 圆角体系（Apple 风格：整体更圆润，连续圆角观感） */
   --r-sm: 10px;             /* 小件：封面、缩略图、菜单 */
-  --r-md: 14px;             /* 卡片、面板、表格 */
+  --r-md: 16px;             /* 卡片、面板、表格（对齐 Apple 阶梯 10/16/20） */
   --r-lg: 20px;             /* 对话框、抽屉 */
   --r-pill: 999px;          /* 按钮、输入框、标签 */
 
@@ -53,9 +85,9 @@
   /* 表面内高光（Apple 质感：顶部细微受光，用于卡片/按钮） */
   --highlight: inset 0 1px 0 rgba(255, 255, 255, .65);
 
-  /* 字体 */
-  --font-display: "Outfit", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
-  --font-body: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  /* 字体（Apple 风格：Inter 承担拉丁，中文回退系统苹方/微软雅黑；全部本地/系统，无网络依赖） */
+  --font-display: "Inter", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-body: "Inter", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
 
   /* 动效（Emil Kowalski 设计工程规范：强自定义曲线 + 分级时长，UI 动画一律 < 300ms） */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);       /* 进入 / 反馈：起步快、响应感强 */
@@ -153,7 +185,7 @@
   --el-border-radius-base: 8px;
   --el-border-radius-small: 6px;
   --el-border-radius-round: 999px;
-  --el-font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --el-font-family: "Inter", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --el-box-shadow: 0 2px 4px rgba(50, 46, 38, .05), 0 8px 24px rgba(50, 46, 38, .09);
   --el-box-shadow-light: 0 1px 2px rgba(50, 46, 38, .05), 0 1px 1px rgba(50, 46, 38, .04);
   --el-box-shadow-lighter: 0 1px 2px rgba(50, 46, 38, .04);
@@ -361,7 +393,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 .el-radio__input.is-checked + .el-radio__label { color: var(--primary); }
 .el-checkbox__input.is-checked .el-checkbox__inner { background: var(--primary); border-color: var(--primary); }
 .el-checkbox__input.is-checked + .el-checkbox__label { color: var(--primary); }
-.el-checkbox__inner { border-radius: 5px; transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.el-checkbox__inner { border-radius: 4px; transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 .el-radio__inner { transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 .el-switch__core { transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 .el-switch__action { transition: transform var(--dur-base) var(--ease-spring); }   /* 滑块带轻微弹性 */
