@@ -314,7 +314,7 @@ watch(() => route.query, async (q) => {
 }
 .ft-text {
   flex: 1;
-  font-size: 15px; font-weight: 600;
+  font-size: var(--fs-lg); font-weight: 600;
   color: var(--text);
   font-family: var(--font-display);
 }

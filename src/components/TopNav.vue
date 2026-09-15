@@ -220,7 +220,7 @@ function onSearch() {
 .tabs { display: flex; align-items: stretch; gap: 4px; height: 100%; }
 /* 单个导航标签 */
 .tab {
-  font-size: 14px; color: var(--muted); position: relative; cursor: pointer;
+  font-size: var(--fs-md); color: var(--muted); position: relative; cursor: pointer;
   padding: 0 12px;
   display: flex; align-items: center; gap: 6px;
   text-decoration: none;
@@ -256,7 +256,7 @@ function onSearch() {
 .search-input {
   flex: 1; border: none; outline: none;
   padding: 0 4px 0 16px; height: 100%;
-  font-size: 13.5px; color: var(--text);
+  font-size: var(--fs-md); color: var(--text);
   background: transparent;
   font-family: var(--font-body);
 }
@@ -276,7 +276,7 @@ function onSearch() {
   padding: 0 16px; height: 38px;
   border: none; border-radius: var(--r-pill);
   background: var(--primary); color: #fff;
-  font-size: 13.5px; font-weight: 500; cursor: pointer;
+  font-size: var(--fs-md); font-weight: 500; cursor: pointer;
   transition: background var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 .add-btn:hover { background: var(--primary-hover); }
@@ -284,7 +284,7 @@ function onSearch() {
 /* 窄窗口适配（Electron 最小宽 1000px）：收紧间距，避免顶栏挤压 */
 @media (max-width: 1200px) {
   .left { gap: 18px; }
-  .tab { padding: 0 8px; font-size: 13px; }
+  .tab { padding: 0 8px; font-size: var(--fs-base); }
   .right { gap: 8px; }
   .add-btn { padding: 0 12px; }
 }
@@ -312,7 +312,7 @@ function onSearch() {
   border-radius: var(--r-sm);
   background: var(--accent);
   color: #fff;
-  font-size: 11px; font-weight: 600;
+  font-size: var(--fs-xs); font-weight: 600;
   line-height: 17px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -333,11 +333,11 @@ function onSearch() {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px; font-weight: 600; color: var(--text);
+  font-size: var(--fs-base); font-weight: 600; color: var(--text);
 }
 .bp-clear {
   border: none; background: transparent;
-  color: var(--muted); font-size: 12px;
+  color: var(--muted); font-size: var(--fs-sm);
   padding: 2px 6px; border-radius: var(--r-sm);
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
@@ -348,7 +348,7 @@ function onSearch() {
 /* 分组标题：正在刮削 / 待刮削 / 刮削失败 */
 .bp-group {
   padding: 9px 14px 5px;
-  font-size: 11.5px; font-weight: 600; color: var(--muted);
+  font-size: var(--fs-sm); font-weight: 600; color: var(--muted);
   letter-spacing: 0.03em;
 }
 .bp-item {
@@ -375,13 +375,13 @@ function onSearch() {
 }
 .bp-main { min-width: 0; }
 .bp-title {
-  color: var(--text); font-size: 13px; font-weight: 500;
+  color: var(--text); font-size: var(--fs-base); font-weight: 500;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.bp-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.bp-sub { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
 .bp-fail { color: var(--danger); word-break: break-all; }
 .bp-ok { color: var(--success); }
-.bp-empty { padding: 22px 0; text-align: center; color: var(--muted); font-size: 12.5px; }
+.bp-empty { padding: 22px 0; text-align: center; color: var(--muted); font-size: var(--fs-base); }
 /* 面板弹出过渡：向下展开 + 淡入 */
 /* 面板进入：ease-out；退出更快（Emil 非对称时长） */
 .bell-pop-enter-active { transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }

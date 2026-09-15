@@ -163,7 +163,7 @@ function invert() {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--sh-1);        /* Apple：面板微阴影 */
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--text-2);
 }
 /* 左侧结果数量中的粗体数字：展示字 + 等宽数字 */
@@ -172,7 +172,7 @@ function invert() {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-size: 15px;
+  font-size: var(--fs-lg);
   margin: 0 3px;
 }
 /* 左侧结果数量：margin-right:auto 把右侧内容（批量按钮组/选择开关）整体推到最右，
@@ -181,7 +181,7 @@ function invert() {
 /* 批量操作区域：紧跟「选择」开关左侧，与其一起贴右（自身不带 auto 推力） */
 .batch { display: flex; align-items: center; gap: 6px; padding-right: 12px; flex-wrap: wrap; }
 /* 已选中数量提示 */
-.sel-count { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.sel-count { color: var(--muted); font-size: var(--fs-sm); margin-right: 2px; }
 /* 右侧多选开关区域 */
 .right { display: flex; align-items: center; flex-shrink: 0; }
 .right-label { margin-right: 8px; color: var(--text-2); }

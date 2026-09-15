@@ -598,11 +598,11 @@ onMounted(async () => {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 20px;
+  font-weight: 700; font-size: var(--fs-3xl);
   letter-spacing: 0.02em;
 }
 /* 标题样式：与番号同行，长标题自动换行 */
-.title-text { font-size: 19px; font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
+.title-text { font-size: var(--fs-3xl); font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
 
 /* 主行：海报区（左，尺寸按海报比例放大）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }
@@ -652,7 +652,7 @@ onMounted(async () => {
 .no-cover {
   width: 300px; aspect-ratio: 3/2;
   display: flex; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 14px;
+  color: var(--muted); font-size: var(--fs-md);
 }
 
 /* 蓝：影片信息卡（轻量行式布局）：高度与大图区一致（stretch），
@@ -683,7 +683,7 @@ onMounted(async () => {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 17px;
+  font-weight: 700; font-size: var(--fs-2xl);
   letter-spacing: 0.02em;
 }
 /* 复制按钮：小型圆形弱化按钮，hover 强调色 */
@@ -711,7 +711,7 @@ onMounted(async () => {
 }
 .star-clip .star-on { width: 19px; height: 19px; display: block; fill: var(--warning); }
 .score-num {
-  color: var(--text); font-weight: 600; font-size: 14px;
+  color: var(--text); font-weight: 600; font-size: var(--fs-md);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
 }
@@ -729,11 +729,11 @@ onMounted(async () => {
 }
 .info-label {
   width: 60px; flex-shrink: 0;
-  color: var(--muted); font-size: 14.5px;
+  color: var(--muted); font-size: var(--fs-lg);
 }
 .info-value {
   flex: 1; min-width: 0;
-  color: var(--text); font-size: 15.5px;
+  color: var(--text); font-size: var(--fs-xl);
   line-height: 1.7;
   word-break: break-all;
 }
@@ -797,7 +797,7 @@ onMounted(async () => {
   position: absolute; bottom: 22px; left: 50%;
   transform: translateX(-50%);
   color: rgba(255, 255, 255, 0.85);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
 }
@@ -820,7 +820,7 @@ onMounted(async () => {
 .strip-badge {
   position: absolute; left: 4px; top: 4px;
   background: var(--overlay-strong);
-  color: #fff; font-size: 10px; line-height: 1;
+  color: #fff; font-size: var(--fs-xs); line-height: 1;
   padding: 3px 6px; border-radius: var(--r-pill);
   pointer-events: none;
 }

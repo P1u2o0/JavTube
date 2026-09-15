@@ -176,7 +176,7 @@ function onClearAll() {
 .header-label {
   font-weight: 600;
   color: var(--text);
-  font-size: 13.5px;
+  font-size: var(--fs-md);
   flex-shrink: 0;
   min-width: 60px;
   margin-right: 6px;
@@ -197,7 +197,7 @@ function onClearAll() {
 .cat-name {
   font-weight: 500;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--fs-base);
   /* 行高 = 芯片总高（12.5×1.6 + 8 padding + 6 上下 margin = 34px），
      使分类名与同行芯片文字落在同一条水平线上 */
   line-height: 34px;

@@ -161,7 +161,7 @@ watch(dataDirRef, () => { errd.value = false })
   width: 100%; height: 100%;
   display: flex; flex-direction: column; gap: 6px;
   align-items: center; justify-content: center;
-  color: var(--muted); font-size: 12px;
+  color: var(--muted); font-size: var(--fs-sm);
 }
 /* 悬停遮罩层 */
 .hover-overlay {
@@ -222,7 +222,7 @@ watch(dataDirRef, () => { errd.value = false })
   border-radius: var(--r-pill);
   background: var(--overlay-badge);
   color: #fff;
-  font-size: 11px; font-weight: 600;
+  font-size: var(--fs-xs); font-weight: 600;
   font-variant-numeric: tabular-nums;
   backdrop-filter: blur(4px);
   pointer-events: none;
@@ -255,13 +255,13 @@ watch(dataDirRef, () => { errd.value = false })
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  font-weight: 600; font-size: 12.5px;
+  font-weight: 600; font-size: var(--fs-base);
   letter-spacing: 0.02em;
   margin-bottom: 3px;
 }
 /* 标题：两行省略 */
 .title {
-  font-size: 13px; color: var(--text); line-height: 1.5;
+  font-size: var(--fs-base); color: var(--text); line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   min-height: 3em;

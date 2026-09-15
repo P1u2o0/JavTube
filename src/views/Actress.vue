@@ -232,7 +232,7 @@ onMounted(() => s.load())
 /* 名字样式 */
 .name { margin-top: 10px; font-weight: 600; text-align: center; color: var(--text); }
 /* 附属信息样式 */
-.sub { margin-top: 4px; text-align: center; color: var(--muted); font-size: 12px; }
+.sub { margin-top: 4px; text-align: center; color: var(--muted); font-size: var(--fs-sm); }
 /* 操作按钮区域 */
 .ops { margin-top: 10px; text-align: center; }
 /* 删除图标按钮：默认弱化，悬停显示危险色 */

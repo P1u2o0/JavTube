@@ -363,7 +363,7 @@ onBeforeUnmount(stopTimer)
   pointer-events: none;
 }
 .cat-label .cat-main {
-  font-family: var(--font-display); font-weight: 700; font-size: 20px;
+  font-family: var(--font-display); font-weight: 700; font-size: var(--fs-3xl);
   letter-spacing: 0.02em;
   max-width: 88%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -373,7 +373,7 @@ onBeforeUnmount(stopTimer)
 .arrivals { display: flex; flex-direction: column; gap: 12px; }
 .sec-head { display: flex; align-items: center; }
 .sec-title {
-  font-family: var(--font-display); font-weight: 700; font-size: 16px; color: var(--text);
+  font-family: var(--font-display); font-weight: 700; font-size: var(--fs-xl); color: var(--text);
   padding-left: 10px; border-left: 3px solid var(--accent); line-height: 1.1;
 }
 /* 4 列 × 2 行（8 部，含空位） */
@@ -400,11 +400,11 @@ onBeforeUnmount(stopTimer)
 .ac-code {
   margin-top: 7px;
   font-family: var(--font-display); font-variant-numeric: tabular-nums;
-  font-weight: 600; font-size: 12.5px; color: var(--primary);
+  font-weight: 600; font-size: var(--fs-base); color: var(--primary);
 }
 .ac-title {
-  font-size: 12.5px; color: var(--text-2); line-height: 1.5;
+  font-size: var(--fs-base); color: var(--text-2); line-height: 1.5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.empty-tip { font-size: 12.5px; color: var(--muted); }
+.empty-tip { font-size: var(--fs-base); color: var(--muted); }
 </style>

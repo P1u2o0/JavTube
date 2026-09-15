@@ -206,7 +206,7 @@
 html, body, #app {
   margin: 0; padding: 0; height: 100%;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: var(--fs-md);
   line-height: 1.6;
   letter-spacing: 0.01em;
   color: var(--text);
@@ -237,7 +237,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
   color: #fff;
   border-radius: var(--r-pill);
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .btn-primary:hover { background: var(--primary-hover); }
 
@@ -276,7 +276,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
   width: 100%;
   margin-top: 5px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 
@@ -408,10 +408,10 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 .el-slider__bar { background-color: var(--primary); }
 .el-slider__button { border-color: var(--primary); background-color: var(--primary); }
 .el-slider__button:hover { transform: scale(1.15); }
-.el-slider__mark-text { color: var(--muted); font-size: 12px; }
+.el-slider__mark-text { color: var(--muted); font-size: var(--fs-sm); }
 
 /* ====== Tabs ====== */
-.el-tabs__item { font-size: 14px; color: var(--text-2); transition: color var(--dur-fast) var(--ease-out); }
+.el-tabs__item { font-size: var(--fs-md); color: var(--text-2); transition: color var(--dur-fast) var(--ease-out); }
 .el-tabs__item:hover { color: var(--text); }
 .el-tabs__item.is-active { color: var(--primary) !important; font-weight: 600; }
 .el-tabs__active-bar { background-color: var(--primary) !important; height: 3px; border-radius: 2px;
@@ -465,7 +465,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
 }
 .page-head h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.01em;

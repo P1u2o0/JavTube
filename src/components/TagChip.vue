@@ -34,7 +34,7 @@ defineEmits(['click'])
   border-radius: var(--r-pill);
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: var(--fs-base);
   line-height: 1.6;
   margin: 3px 6px 3px 0;
   cursor: pointer;

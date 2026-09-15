@@ -330,10 +330,10 @@ onMounted(async () => {
 }
 /* 右侧工具区：排序按钮 + 结果数，始终贴右 */
 .filter-tools { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-.result-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.result-count { color: var(--muted); font-size: var(--fs-base); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .result-count b { color: var(--primary); font-family: var(--font-display); font-weight: 700; }
 .header-label {
-  font-weight: 600; color: var(--text); font-size: 13.5px;
+  font-weight: 600; color: var(--text); font-size: var(--fs-md);
   flex-shrink: 0; min-width: 60px; margin-right: 6px;
 }
 .filter-body { padding: 4px 14px 8px; }
@@ -342,7 +342,7 @@ onMounted(async () => {
   gap: 2px 5px; padding: 4px 0;
 }
 .cat-name {
-  font-weight: 500; color: var(--text-2); font-size: 13px;
+  font-weight: 500; color: var(--text-2); font-size: var(--fs-base);
   /* 行高 = 芯片总高（12.5×1.6 行高 + 8 padding + 6 上下 margin = 34px），
      使分类名与同行的芯片文字落在同一条水平线上 */
   line-height: 34px; margin-right: 6px; flex-shrink: 0; min-width: 60px;

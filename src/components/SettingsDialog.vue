@@ -424,7 +424,7 @@ async function clearDb() {
 .g-label {
   text-align: right;
   color: var(--text-2);
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 500;
   line-height: 32px;
 }
@@ -434,7 +434,7 @@ async function clearDb() {
   display: block;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 
@@ -448,7 +448,7 @@ async function clearDb() {
 .cat-tags-input { flex: 1; }
 .map-row-item { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .map-input { flex: 1; }
-.map-arrow { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+.map-arrow { color: var(--muted); font-size: var(--fs-sm); flex-shrink: 0; }
 /* 行删除按钮：与输入框（32px）等高、与加号按钮同规格 */
 .row-del {
   width: var(--icon-btn-md); height: var(--icon-btn-md);
@@ -480,9 +480,9 @@ async function clearDb() {
 .add-btn:active { transform: scale(0.96); }
 
 /* 关于页文字行 */
-.about-line { padding: 3px 0; color: var(--text-2); font-size: 13.5px; }
+.about-line { padding: 3px 0; color: var(--text-2); font-size: var(--fs-md); }
 .about-line b { color: var(--text); font-family: var(--font-display); }
-.about-muted { color: var(--muted); font-size: 12.5px; }
+.about-muted { color: var(--muted); font-size: var(--fs-base); }
 </style>
 
 <style>

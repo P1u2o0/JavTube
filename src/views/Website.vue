@@ -162,7 +162,7 @@ onMounted(() => s.load())
 .ext-icon { color: var(--muted); transition: color var(--dur-fast) ease; }
 .card:hover .ext-icon { color: var(--primary); }
 /* 网址文本：溢出省略 */
-.url { color: var(--muted); font-size: 12px; margin: 6px 0 2px;
+.url { color: var(--muted); font-size: var(--fs-sm); margin: 6px 0 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 删除图标按钮：定位到卡片右上角，悬停卡片时显现 */
 .del-btn {
