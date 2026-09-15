@@ -763,7 +763,9 @@ onMounted(async () => {
   position: fixed; inset: 0;
   top: 48px;   /* 与 el-dialog 遮罩一致：从顶栏下方开始，顶栏与窗口按钮区不受影响 */
   z-index: 3000;
-  background: var(--overlay-backdrop);
+  /* 遮罩色与 el-dialog（设置等弹窗）保持一致：直接引用 EP 的遮罩变量，
+     而不是自定义的 --overlay-backdrop（那是 88% 暖黑，比弹窗重得多） */
+  background: var(--el-overlay-color-lighter);
   display: flex; align-items: center; justify-content: center;
 }
 .lb-fade-enter-active { transition: opacity var(--dur-base) var(--ease-out); }
