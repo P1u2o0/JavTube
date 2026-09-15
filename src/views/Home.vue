@@ -130,15 +130,15 @@ function slotStyle(i, ph = false) {
   const sign = d < 0 ? -1 : 1
   const off = Math.abs(d) > 2          // 超出视野 → 移出屏外隐藏
   const abs = Math.min(Math.abs(d), 2)
-  const depth = abs === 0 ? 0 : abs === 1 ? 180 : 320
   const x     = off ? sign * 900 : (abs === 0 ? 0 : sign * (abs === 1 ? 300 : 480))
   const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
   // 两侧弱化不用「半透明」，而用「纯白遮罩」（海报本体保持实色）
   const veil = abs === 0 ? 0 : abs === 1 ? 0.5 : 0.74
   return {
-    // 两侧不倾斜（无 rotateY）：仅水平位移 + 纵深后撤 + 缩放
-    // perspective() 内联进 transform，避免父级 perspective+overflow 压平 3D
-    transform: `translate(-50%, -50%) translateX(${x}px) perspective(1200px) translateZ(${off ? 0 : -depth}px) scale(${scale})`,
+    // 纯 2D 变换（位移 + 缩放）：
+    // 不再用 perspective/translateZ —— 3D 合成层在 5 张海报同时大位移时会掉帧（顿挫感来源之一），
+    // 纵深改由 scale 单独表达，GPU 只需处理 2D 合成，滑动明显更顺
+    transform: `translate(-50%, -50%) translateX(${x}px) scale(${scale})`,
     opacity: off ? 0 : 1,          // 静止态一律不透明；淡入淡出由切换时的 WAAPI 动画负责
     zIndex: 10 - abs - (ph ? 1 : 0),
     '--shade': off ? 0 : (ph ? veil + 0.1 : veil),   // 白色遮罩强度（中心 0，越外越白）
@@ -177,7 +177,7 @@ function playCenterFadeIn(idx) {
   if (!el?.animate) return
   el.animate(
     [{ opacity: 0.22 }, { opacity: 1 }],
-    { duration: 360, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' }
+    { duration: 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }   // 与位移同时长同曲线
   )
 }
 
@@ -218,6 +218,7 @@ function startTimer() {
     let next = active.value + dir
     if (next < 0 || next >= hero.value.length) { dir = -dir; next = active.value + dir }
     active.value = next
+    playCenterFadeIn(next)   // 与手动切换保持一致（此前自动轮播不播淡入）
   }, HERO_INTERVAL)
 }
 function stopTimer() { if (timer) { clearInterval(timer); timer = null } }
@@ -257,8 +258,9 @@ onBeforeUnmount(stopTimer)
   width: 600px; height: 400px;
   transform-origin: center center;
   backface-visibility: hidden;
-  /* 位移 480ms（自然加减速）；淡入淡出由切换时的 WAAPI 动画负责 */
-  transition: transform 480ms var(--ease-in-out);
+  /* 位移 420ms + iOS 抽屉曲线（起步快、中段顺、收尾缓）：
+     之前的 --ease-in-out（0.77,0,0.175,1）前 20% 几乎不动，跟手轮播用它会明显迟滞 */
+  transition: transform 420ms var(--ease-drawer);
   will-change: transform, opacity;
 }
 .slot img {
@@ -276,7 +278,7 @@ onBeforeUnmount(stopTimer)
   border-radius: var(--r-md);
   background: #ffffff;
   opacity: var(--shade, 0);
-  transition: opacity 300ms var(--ease-out);
+  transition: opacity 420ms var(--ease-drawer);   /* 与位移同步，避免"先白了还在滑" */
   pointer-events: none;
 }
 /* 缺失影片的槽位：淡红色空白占位图 */
