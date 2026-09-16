@@ -28,12 +28,12 @@
           <AppIcon name="play" :size="18" />
         </button>
       </div>
-      <!-- 右上角喜欢按钮：可点击切换喜欢（白底圆 + 心形，已喜欢为朱柿红实心）。
+      <!-- 右上角喜欢按钮：纯心形图标（无圆形底包围），可点击切换喜欢（已喜欢为朱柿红实心）。
            事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） -->
       <button class="fav-btn" :class="{ active: isFav }"
               :title="isFav ? '取消喜欢' : '喜欢'"
               @click.stop="onFavClick">
-        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" />
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="17" />
       </button>
       <!-- 播放次数角标（观看记录页显示）：右下角胶囊，播放次数来自 recordPlay 累加 -->
       <span v-if="showPlayCount && m.play_count" class="play-count">
@@ -190,29 +190,25 @@ watch(dataDirRef, () => { errd.value = false })
 }
 .play-btn:hover { transform: scale(1.06); background: #fff; }
 .play-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
-/* 右上角喜欢按钮：磨砂玻璃圆形 + 心形（半透明白 + 背景模糊 + 边缘高光）。
-   未喜欢：暖灰描边心；已喜欢：朱柿红实心心；hover 底色提亮、心形变朱柿红并微放大 */
+/* 右上角喜欢按钮：纯心形图标（无底色/无描边包围，直接叠在海报上）。
+   未喜欢：白色描边心 + 投影保证任意海报上的可读性；已喜欢：朱柿红实心心；
+   hover 变朱柿红并微放大；命中区域仍为 24px 方框（不可见），保证可点。
+   事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） */
 .fav-btn {
-  position: absolute; top: 8px; right: 8px;
+  position: absolute; top: 4px; right: 4px;
   width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   border: none;
-  border-radius: 50%;
-  background: var(--glass);          /* 半透明白（更透，明显透出海报底色） */
-  backdrop-filter: blur(12px) saturate(1.5);      /* 磨砂玻璃：模糊背景 + 略提饱和 */
-  -webkit-backdrop-filter: blur(12px) saturate(1.5);
-  color: var(--text-2);                           /* 未喜欢：暖灰（比 muted 略深，避免玻璃底上发虚） */
+  background: none;
+  color: #fff;
   display: flex; align-items: center; justify-content: center;
-  /* 玻璃质感：顶部细内高光模拟受光，外加一级轻投影保持层次（替代原实线描边） */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-              inset 0 0 0 0.5px rgba(255, 255, 255, 0.12),
-              var(--sh-1);
+  /* 无底色后用投影替代玻璃底，保证浅色海报上仍有轮廓 */
+  filter: drop-shadow(0 1px 2px rgba(29, 28, 26, .6));
   cursor: pointer;
-  transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
-              transform var(--dur-base) var(--ease-spring);
+  transition: color var(--dur-fast) ease, transform var(--dur-base) var(--ease-spring);
 }
-.fav-btn:hover { background: var(--glass-hover); color: var(--accent); transform: scale(1.06); }
-.fav-btn.active { color: var(--accent); background: var(--glass); }
-.fav-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
+.fav-btn:hover { color: var(--accent); transform: scale(1.1); }
+.fav-btn.active { color: var(--accent); }
+.fav-btn:active { transform: scale(0.9); transition-duration: var(--dur-press); }
 
 /* 播放次数角标：右下角墨黑半透明胶囊 + 白字（与悬停遮罩同色系，不遮挡点击） */
 .play-count {

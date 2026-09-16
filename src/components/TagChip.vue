@@ -1,7 +1,7 @@
 <!--
   文件名：TagChip.vue
   所属模块：公共组件 / 标签芯片
-  功能描述：单个标签芯片（药丸样式）的基础展示组件，显示标签文本并支持选中状态。
+  功能描述：单个标签芯片（圆角矩形）的基础展示组件，显示标签文本并支持选中状态。
            点击时触发 click 事件，由父组件处理选中/取消选中的逻辑。
            作为 TagFilter 等组件的子单元使用。
 -->
@@ -27,11 +27,11 @@ defineEmits(['click'])
 </script>
 
 <style scoped>
-/* 标签芯片默认样式：药丸形、暖灰底 */
+/* 标签芯片默认样式：圆角矩形、暖灰底 */
 .tag-pill {
   display: inline-block;
   padding: 4px 13px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-chip);
   background: var(--surface-2);
   color: var(--text-2);
   font-size: var(--fs-base);
