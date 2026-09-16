@@ -34,7 +34,7 @@
       <button class="fav-btn" :class="{ active: isFav }"
               :title="isFav ? '取消喜欢' : '喜欢'"
               @click.stop="onFavClick">
-        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="21" :sw="2.2" />
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="23" :sw="2.2" />
       </button>
       <!-- 播放次数角标（观看记录页显示）：右下角胶囊，播放次数来自 recordPlay 累加 -->
       <span v-if="showPlayCount && m.play_count" class="play-count">
