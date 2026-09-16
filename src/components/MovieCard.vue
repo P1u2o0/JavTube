@@ -28,12 +28,13 @@
           <AppIcon name="play" :size="18" />
         </button>
       </div>
-      <!-- 右上角喜欢按钮：纯心形图标（无圆形底包围），可点击切换喜欢（已喜欢为朱柿红实心）。
+      <!-- 右上角喜欢按钮：与顶栏「喜欢」导航同一枚 AppIcon heart（只缩放 + 微调描边）。
+           未喜欢为白色描边心，已喜欢为朱柿红实心心；无圆形底，直接叠在海报上。
            事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） -->
       <button class="fav-btn" :class="{ active: isFav }"
               :title="isFav ? '取消喜欢' : '喜欢'"
               @click.stop="onFavClick">
-        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="17" />
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="21" :sw="2.2" />
       </button>
       <!-- 播放次数角标（观看记录页显示）：右下角胶囊，播放次数来自 recordPlay 累加 -->
       <span v-if="showPlayCount && m.play_count" class="play-count">
@@ -191,11 +192,14 @@ watch(dataDirRef, () => { errd.value = false })
 .play-btn:hover { transform: scale(1.06); background: #fff; }
 .play-btn:active { transform: scale(0.96); transition-duration: var(--dur-press); }
 /* 右上角喜欢按钮：纯心形图标（无底色/无描边包围，直接叠在海报上）。
-   未喜欢：白色描边心 + 投影保证任意海报上的可读性；已喜欢：朱柿红实心心；
-   hover 变朱柿红并微放大；命中区域仍为 24px 方框（不可见），保证可点。
+   图标与顶栏「喜欢」导航同源（AppIcon heart），仅放大到 21px（顶栏 19px）并把线宽微调至 2.2，
+   让它在海报上比顶栏那枚更"压得住"。未喜欢：白色描边心 + 投影保证任意海报上的可读性；
+   已喜欢：朱柿红实心心；hover 变朱柿红并微放大；命中区域仍为 24px 方框（不可见），保证可点。
    事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） */
 .fav-btn {
-  position: absolute; top: 4px; right: 4px;
+  /* 内缩 6px：心形的实际墨迹还比按钮框再内收约 5px，距卡片边缘约 11px，
+     避开卡片 16px 圆角的弧线，不再贴边 */
+  position: absolute; top: 6px; right: 6px;
   width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   border: none;
   background: none;
