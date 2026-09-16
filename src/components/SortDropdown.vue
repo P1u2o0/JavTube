@@ -84,7 +84,12 @@ function onCommand(cmd) {
 .sort-dir :deep(svg) { transition: transform var(--dur-fast) var(--ease-out); }
 .sort-dir.desc :deep(svg) { transform: rotate(-90deg); }  /* 左箭头 → 下 */
 .sort-dir.asc :deep(svg) { transform: rotate(90deg); }   /* 左箭头 → 上 */
-.sort-btn { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+/* 排序按钮：圆角与所在筛选区（标签面板/状态栏）统一，覆盖 global.css 的 .el-button 全圆规则 */
+.sort-btn {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--r-tag) !important;
+}
 /* 下拉菜单当前排序项高亮 */
 .sort-active { color: var(--accent); font-weight: 600; }
 </style>

@@ -31,7 +31,7 @@ defineEmits(['click'])
 .tag-pill {
   display: inline-block;
   padding: 4px 13px;
-  border-radius: var(--r-chip);
+  border-radius: var(--r-tag);
   background: var(--surface-2);
   color: var(--text-2);
   font-size: var(--fs-base);

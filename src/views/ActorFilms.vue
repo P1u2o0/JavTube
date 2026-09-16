@@ -291,11 +291,11 @@ onMounted(async () => {
 .ah-meta { font-size: var(--fs-base); color: var(--text-2); }
 .ah-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* ===== ② 标签类别栏（样式与片库页 TagFilter 一致） ===== */
+/* ===== ② 标签类别栏（样式与片库页 TagFilter 一致；圆角与芯片/筛选按钮统一，见 --r-tag） ===== */
 .tag-filter {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--r-tag);
   box-shadow: var(--sh-1);        /* Apple：面板微阴影 */
   margin-bottom: 10px;
 }

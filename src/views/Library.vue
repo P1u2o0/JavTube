@@ -272,13 +272,14 @@ watch(() => route.query, async (q) => {
 </script>
 
 <style scoped>
-/* 结果页标题条：说明当前列表的筛选来源（女优/导演/系列/片商/类别/搜索词） */
+/* 结果页标题条：说明当前列表的筛选来源（女优/导演/系列/片商/类别/搜索词）
+   圆角与同区域的标签面板/状态栏统一，见 --r-tag */
 .filter-title {
   display: flex; align-items: center; gap: 10px;
   margin-bottom: 10px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-tag);
   padding: 7px 8px 7px 18px;
 }
 .ft-text {

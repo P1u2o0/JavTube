@@ -118,14 +118,14 @@ function invert() {
 <style scoped>
 /* 排序按钮与左侧结果数之间的间距（其余排序样式已随组件迁至 SortDropdown.vue） */
 .statusbar :deep(.sort-btn) { margin-right: 14px; }
-/* 状态栏主体：统一面板样式 */
+/* 状态栏主体：统一面板样式（与标签面板同圆角，见 --r-tag） */
 .statusbar {
   display: flex; align-items: center;
   padding: 8px 14px;
   margin: 10px 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--r-tag);
   box-shadow: var(--sh-1);        /* Apple：面板微阴影 */
   font-size: var(--fs-base);
   color: var(--text-2);

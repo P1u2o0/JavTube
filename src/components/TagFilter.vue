@@ -157,11 +157,11 @@ function onClearAll() {
 </script>
 
 <style scoped>
-/* 标签筛选器主体：统一面板样式 */
+/* 标签筛选器主体：统一面板样式（圆角与芯片/筛选按钮一致，见 --r-tag） */
 .tag-filter {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-radius: var(--r-tag);
   box-shadow: var(--sh-1);        /* Apple：面板微阴影 */
   margin-bottom: 10px;
 }
