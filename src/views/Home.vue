@@ -5,12 +5,15 @@
   功能描述：首页推荐面板，三块区域（数据来自 home:recommend IPC）：
            ① 轮播：按近期观看的类别 / 系列 / 女优挑选同类影片，以
               **封面流（coverflow）**形式呈现——中心为当前影片大海报，
-              左右两侧依次露出半幅并逐渐缩小；不足 5 部时留出空位。
+              左右两侧依次露出半幅并逐渐缩小。
+              **影片 ≥ 5 部时渲染 3 份副本构成循环传送带 → 5 个槽位永远填满，
+              左右按钮首尾循环**（第 5 张点下一张回到第 1 张），不会再出现空位占位图；
+              不足 5 部时首尾如实显示空位占位、到边界即停。
               每次打开软件挑选一次（主进程会话级缓存，软件内切页不重随机）
-           ② 类别按钮：近期观看标签中「恰好两个汉字」的标签按出现频率取前 4；
-              按钮左侧类别名 + 数量，右侧该类影片封面 2×2 拼接；不足 4 个留空位
-           ③ 近期上新：与近期观看兴趣无交集的影片（不常看的类别/系列/女优），
-              4 列 × 2 行共 8 部；不足时留空位
+           ② 类别按钮：全库标签频率前 5（4 字以内），单张背景海报 + 暗遮罩；
+              **5 个类别的背景海报互不相同**（主进程按封面去重挑选）；hover 时背景缓慢放大
+           ③ 近期上新：优先「与近期观看兴趣无交集」的影片，**不足 8 部用最新添加的补足**，
+              4 列 × 2 行共 8 部；库本身不足 8 部时，剩余位置才是空位占位
   视觉：沿用设计令牌（暖纸白 / 墨黑 / 朱柿红、4 级圆角、发丝边框）
   依赖：vue-router、@/components/AppIcon、@/utils/global（resolveCover）
   ============================================================
@@ -19,20 +22,24 @@
   <div class="home-page">
     <!-- ===== ① 轮播：封面流（中心大图 + 两侧半幅递减） ===== -->
     <section v-if="hero.length" class="hero">
-      <div class="flow-wrap">
+      <!-- no-anim：循环越界后的「静默归位」瞬间禁掉过渡（复位前后画面完全一致，看不见） -->
+      <div class="flow-wrap" :class="{ 'no-anim': noAnim }">
         <!-- 传送带模式（业界标准）：单一 belt 元素整体平移，所有海报刚性同步移动；
              海报 left 按自身索引固定，切换只动 belt → 运动完全均匀自然 -->
         <div class="flow">
-          <!-- 所有海报常驻 DOM（无进出场），切换仅改内联 style → CSS transition 必然触发 -->
+          <!-- 所有海报常驻 DOM（无进出场），切换仅改内联 style → CSS transition 必然触发。
+               影片 >= 5 部时渲染 3 份副本（见 heroSlots），任意位置左右都有内容，
+               5 个槽位永远填满、不再出现空位占位图 -->
           <div class="stage">
-            <div v-for="(m, i) in hero" :key="m.id" class="slot"
-                 :ref="el => { if (el) slotEls[i] = el }" :style="slotStyle(i)">
-              <img :src="coverOf(m)" :alt="m.pm || ''" :title="m.pm || ''" decoding="async" @click="onSlotClick(i)" />
-              <div class="shade"></div>
-            </div>
-            <!-- 占位槽：5 个固定位，无影片时显示淡红色空白占位图 -->
-            <div v-for="d in SLOTS" :key="`ph-${d}`" class="slot" :style="slotStyle(active + d, true)">
-              <div v-if="!slotMovie(d)" class="slot-ph"></div>
+            <div v-for="s in heroSlots" :key="s.key" class="slot"
+                 :ref="el => setSlotEl(s.pos, el)" :style="slotStyle(s.pos, !s.movie)">
+              <template v-if="s.movie">
+                <img :src="coverOf(s.movie)" :alt="s.movie.pm || ''" :title="s.movie.pm || ''"
+                     decoding="async" @click="onSlotClick(s.pos)" />
+                <div class="shade"></div>
+              </template>
+              <!-- 影片数不足 5 部时，首尾槽位显示淡红色空位占位图 -->
+              <div v-else class="slot-ph"></div>
             </div>
           </div>
         </div>
@@ -46,7 +53,7 @@
       </div>
       <!-- 指示点（按实际数量） -->
       <div v-if="hero.length > 1" class="hero-dots">
-        <button v-for="(m, i) in hero" :key="m.id" class="dot" :class="{ on: i === active }"
+        <button v-for="(m, i) in hero" :key="m.id" class="dot" :class="{ on: i === activeIndex }"
                 :aria-label="`第 ${i + 1} 部`" @click="go(i)"></button>
       </div>
     </section>
@@ -76,9 +83,12 @@
           <div class="ac-code">{{ m.ph || '—' }}</div>
           <div class="ac-title" :title="m.pm">{{ m.pm || '无标题' }}</div>
         </div>
-        <!-- 空位：不足 8 部时补齐占位，保持 4 列 × 2 行版式 -->
+        <!-- 空位：不足 8 部时补齐占位，保持 4 列 × 2 行版式。
+             番号/标题两行用不可见占位撑住 → 空位卡与影片卡**等高**，两行整齐对齐。 -->
         <div v-for="n in emptySlots" :key="`ph-${n}`" class="arrival-card is-empty" aria-hidden="true">
           <div class="ac-cover"></div>
+          <div class="ac-code">&nbsp;</div>
+          <div class="ac-title">&nbsp;</div>
         </div>
       </div>
       <!-- 无数据时的提示 -->
@@ -101,20 +111,61 @@ const categories = ref([])   // 类别按钮
 const arrivals = ref([])     // 近期上新
 
 // 轮播当前索引与定时器
-const active = ref(0)
-let timer = null
+const active = ref(0)            // 当前居中的「固定位置」；循环越界时会短暂超出 [0, n)，随后静默归位
+let timer = null                 // 自动轮播
+let settleTimer = null           // 循环越界后的静默归位
+const noAnim = ref(false)        // 静默归位期间禁掉 CSS 过渡
 const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
-const SLOTS = [-2, -1, 0, 1, 2]  // 轮播 5 个槽位（0 为中心）
+const HERO_WINDOW = 5        // 可见槽位数（中心 + 左右各 2）
+const LOOP_MIN = HERO_WINDOW // 影片数 >= 5 时启用循环传送带
+const SETTLE_MS = 480        // 静默归位延迟（略大于位移过渡 420ms，确保动画已结束）
 const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
+
+/** 当前居中的影片索引（把越界的 active 取模还原；指示点用它，避免循环瞬间无高亮） */
+const activeIndex = computed(() => {
+  const n = hero.value.length
+  return n ? ((active.value % n) + n) % n : 0
+})
 
 /** 封面 URL 解析（无封面时返回空串） */
 function coverOf(m) {
   return resolveCover(m?.cover) || ''
 }
 
-/** 取某个槽位偏移对应的影片（越界返回 null → 该槽位显示占位） */
-function slotMovie(d) {
-  return hero.value[active.value + d] || null
+/**
+ * 轮播槽位列表。
+ *
+ * 影片 >= 5 部 → 渲染 **5 份副本**的「传送带」：共 5n 个槽位，第 k 个的位置固定为 `k - 2n`，
+ *   内容是 `hero[k % n]`；可见判定为 |pos - active| <= 2。
+ *   由于可见窗口只跨 5 个连续 pos，而 n >= 5 时 `pos % n` 在窗口内两两不同，
+ *   **每部影片恰好有一个副本可见** → 任意 active 下 5 个槽位都被填满。
+ *   循环切换时 active 会临时越界，靠副本接续；动画结束后由 scheduleSettle 静默归位。
+ *
+ *   为什么是 5 份而不是 3 份：连点"下一部"时 active 会在归位前持续累加，
+ *   3 份（pos ∈ [-n, 2n-1]）最多只撑得住越界 2~3 格，快速连点会把副本用尽、槽位凭空消失。
+ *   5 份把安全区间扩到 active ∈ [-2n+2, 3n-3]，连点十几下也不会露馅。
+ *
+ * 影片 < 5 部 → 每部一个固定位置，首尾补空位占位（数量确实不足，如实显示）。
+ */
+const heroSlots = computed(() => {
+  const list = hero.value
+  const n = list.length
+  if (!n) return []
+  const out = []
+  if (n >= LOOP_MIN) {
+    for (let k = 0; k < n * 5; k++) {
+      out.push({ key: 'b' + k, movie: list[k % n], pos: k - n * 2 })
+    }
+  } else {
+    for (let i = 0; i < n; i++) out.push({ key: 'm' + i, movie: list[i], pos: i })
+    for (const p of [-2, -1, n, n + 1]) out.push({ key: 'ph' + p, movie: null, pos: p })
+  }
+  return out
+})
+
+/** 传送带能安全支撑的 active 区间（超出说明副本快用尽了，必须立刻归位） */
+function safeActiveRange(n) {
+  return [-2 * n + 2, 3 * n - 3]
 }
 
 /**
@@ -122,11 +173,11 @@ function slotMovie(d) {
  * 所有海报（含占位）常驻 DOM，切换时 active 变化仅让各槽位的 d 变化 → transform/opacity
  * 由 CSS transition 平滑过渡，呈现「当前海报缩小向后转到侧面、下一张放大向前转到正中」。
  * |d|>2 的海报移到屏外并隐藏（仍常驻，保证过渡连续）。
- * @param {number} i - 影片（或空位）索引
+ * @param {number} pos - 槽位固定位置（-n ~ 2n-1；非循环模式为 0 ~ n-1 及首尾占位位）
  * @param {boolean} [ph] - 是否空位占位（层级略低、稍淡）
  */
-function slotStyle(i, ph = false) {
-  const d = i - active.value
+function slotStyle(pos, ph = false) {
+  const d = pos - active.value
   const sign = d < 0 ? -1 : 1
   const off = Math.abs(d) > 2          // 超出视野 → 移出屏外隐藏
   const abs = Math.min(Math.abs(d), 2)
@@ -161,8 +212,12 @@ async function load() {
   }
 }
 
-/** 轮播槽位 DOM 引用（常驻 DOM，索引与 hero 对应） */
-const slotEls = []
+/** 轮播槽位 DOM 引用：按「固定位置 pos」索引（循环模式下同一部影片有 3 个副本，pos 唯一） */
+const slotEls = new Map()
+function setSlotEl(pos, el) {
+  if (el) slotEls.set(pos, el)
+  else slotEls.delete(pos)
+}
 
 /**
  * 切换瞬间给「进入中心」的海报播一段淡入（WAAPI）。
@@ -170,10 +225,10 @@ const slotEls = []
  *   - 常驻透明度会让两侧海报长期处于半透明态（与「用白遮罩弱化」的诉求冲突）
  *   - WAAPI 只在切换瞬间叠加一段动画，播放结束自动回落到内联 opacity:1，
  *     静止态完全不透明，白遮罩仍是唯一的弱化手段
- * 时长 360ms、强 ease-out：起步快、收尾稳，丝滑且不拖沓。
+ * 时长与位移同步（420ms）、强 ease-out：起步快、收尾稳，丝滑且不拖沓。
  */
-function playCenterFadeIn(idx) {
-  const el = slotEls[idx]
+function playCenterFadeIn() {
+  const el = slotEls.get(active.value)
   if (!el?.animate) return
   el.animate(
     [{ opacity: 0.22 }, { opacity: 1 }],
@@ -181,22 +236,44 @@ function playCenterFadeIn(idx) {
   )
 }
 
-/** 切换轮播（dir=1 下一部 / -1 上一部；夹在有效范围内，不循环留空） */
+/** 切换轮播（dir=1 下一部 / -1 上一部）。
+ *  影片 >= 5 部时**首尾循环**：active 允许临时越界（如 n → n+1），
+ *  传送带里的副本负责无缝接续，动画结束后再静默归位到 [0, n)，用户无感。
+ *  影片不足 5 部时首尾是空位占位、不能居中，因此到边界即停。 */
 function step(dir) {
-  const next = active.value + dir
-  if (next < 0 || next >= hero.value.length) return   // 到边界即停（无影片处不循环）
-  active.value = next
-  playCenterFadeIn(next)
+  const n = hero.value.length
+  if (n < 2) return
+  if (n >= LOOP_MIN) {
+    active.value += dir
+    // 连点过快时 active 一路累加，接近传送带副本边界 → 立刻静默归位（宁可闪一下也不能让槽位消失）
+    const [lo, hi] = safeActiveRange(n)
+    if (active.value < lo || active.value > hi) normalizeNow()
+    playCenterFadeIn()
+    scheduleSettle()
+  } else {
+    const next = active.value + dir
+    if (next < 0 || next >= n) return
+    active.value = next
+    playCenterFadeIn()
+  }
 }
 
-/** 跳到指定轮播项 */
-function go(i) { active.value = i; playCenterFadeIn(i) }
+/** 跳到指定轮播项（指示点） */
+function go(i) { active.value = i; playCenterFadeIn() }
 
-/** 点击槽位：当前（中心）海报进详情，其他海报移到中心 */
-function onSlotClick(i) {
-  if (i === active.value) return goDetail(hero.value[i])
-  active.value = i
-  playCenterFadeIn(i)
+/**
+ * 点击槽位：中心海报进详情，其他海报移到中心。
+ * 直接把 active 设成该槽位的**固定位置** pos —— 无论它是第几份副本，
+ * 位移都只有 1~2 格，滑动自然；越界由 scheduleSettle 稍后静默归位。
+ */
+function onSlotClick(pos) {
+  if (pos === active.value) {
+    const n = hero.value.length
+    return goDetail(hero.value[((pos % n) + n) % n])
+  }
+  active.value = pos
+  playCenterFadeIn()
+  scheduleSettle()
 }
 
 /** 打开影片详情 */
@@ -209,19 +286,56 @@ function goTag(tag) {
   router.push({ path: '/library', query: { tag } })
 }
 
+/**
+ * 循环越界后的「静默归位」。
+ *
+ * 传送带里同一部影片有 3 份副本，所以 active = n 与 active = 0 呈现的画面**完全一致**
+ * （只是居中/相邻的是不同副本元素）。等位移动画播完后把 active 拉回 [0, n)，
+ * 并在这两帧内禁掉 CSS 过渡 → 用户看不到任何变化，但内部索引回到正常区间。
+ *
+ * 注意：必须在动画结束后才归位。若立刻归位，各副本元素的 transform 会同时大跳，
+ * 过渡会被截断成一次横跨整屏的滑动。
+ */
+function scheduleSettle() {
+  const n = hero.value.length
+  if (active.value >= 0 && active.value < n) return   // 没越界，无需处理
+  clearTimeout(settleTimer)                           // 每次切换都重新计时：总在最后一次动画之后归位
+  settleTimer = setTimeout(() => {
+    settleTimer = null
+    normalizeNow()
+  }, SETTLE_MS)
+}
+
+/** 立刻静默归位到 [0, n)（关过渡 → 改索引 → 双 rAF 后恢复过渡） */
+function normalizeNow() {
+  const n = hero.value.length
+  if (!n) return
+  if (active.value >= 0 && active.value < n) return
+  noAnim.value = true
+  active.value = ((active.value % n) + n) % n
+  requestAnimationFrame(() => requestAnimationFrame(() => { noAnim.value = false }))
+}
+
 /** 启动自动轮播（到头反向往返，避免末尾跳回首张时海报横跨整屏飞回造成顿挫） */
 function startTimer() {
   stopTimer()
   if (hero.value.length < 2) return
   let dir = 1
   timer = setInterval(() => {
-    let next = active.value + dir
-    if (next < 0 || next >= hero.value.length) { dir = -dir; next = active.value + dir }
+    const n = hero.value.length
+    if (settleTimer) return                    // 正在静默归位，跳过本次，避免与归位抢索引
+    const cur = activeIndex.value
+    let next = cur + dir
+    if (next < 0 || next >= n) { dir = -dir; next = cur + dir }
     active.value = next
-    playCenterFadeIn(next)   // 与手动切换保持一致（此前自动轮播不播淡入）
+    playCenterFadeIn()   // 与手动切换保持一致（此前自动轮播不播淡入）
   }, HERO_INTERVAL)
 }
-function stopTimer() { if (timer) { clearInterval(timer); timer = null } }
+function stopTimer() {
+  if (timer) { clearInterval(timer); timer = null }
+  if (settleTimer) { clearTimeout(settleTimer); settleTimer = null }
+  noAnim.value = false
+}
 
 onMounted(async () => {
   await load()
@@ -251,6 +365,10 @@ onBeforeUnmount(stopTimer)
   position: absolute; inset: 0;
   transform-style: preserve-3d;
 }
+/* 静默归位：越界后瞬间复位，复位前后画面完全一致，
+   必须禁掉过渡，否则会看到一次横跨整屏的大幅滑动 */
+.flow-wrap.no-anim .slot,
+.flow-wrap.no-anim .shade { transition: none; }
 /* 槽位：基准尺寸 = 横向海报 600×400（3:2）；rotateY/translateZ/scale 由内联控制。
    立体轮换过渡：一次平滑的三维插值（旋转+后撤+缩放+位移同步） */
 .slot {
@@ -332,18 +450,33 @@ onBeforeUnmount(stopTimer)
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface-2);   /* 无封面时的底色 */
   cursor: pointer; text-align: left;
-  transition: transform var(--dur-fast) var(--ease-out),
-              box-shadow var(--dur-fast) var(--ease-out);
+  /* 移出：340ms 快速收回 */
+  transition: transform 340ms var(--ease-out),
+              box-shadow 340ms var(--ease-out);
 }
-.cat-card:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+/* 类别卡整体：轻微上浮（进入时长曲线与背景缩放统一，避免「一个硬一个软」的割裂感） */
+.cat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sh-2);
+  transition-duration: 420ms;
+  transition-timing-function: var(--ease-drawer);
+}
 .cat-card:active { transform: translateY(-1px) scale(0.99); }   /* 按压反馈 */
 /* 背景海报图（单张，含该类别随机一部影片） */
 .cat-bg {
   position: absolute; inset: 0;
   background-size: cover; background-position: center;
-  transition: transform 300ms var(--ease-out);   /* hover 放大 */
+  /* 移出：较短、快速收回（遵循「退出快于进入」） */
+  transition: transform 340ms var(--ease-out);
 }
-.cat-card:hover .cat-bg { transform: scale(1.06); }
+/* hover 放大：旧实现是 300ms + --ease-out —— 起步太猛、到位太硬，观感「生硬」。
+   改为更长时长 + iOS 抽屉曲线（起步快、中段顺、收尾极缓），
+   并放大到 1.08 让位移量更从容，整段过渡像被"吸"进去而不是弹过去 */
+.cat-card:hover .cat-bg {
+  transform: scale(1.08);
+  transition-duration: 620ms;
+  transition-timing-function: var(--ease-drawer);
+}
 /* 暗色遮罩：从右往左逐渐加深（左侧最深，承载靠左的类别名） */
 .cat-shade {
   position: absolute; inset: 0;
@@ -376,9 +509,14 @@ onBeforeUnmount(stopTimer)
   font-family: var(--font-display); font-weight: 700; font-size: var(--fs-xl); color: var(--text);
   padding-left: 10px; border-left: 3px solid var(--accent); line-height: 1.1;
 }
-/* 4 列 × 2 行（8 部，含空位） */
-.arrival-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.arrival-card { cursor: pointer; }
+/* 4 列 × 2 行（8 部，含空位）。
+   ⚠️ 必须用 minmax(0, 1fr) 而不是 1fr：
+   `1fr` 等价于 `minmax(auto, 1fr)`，列的最小尺寸会被内容撑开 ——
+   .ac-title 是 white-space: nowrap，长番号/长标题会把列撑到 700px+，
+   结果四列宽度各不相同、海报大小不一（用户反馈的「每个海报图都不一样大」根因）。
+   minmax(0, 1fr) 把最小尺寸压到 0，配合下面的 overflow:hidden 让标题省略号生效。 */
+.arrival-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.arrival-card { cursor: pointer; min-width: 0; }   /* min-width:0 让卡片可被压缩 */
 .ac-cover {
   width: 100%; aspect-ratio: 3/2; overflow: hidden;
   border-radius: var(--r-md); border: 1px solid var(--border);

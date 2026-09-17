@@ -111,19 +111,34 @@ function registerHomeIpc(ipcMain, db) {
         return false
       }
 
-      // === 红区：同类影片随机 5 部（排除近期观看过的）===
-      // 会话级缓存：本轮应用运行期间固定同一批（用户要求「每次打开软件挑选一次」，
-      // 软件内切换页面回到首页时不重新随机）；重启应用后模块重载即重新挑选。
+      // === 红区：轮播 5 部 ===
+      // 分层挑选，**尽量凑满 HERO_COUNT 部**（只有库本身不足 5 部时才会少于 5）：
+      //   ① 未近期观看 ∩ 有共同兴趣   ② 未近期观看
+      //   ③ 有共同兴趣                ④ 全部影片
+      // 旧实现只取「第一个非空的池子」，池子只有 3 部就直接给 3 部 ——
+      // 前端 5 个槽位因此露出 2 个空位占位图（用户反馈的「有海报却还有粉红占位」根因之一）。
+      // 会话级缓存：应用运行期间固定同一批（每次打开软件挑选一次）；重启后重新随机。
       if (!heroCache) {
-        // 首选：同类且未近期观看；为空时逐级兜底，避免「库很小且全部看过」
-        // 时轮播整块消失（2026-09-14 修复）：
-        //   ① 未近期观看的全部影片 ② 全部影片（保底仍有轮播）
-        let pool = prepared.filter(p => !recentIds.has(p.m.id) && hitInterest(p)).map(p => p.m)
-        if (!pool.length) pool = all.filter(m => !recentIds.has(m.id))
-        if (!pool.length) pool = all.slice()
-        heroCache = sample(pool, HERO_COUNT)
+        const tiers = [
+          prepared.filter(p => !recentIds.has(p.m.id) && hitInterest(p)),
+          prepared.filter(p => !recentIds.has(p.m.id)),
+          prepared.filter(p => hitInterest(p)),
+          prepared
+        ]
+        const picked = []
+        const pickedIds = new Set()
+        for (const tier of tiers) {
+          if (picked.length >= HERO_COUNT) break
+          const rest = tier.filter(p => !pickedIds.has(p.m.id))
+          for (const p of sample(rest, HERO_COUNT - picked.length)) {
+            picked.push(p.m)
+            pickedIds.add(p.m.id)
+          }
+        }
+        heroCache = picked
       }
       const hero = heroCache
+      const heroIds = new Set(hero.map(m => m.id))
 
       // === 绿区：全库标签按出现频率取前 5（不基于用户画像），优先 4 字以内；
       //          每个类别随机挑一部有封面的影片作背景图（单张）===
@@ -150,8 +165,20 @@ function registerHomeIpc(ipcMain, db) {
           list.push(p.m)
         }
       }
+      // 背景海报去重：优先挑没被前面类别用过的封面。
+      // 三级兜底 —— 否则 5 个类别很容易撞同一张图（用户反馈「中出 / 巨乳」背景完全一样）：
+      //   ① 本类别里没被用过的封面
+      //   ② 全库其它影片里没被用过的封面（背景属装饰性，标签文字才是语义主体）
+      //   ③ 实在无新图可挑才允许重复
+      const allCovered = prepared.filter(p => p.m.cover).map(p => p.m)
+      const usedCovers = new Set()
       const categories = topTags.map(([tag, count]) => {
-        const bg = sample(tagMembers.get(tag) || [], 1)[0]   // 随机一部有封面的作背景
+        const members = tagMembers.get(tag) || []
+        const bg =
+          sample(members.filter(m => !usedCovers.has(m.cover)), 1)[0] ||
+          sample(allCovered.filter(m => !usedCovers.has(m.cover)), 1)[0] ||
+          sample(members, 1)[0]
+        if (bg) usedCovers.add(bg.cover)
         return {
           tag,
           count,
@@ -159,15 +186,27 @@ function registerHomeIpc(ipcMain, db) {
         }
       })
 
-      // === 蓝区：与画像无交集的影片（不常看），按添加时间倒序取 8 ===
-      // 不足 8 部时用「其余影片按添加时间倒序」补足——避免库较小时该区域空白
-      // （语义仍是「近期上新」，补足项即最新添加的影片）
-      // 不足 8 部时按实际数量返回，首页留出空位（不补足无关影片）
-      const arrivals = prepared
-        .filter(p => !hitInterest(p))
-        .map(p => p.m)
-        .sort((a, b) => String(b.tjrq || '').localeCompare(String(a.tjrq || '')))
-        .slice(0, ARRIVAL_COUNT)
+      // === 蓝区：近期上新 —— 4 列 × 2 行共 8 部 ===
+      // ① 优先「与画像无交集」（不常看的）；② 不足 8 部时用**其余影片按添加时间倒序**补足。
+      // 旧实现只做 ①，库里 7 部全命中画像时就返回 0 部，整块变成 8 个空位占位图
+      // —— 用户要求「有符合条件的影片就显示出来，只有影片数量不足的位置才留占位」。
+      const byNewest = (list) => list
+        .slice()
+        .sort((a, b) => String(b.m.tjrq || '').localeCompare(String(a.m.tjrq || '')))
+      const arrivalsPicked = []
+      const arrivalIds = new Set()
+      const pushFrom = (list) => {
+        for (const p of list) {
+          if (arrivalsPicked.length >= ARRIVAL_COUNT) return
+          if (arrivalIds.has(p.m.id)) continue
+          arrivalsPicked.push(p.m)
+          arrivalIds.add(p.m.id)
+        }
+      }
+      pushFrom(byNewest(prepared.filter(p => !hitInterest(p))))                  // ① 不常看的
+      pushFrom(byNewest(prepared.filter(p => !heroIds.has(p.m.id))))             // ② 其余最新添加（不与轮播重复）
+      pushFrom(byNewest(prepared))                                              // ③ 还不够就把轮播那几部也用上
+      const arrivals = arrivalsPicked
 
       return { ok: true, data: { hero, categories, arrivals, recentCount: recent.length } }
     } catch (e) {
