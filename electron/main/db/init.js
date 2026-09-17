@@ -19,12 +19,28 @@ let SQL = null
 /**
  * 查找 sql.js 的 WASM 文件路径。
  * WASM 文件是 sql.js 运行所需的核心二进制模块。
+ * 依次尝试：指定基准目录 → 当前工作目录 → exe 同级目录 → 打包资源目录 → sql.js 包自身目录。
+ * 打包成绿色版后 cwd 不可靠（用户可能从任意位置启动 exe），因此必须有多重兜底；
+ * 最后一档直接从包内解析（asar 内也可被 Electron 的 fs 读取），保证打包后一定能加载。
  * @param {string} [cwdBase] - 查找的基准目录（默认为当前工作目录）
  * @returns {string} WASM 文件路径，找不到返回空字符串
  */
 function findWasm(cwdBase) {
-  const p = path.join(cwdBase || process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
-  return fs.existsSync(p) ? p : ''
+  const rel = path.join('node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+  const candidates = []
+  if (cwdBase) candidates.push(path.join(cwdBase, rel))
+  candidates.push(path.join(process.cwd(), rel))
+  try { candidates.push(path.join(path.dirname(process.execPath), rel)) } catch {}
+  if (process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, rel))
+    candidates.push(path.join(process.resourcesPath, 'app.asar.unpacked', rel))
+  }
+  // 兜底：从 sql.js 包自身位置推导（其 main 为 dist/sql-wasm.js，wasm 同目录）
+  try { candidates.push(path.join(path.dirname(require.resolve('sql.js')), 'sql-wasm.wasm')) } catch {}
+  for (const p of candidates) {
+    try { if (p && fs.existsSync(p)) return p } catch {}
+  }
+  return ''
 }
 
 /**

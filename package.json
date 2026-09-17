@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build && electron-builder",
     "build:win": "vite build && electron-builder --win --x64",
+    "dist:portable": "node scripts/build-portable.js",
     "preview": "vite preview",
     "start": "electron .",
     "check:undefined": "node scripts/check-undefined.js",
@@ -42,15 +43,6 @@
       "electron/**",
       "build/icon.ico",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "resources/data",
-        "to": "data",
-        "filter": [
-          "**/*"
-        ]
-      }
     ],
     "win": {
       "target": [
