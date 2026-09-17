@@ -13,8 +13,10 @@
 -->
 <template>
   <div class="actor-page">
-    <!-- ===== ① 演员区（蓝）：头像 + 信息 ===== -->
+    <!-- ===== ① 演员区（蓝）：返回按钮 + 头像 + 信息，同一行 =====
+         （返回按钮原本单独占一行，旁边全空显得很怪，故并入本行、紧贴头像左侧） -->
     <div class="actor-head">
+      <BackButton class="head-back" />
       <div class="ah-avatar">
         <img :src="avatarUrl" :alt="name" />
       </div>
@@ -89,6 +91,7 @@ import { resolveCover, safeCall, splitTags } from '@/utils/global'
 import MovieCard from '@/components/MovieCard.vue'
 import TagChip from '@/components/TagChip.vue'
 import SortDropdown from '@/components/SortDropdown.vue'
+import BackButton from '@/components/BackButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -269,8 +272,11 @@ onMounted(async () => {
 <style scoped>
 .actor-page { display: flex; flex-direction: column; gap: 14px; }
 
-/* ===== ① 演员区 ===== */
+/* ===== ① 演员区 =====
+   返回按钮 + 头像 + 信息 同行；按钮与头像之间的间距略小于信息区间距，
+   让「按钮｜头像」看起来是一个整体，而不是三块等距并排。 */
 .actor-head { display: flex; align-items: center; gap: 16px; }
+.head-back { margin-right: -4px; }
 .ah-avatar {
   width: 88px; height: 88px; flex-shrink: 0;
   border-radius: var(--r-md);

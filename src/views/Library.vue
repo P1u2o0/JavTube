@@ -11,8 +11,11 @@
 -->
 <template>
   <div>
-    <!-- 结果页标题条：从详情页点击导演/片商/系列/类别/演员或搜索跳转时显示来源说明 -->
+    <!-- 结果页标题条：从详情页点击导演/片商/系列/类别/演员或搜索跳转时显示来源说明。
+         该条仅在「从其它页面跳进来的筛选结果」时出现（片库自身的标签栏不改路由），
+         故左侧的返回按钮也只在这些结果页出现，不会污染片库主界面。 -->
     <div class="filter-title" v-if="pageTitle">
+      <BackButton fallback="/library" />
       <span class="ft-text">{{ pageTitle }}</span>
       <button class="ft-clear" title="查看全部影片" @click="clearFilterTitle">
         <AppIcon name="close" :size="13" />
@@ -62,6 +65,7 @@ import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import BackButton from '@/components/BackButton.vue'
 
 // Pinia store 实例，管理影片数据、筛选、排序等状态
 const store = useMoviesStore()
@@ -280,7 +284,8 @@ watch(() => route.query, async (q) => {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-tag);
-  padding: 7px 8px 7px 18px;
+  /* 左侧改为 32px 返回按钮（原先只有文字，故左内距较大） */
+  padding: 6px 8px;
 }
 .ft-text {
   flex: 1;

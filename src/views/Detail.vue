@@ -17,9 +17,7 @@
   <div class="detail" v-if="m">
     <!-- 红：标题区（圆形返回按钮 + 番号 + 标题，同一行） -->
     <div class="title-row">
-      <button class="round-back" @click="$router.back()" title="返回">
-        <AppIcon name="back" :size="16" />
-      </button>
+      <BackButton />
       <span class="code">{{ m.ph || '—' }}</span>
       <span class="title-text">{{ m.pm || '无标题' }}</span>
     </div>
@@ -141,8 +139,9 @@
       </div>
     </div>
 
-    <!-- 黄：预览小图条（第一张固定为海报；点击小图在灯箱中查看，灯箱内左右切换/滚轮缩放） -->
-    <div class="preview-strip" v-if="galleryImages.length > 1">
+    <!-- 黄：预览小图条（第一张固定为海报；点击小图在灯箱中查看，灯箱内左右切换/滚轮缩放）
+         小图超出容器时横向滚动条只支持拖拽，这里把悬停其上的鼠标滚轮映射为横向滚动 -->
+    <div class="preview-strip" v-if="galleryImages.length > 1" @wheel="onStripWheel">
       <div class="strip-track" ref="stripRef">
         <div v-for="(g, i) in galleryImages" :key="i" class="strip-item" @click="openLightbox(i)">
           <img :src="g" loading="lazy" />
@@ -187,6 +186,7 @@ import { useMoviesStore } from '@/store/movies'
 import { useScrapeStore } from '@/store/scrape'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
 import { resolveCover, buildScrapeUpdate, safeCall, splitTags } from '@/utils/global'
 
@@ -306,6 +306,30 @@ function stepLightbox(dir) {
 function onWheel(e) {
   const delta = e.deltaY > 0 ? -0.15 : 0.15
   zoom.value = Math.min(5, Math.max(0.5, zoom.value + delta))
+}
+
+/**
+ * 预览小图条：鼠标滚轮 → 横向滚动。
+ *
+ * 小图条是 overflow-x 容器，图片多时会出现横向滚动条，但滚轮默认只滚页面纵向，
+ * 用户必须去拖那条细滚动条，很不顺手。这里把悬停在预览区上的滚轮位移映射到横向滚动：
+ * - 触控板/横向滚轮本身带 deltaX，优先用它；普通鼠标只有 deltaY，拿它当横向位移。
+ * - deltaMode 归一化：1=行、2=页，都换算成像素。
+ * - 未溢出、或已滚到两端时**不拦截**，让页面照常上下滚动，避免"滚不动还被吞掉"的卡顿感。
+ */
+function onStripWheel(e) {
+  const track = stripRef.value
+  if (!track) return
+  const max = track.scrollWidth - track.clientWidth
+  if (max <= 0) return                                   // 没溢出：交给页面
+  let d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+  if (e.deltaMode === 1) d *= 16                         // 按行
+  else if (e.deltaMode === 2) d *= track.clientWidth      // 按页
+  const next = Math.min(max, Math.max(0, track.scrollLeft + d))
+  if (next === track.scrollLeft) return                   // 已到两端：交给页面
+  e.preventDefault()                                      // 拦截，阻止页面跟着纵向滚动
+  // behavior:'instant' 覆盖 CSS 的 scroll-behavior:smooth —— 逐次滚轮若走平滑动画会明显发黏
+  track.scrollBy({ left: next - track.scrollLeft, behavior: 'instant' })
 }
 
 /**
@@ -564,20 +588,7 @@ onMounted(async () => {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   margin-bottom: 14px;
 }
-/* 圆形返回按钮：描边圆钮，与软件按钮体系一致 */
-.round-back {
-  width: var(--icon-btn-md); height: var(--icon-btn-md);
-  flex-shrink: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--text-2);
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
-}
-.round-back:hover { background: var(--surface-2); color: var(--text); }
-.round-back:active { transform: scale(0.96); transition-duration: var(--dur-press); }
+/* 圆形返回按钮的样式已抽到公共组件 @/components/BackButton.vue */
 /* 番号样式：展示字 + 等宽数字 */
 .code {
   color: var(--primary);
