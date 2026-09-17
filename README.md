@@ -68,12 +68,12 @@ javtube_dev/
 │   │   ├── cover-protocol.js   # javtube-cover:// 自定义协议
 │   │   ├── video-meta.js       # MP4 时长解析
 │   │   ├── home.js             # 首页数据聚合（轮播 / 类别 / 上新）
-│   │   └── db/                 # 影片 / 女优 / 网址 / 设置 / 建表与迁移
+│   │   └── db/                 # 影片 / 女优 / 设置 / 建表与迁移
 │   └── preload/
 │       └── index.js            # contextBridge 暴露 window.api
 ├── src/
 │   ├── views/                  # 首页 / 片库 / 详情 / 喜欢 / 观看记录 / 演员影片页
-│   ├── components/             # 顶栏 / 卡片 / 网格 / 标签筛选 / 排序 / 状态栏 / 设置 / 导入
+│   ├── components/             # 顶栏 / 卡片 / 标签筛选 / 排序 / 状态栏 / 设置 / 导入
 │   ├── store/                  # Pinia 状态：影片 / 刮削 等
 │   ├── composables/            # 列表加载复用逻辑
 │   ├── router/  utils/  styles/
