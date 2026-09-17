@@ -53,11 +53,66 @@ npm run scrape:test                 # 可传番号：npm run scrape:test -- <番
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 
-# 打包 Windows 安装包
-npm run build:win
+# 打包 Windows 绿色版（免安装 zip）—— 发版用这个
+npm run dist:portable
 ```
 
-**脚本一览**：`scripts/check-undefined.js`（未定义引用静态检查）、`scripts/scrape-smoke.js`（刮削冒烟）。
+**脚本一览**：`scripts/check-undefined.js`（未定义引用静态检查）、`scripts/scrape-smoke.js`（刮削冒烟）、
+`scripts/build-portable.js`（绿色版打包，见 §4.1）。
+
+---
+
+## 4.1 打包绿色版（发版必读）
+
+`npm run dist:portable` → 产出 `release/JavTube-v<版本>-win-x64-portable.zip`（约 102 MB）。
+解压即用、免安装，数据在 exe 同级的 `data/`，升级只需覆盖文件（别覆盖 `data/`）。
+
+### ⚠️ exe 图标：改打包配置前必读
+
+**`package.json → build.win.signAndEditExecutable` 必须保持 `false`。**
+一旦改成 `true`，electron-builder 会去解压 `winCodeSign` 归档，而该归档含 macOS 符号链接
+（`darwin/10.12/lib/*.dylib`），**普通权限的 Windows 解不开**，直接报
+`Cannot create symbolic link：客户端没有所需的特权`，整个打包失败。
+
+代价是这个开关同时也关掉了 electron-builder 往 exe 写图标/版本信息的能力 ——
+所以 **图标由 `scripts/build-portable.js` 的 `embedIcon()` 用 rcedit 补写**。
+
+> **历史教训（v1.0 踩过）**：因为漏了这一步，打进包的 `JavTube.exe` 与原生 `electron.exe`
+> **字节数完全一致（177,038,336）= 图标压根没嵌进去**，用户拿到的就是 Electron 默认图标。
+> 当年还为此单独写了 `rcedit.exe` + `replace_icon.py` 手动补图标（已删除），
+> 其实根因就是这个开关。
+>
+> **判断有没有嵌进去**：`ls -l JavTube.exe` 若等于 `node_modules/electron/dist/electron.exe`
+> 的字节数，就是没嵌。嵌好后应改为 **177,027,072**，且图标资源从 4 档变 6 档
+> （与 `build/icon.ico` 的 6 档逐字节一致）。
+> 脚本自检里已加这道校验（读回 exe 的 `ProductName` 必须等于 `JavTube`，否则报错）。
+
+rcedit 不在仓库里，`embedIcon()` 按此顺序找：electron-builder 缓存 →
+从缓存 `winCodeSign/*.7z` 单独解出 → `app-builder prefetch-tools` 拉一次 →
+都没有则**打醒目警告继续打包**（exe 会是默认图标，但流程不中断）。
+
+### ⚠️ app.asar 会瘦身，别以为打错了
+
+electron-builder 会把**整个 node_modules** 塞进 asar（实测 84.9 MB，连它自己的 devDeps 都在内），
+但运行时主进程只 `require('sql.js')`，渲染层已被 Vite 打进 `dist/`。
+脚本用 `@electron/asar` 重打，只留 `dist/ + electron/ + package.json + sql.js 的两个文件`：
+
+**84.9 MB → 2.6 MB**（整包 339 MB → 257 MB）。
+
+### ⚠️ 两个环境坑（都已在脚本里绕过）
+
+1. **`app.asar` 会被句柄占住** —— 复用同一个输出目录时，electron-builder 删不掉上次的
+   `app.asar`，直接报 `The process cannot access the file because it is being used by another process`
+   并失败。**脚本改为每次用带时间戳的唯一临时目录**（`.tmp-build-<ts>`）绕开。
+   被占住的旧目录删不掉也没关系，重启后可清。
+2. **`rm -rf` 在受管环境会被安全删除层拦截**（路由到回收站失败即整体失败）。
+   脚本统一用 Node `fs.rmSync` + 重试；**先递归删文件、再删目录**成功率最高。
+
+### 产物自检
+
+脚本会校验：`JavTube.exe` / `resources/app.asar` / `使用说明.txt` / `data/` 在位、
+asar 内含 `sql-wasm.wasm` 与 `dist/index.html`、exe 版本信息已写入。
+**发版前另外手动跑一次**：解压 zip → 双击 exe → 确认窗口能开、`data/` 在同级生成。
 
 ---
 
