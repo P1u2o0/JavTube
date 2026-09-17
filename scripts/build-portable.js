@@ -54,14 +54,16 @@ const ROOT = path.resolve(__dirname, '..')
 // 用途：某些环境里旧产物会被杀软/安全层长期占用句柄，导致删不掉也改不了名，
 // 此时换个全新的输出根目录再跑一次即可（旧目录留着不影响）。
 const OUT_ROOT = path.join(ROOT, process.env.JAVTUBE_OUT || 'release')
-// 每次构建都用「带时间戳的唯一临时目录」。
+// 唯一的构建输出根就是 release/（electron-builder 的默认约定）。
+// 每次构建都用「带时间戳的唯一临时目录」release/.build-<ts>：
 // 教训：electron-builder 写出的 app.asar 常被系统句柄占住（杀软/安全层/上一次强杀的残留），
-// 复用同一个 .tmp-build 时它会删不掉旧文件而直接失败：
+// 复用同一个临时目录时它会删不掉旧文件而直接失败：
 //   remove ...\resources\app.asar: The process cannot access the file because it is being used by another process.
 // 换唯一目录即可彻底避开，旧目录留给系统释放后再清。
 let TMP_DIR = ''
 let TMP_DIR_REL = ''
 let UNPACKED = ''
+const TMP_PREFIX = '.build-'
 const STAGE = path.join(OUT_ROOT, '.asar-src')
 const APP_NAME = 'JavTube'                    // 压缩包内的顶层目录名（保持稳定，便于覆盖更新）
 const OUT_DIR = path.join(OUT_ROOT, APP_NAME)
@@ -327,7 +329,9 @@ async function main() {
   // 先扫掉历史遗留的临时目录（被句柄占住的删不掉也不影响本次构建）
   if (fs.existsSync(OUT_ROOT)) {
     for (const d of fs.readdirSync(OUT_ROOT)) {
-      if (d.startsWith('.tmp-build') || d === '.asar-src') remove(path.join(OUT_ROOT, d))
+      const legacy = d.startsWith(TMP_PREFIX) || d.startsWith('.tmp-build') ||
+        d === '.asar-src' || d === 'win-unpacked'
+      if (legacy) remove(path.join(OUT_ROOT, d))
     }
   }
 
@@ -335,7 +339,7 @@ async function main() {
   run(NODE_BIN, [path.join('node_modules', 'vite', 'bin', 'vite.js'), 'build'])
 
   step('2/6 打包 Electron 应用 (electron-builder --dir)')
-  TMP_DIR = path.join(OUT_ROOT, '.tmp-build-' + Date.now())
+  TMP_DIR = path.join(OUT_ROOT, TMP_PREFIX + Date.now())
   TMP_DIR_REL = path.relative(ROOT, TMP_DIR).replace(/\\/g, '/')
   UNPACKED = path.join(TMP_DIR, 'win-unpacked')
   run(NODE_BIN, [

@@ -84,23 +84,27 @@ function getDataDir() {
   const dbPath = path.join(dir, 'app.db')
 
   // === 从旧版本 (Javlibrary) 迁移数据 ===
-  // 如果当前目录没有数据库文件，检查旧版本数据目录是否存有数据
+  // 只搬真正的数据：app.db（影片/标签/设置）与 covers/（封面、头像）。
+  // 不搬 Chromium 的 Profile 垃圾（Cache / GPUCache / blob_storage / Local Storage …），
+  // 它们对新的 sql.js 版本毫无用处。
+  //
+  // 历史 bug：这里原先用 readdirSync + copyFileSync 遍历整个目录，
+  // 遇到子目录（blob_storage、Cache…）会抛 EPERM，而异常被外层 catch 吞掉后
+  // **整轮迁移直接中断** —— 表现为旧库搬不过来或只搬了一半。
+  // 现在改为「按需项 + 逐项独立容错」：任何一项失败都不影响其余项与启动。
   if (!fs.existsSync(dbPath)) {
     const oldDir = path.join(app.getPath('home'), 'AppData', 'Roaming', 'Javlibrary')
     if (fs.existsSync(path.join(oldDir, 'app.db'))) {
-      try {
-        const files = fs.readdirSync(oldDir)
-        for (const f of files) {
-          const src = path.join(oldDir, f)
-          const dst = path.join(dir, f)
-          // 仅在目标文件不存在时复制，避免覆盖
-          if (!fs.existsSync(dst)) {
-            fs.copyFileSync(src, dst)
-            console.log('[main] migrated from Javlibrary:', f)
-          }
+      for (const name of ['app.db', 'covers']) {
+        const src = path.join(oldDir, name)
+        const dst = path.join(dir, name)
+        if (!fs.existsSync(src) || fs.existsSync(dst)) continue  // 不存在或已迁移过 → 跳过，绝不覆盖
+        try {
+          fs.cpSync(src, dst, { recursive: true, force: false, errorOnExist: false })
+          console.log('[main] migrated from Javlibrary:', name)
+        } catch (e) {
+          console.warn(`[main] 迁移 ${name} 失败（跳过，不影响启动）:`, e.message)
         }
-      } catch (e) {
-        console.warn('[main] old version migration failed:', e.message)
       }
     }
   }

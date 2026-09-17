@@ -53,19 +53,27 @@ npm run scrape:test                 # 可传番号：npm run scrape:test -- <番
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 
-# 打包 Windows 绿色版（免安装 zip）—— 发版用这个
-npm run dist:portable
+# 发版：打包 Windows 绿色版（免安装 zip）—— 一条命令
+npm run release
+
+# 清理构建产物（release/ + dist/，带句柄重试）
+npm run clean
 ```
 
 **脚本一览**：`scripts/check-undefined.js`（未定义引用静态检查）、`scripts/scrape-smoke.js`（刮削冒烟）、
-`scripts/build-portable.js`（绿色版打包，见 §4.1）。
+`scripts/build-portable.js`（绿色版打包，见 §4.1）、`scripts/clean.js`（清理产物）。
 
 ---
 
 ## 4.1 打包绿色版（发版必读）
 
-`npm run dist:portable` → 产出 `release/JavTube-v<版本>-win-x64-portable.zip`（约 102 MB）。
+`npm run release` → 产出 **`release/JavTube-v<版本>-win-x64-portable.zip`**（约 102 MB）。
+同目录还会留下解压好的 `release/JavTube/`，可直接双击 `JavTube.exe` 试跑。
+
 解压即用、免安装，数据在 exe 同级的 `data/`，升级只需覆盖文件（别覆盖 `data/`）。
+
+一条命令做完这些事：清理历史残留 → `vite build` → `electron-builder --dir` →
+瘦身 `app.asar` → 整理目录 + 写 `使用说明.txt` → **写 exe 图标与版本信息** → 自检 → 打 zip。
 
 ### ⚠️ exe 图标：改打包配置前必读
 
@@ -116,9 +124,16 @@ asar 内含 `sql-wasm.wasm` 与 `dist/index.html`、exe 版本信息已写入。
 
 ---
 
-## 4. 目录结构
+## 4.2 目录结构
 
 ```
+javtube_dev/
+├─ HANDOFF.md  README.md  LICENSE  package.json     # 根目录只留这些
+├─ docs/                                            # 内部文档（.gitignore，仅本地保留）
+├─ dist/                                            # Vite 产物（可随时删）
+├─ release/                                         # 唯一构建输出根（可随时删，见 §4.1）
+├─ scripts/                                         # 构建与检查脚本
+├─ build/icon.ico                                   # 应用图标（打包时写进 exe）
 ├─ electron/
 │  ├─ main/
 │  │  ├─ index.js            # 主进程入口：启动序列 / 窗口 / javtube-cover 封面协议注册
