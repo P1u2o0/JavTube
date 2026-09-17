@@ -14,7 +14,7 @@
               **5 个类别的背景海报互不相同**（主进程按封面去重挑选）；hover 时背景缓慢放大
            ③ 近期上新：优先「与近期观看兴趣无交集」的影片，**不足 8 部用最新添加的补足**，
               4 列 × 2 行共 8 部；库本身不足 8 部时，剩余位置才是空位占位
-  视觉：沿用设计令牌（暖纸白 / 墨黑 / 朱柿红、4 级圆角、发丝边框）
+  视觉：沿用设计令牌（暖纸白 / 墨黑 / 品牌红、4 级圆角、发丝边框）
   依赖：vue-router、@/components/AppIcon、@/utils/global（resolveCover）
   ============================================================
 -->
@@ -407,8 +407,8 @@ onBeforeUnmount(stopTimer)
 .slot-ph {
   width: 100%; height: 100%;
   border-radius: var(--r-md);
-  background: var(--accent-soft);                    /* 朱柿红浅底（令牌）*/
-  border: 1px dashed rgba(210, 64, 30, 0.32);
+  background: var(--accent-soft);                    /* 品牌红浅底（令牌）*/
+  border: 1px dashed rgba(226, 26, 32, 0.32);        /* 品牌红 #E21A20 的 32% 透明描边 */
   box-sizing: border-box;
 }
 /* 左右切换按钮：玻璃圆钮（与卡片角标同质感） */

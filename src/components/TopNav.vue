@@ -357,7 +357,7 @@ function onSearch() {
   border-bottom: 1px dashed var(--border);
 }
 .bp-item:last-child { border-bottom: none; }
-/* 状态圆点：进行中朱柿红呼吸 / 成功绿 / 失败红 */
+/* 状态圆点：进行中品牌红呼吸 / 成功绿 / 失败红 */
 .bp-dot {
   width: 8px; height: 8px;
   border-radius: 50%;

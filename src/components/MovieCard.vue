@@ -2,7 +2,7 @@
   文件名：MovieCard.vue
   所属模块：公共组件 / 影片卡片
   功能描述：单个影片的卡片展示组件，显示封面图片、番号和标题。
-           悬停浮现播放按钮；右上角喜欢按钮（已喜欢为朱柿红实心心）；
+           悬停浮现播放按钮；右上角喜欢按钮（已喜欢为品牌红实心心）；
            多选模式下显示勾选框。
            通过 emit 向父组件传递点击、播放、选中切换事件
            （编辑/删除操作统一在影片详情页进行）。
@@ -29,7 +29,7 @@
         </button>
       </div>
       <!-- 右上角喜欢按钮：与顶栏「喜欢」导航同一枚 AppIcon heart（只缩放 + 微调描边）。
-           未喜欢为白色描边心，已喜欢为朱柿红实心心；无圆形底，直接叠在海报上。
+           未喜欢为白色描边心，已喜欢为品牌红实心心；无圆形底，直接叠在海报上。
            事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） -->
       <button class="fav-btn" :class="{ active: isFav }"
               :title="isFav ? '取消喜欢' : '喜欢'"
@@ -40,7 +40,7 @@
       <span v-if="showPlayCount && m.play_count" class="play-count">
         <AppIcon name="play" :size="10" />{{ m.play_count }}
       </span>
-      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中朱柿红实心圆 + 白色对勾，内联 SVG 零依赖） -->
+      <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中品牌红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
           <path d="M5 12.5 10 17.5 19 7" fill="none" stroke="#fff" stroke-width="3"
@@ -194,7 +194,7 @@ watch(dataDirRef, () => { errd.value = false })
 /* 右上角喜欢按钮：纯心形图标（无底色/无描边包围，直接叠在海报上）。
    图标与顶栏「喜欢」导航同源（AppIcon heart），仅放大到 21px（顶栏 19px）并把线宽微调至 2.2，
    让它在海报上比顶栏那枚更"压得住"。未喜欢：白色描边心 + 投影保证任意海报上的可读性；
-   已喜欢：朱柿红实心心；hover 变朱柿红并微放大；命中区域仍为 24px 方框（不可见），保证可点。
+   已喜欢：品牌红实心心；hover 变品牌红并微放大；命中区域仍为 24px 方框（不可见），保证可点。
    事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） */
 .fav-btn {
   /* 内缩 6px：心形的实际墨迹还比按钮框再内收约 5px，距卡片边缘约 11px，
@@ -228,7 +228,7 @@ watch(dataDirRef, () => { errd.value = false })
   pointer-events: none;
 }
 
-/* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为朱柿红实心 */
+/* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为品牌红实心 */
 .check {
   position: absolute; top: 8px; left: 8px;
   background: rgba(255, 255, 255, 0.15);

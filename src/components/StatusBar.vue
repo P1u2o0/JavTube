@@ -30,7 +30,7 @@
       <el-button size="small" class="batch-btn batch-danger" :disabled="!store.selectedIds.length" @click="$emit('batchDelete')">
         <AppIcon name="trash" :size="14" style="margin-right:4px" />批量删除
       </el-button>
-      <!-- 批量刮削：无选中项时禁用（中性描边，hover 显现朱柿红强调色） -->
+      <!-- 批量刮削：无选中项时禁用（中性描边，hover 显现品牌红强调色） -->
       <el-button size="small" class="batch-btn batch-scrape" :disabled="!store.selectedIds.length" @click="$emit('batchScrape')">
         <AppIcon name="globe" :size="14" style="margin-right:4px" />批量刮削
       </el-button>
@@ -150,7 +150,7 @@ function invert() {
 .right { display: flex; align-items: center; flex-shrink: 0; }
 .right-label { margin-right: 8px; color: var(--text-2); }
 /* 批量删除/刮削按钮：默认中性描边与全选/反选一致，hover/focus 时才显现语义色，
-   替换原实心红/绿（EP 默认冷色调与暖纸白+墨黑+朱柿红配色冲突） */
+   替换原实心红/绿（EP 默认冷色调与暖纸白+墨黑+品牌红配色冲突） */
 .batch-btn.batch-danger:hover,
 .batch-btn.batch-danger:focus {
   background: var(--danger-soft) !important;

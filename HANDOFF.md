@@ -221,7 +221,8 @@ javtube_dev/
 1. **颜色 / 圆角 / 阴影一律用 CSS 变量**：`var(--bg)` / `var(--r-md)` / `var(--sh-1)`
    （检查：`grep -rE '#[0-9a-fA-F]{6}' src/`）
 2. **图标用 AppIcon 库**（自绘 SVG），不新增 emoji；需要新图标先在 `AppIcon.vue` 注册
-3. **主色朱柿红 `#d2401e`**、暖纸白 + 墨黑主题、字体 Outfit（拉丁）+ Noto Sans SC（中文）
+3. **主色品牌红 `#e21a20`**（与顶栏 logo、exe 图标同色；2026-09-17 由 `#d2401e` 统一而来）、
+   暖纸白 + 墨黑主题、字体 Outfit（拉丁）+ Noto Sans SC（中文）
 4. **多值字段用中文逗号「，」分隔**（标签字段约定）
 5. **数据库是 sql.js，不是 better-sqlite3**：SQL 全走主进程异步 IPC
 6. **提交信息不得出现账号、token、Cookie 等凭据，也不得出现本机绝对路径**

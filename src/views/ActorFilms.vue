@@ -291,7 +291,7 @@ onMounted(async () => {
   font-size: var(--fs-2xl); font-weight: 700; color: var(--text);
   display: flex; align-items: center; gap: 4px;
 }
-/* 性别符号：♀ 朱柿红 / ♂ 柔蓝 */
+/* 性别符号：♀ 品牌红 / ♂ 柔蓝 */
 .ah-sex { font-size: var(--fs-xl); color: var(--accent); }
 .ah-sex.m { color: #3d7ebf; }
 .ah-meta { font-size: var(--fs-base); color: var(--text-2); }

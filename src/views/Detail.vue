@@ -561,14 +561,14 @@ onMounted(async () => {
   flex-shrink: 0;
   border-top: 1px dashed var(--border);
 }
-/* 喜欢按钮：收藏态朱柿红描边 + 图标强调 */
+/* 喜欢按钮：收藏态品牌红描边 + 图标强调 */
 .card-actions .act-fav.fav-on {
   color: var(--accent) !important;
   border-color: var(--accent) !important;
   background: var(--accent-soft) !important;
 }
 .card-actions .act-fav.fav-on .app-icon { color: var(--accent); }
-/* 刮削按钮：hover 朱柿红（强调语义） */
+/* 刮削按钮：hover 品牌红（强调语义） */
 .card-actions .act-scrape:hover,
 .card-actions .act-scrape:focus {
   background: var(--accent-soft) !important;
@@ -799,7 +799,7 @@ onMounted(async () => {
 }
 /* 小图横向轨道 */
 .strip-track { display: flex; gap: 8px; overflow-x: auto; flex: 1; scroll-behavior: smooth; padding: 2px; }
-/* 单个小图：3:2 缩略，选中时朱柿红描边 */
+/* 单个小图：3:2 缩略，选中时品牌红描边 */
 .strip-item {
   position: relative;
   width: 104px; aspect-ratio: 3/2;
