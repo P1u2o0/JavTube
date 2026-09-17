@@ -19,6 +19,9 @@ const fs = require('fs')
 const { rows, firstRow, firstScalar, nowLocal, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
+// 标签映射函数：直接复用刮削时用的那一个（单一事实来源，避免两处实现随时间漂移）
+// scraper.js 只依赖 net-curl / fs / path / url / constants，不反向依赖 db 层，无循环引用
+const { applyTagMapping } = require('../scraper')
 
 // === 影片表字段元数据 ===
 /**
@@ -302,6 +305,51 @@ function registerMovieIpc(ipcMain, db) {
         throw e
       }
       persistSoon(db); return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // IPC: movies:applyTagMap — 渲染进程 → 主进程（2026-09-17 新增）
+  // 把设置里的「标签映射」规则套用到已有影片上。
+  // 背景：映射此前只在 scrapeMovie() 刮削那一刻应用（scraper.js 成功返回前那一行），
+  //       改完规则不会重算已有记录，用户会以为功能坏了。这里补一个显式入口。
+  // 复用 applyTagMapping 而非重写，保证与刮削路径的替换/删除/去重语义完全一致。
+  // @param {Object}  [opts]
+  // @param {boolean} [opts.dryRun=true] true 只返回影响预览（不写库）；false 才真正落库
+  // @returns {Object} { ok, total, changed:[{id,ph,pm,from,to}], applied, empty? }
+  ipcMain.handle(IPC.MOVIES_APPLY_TAG_MAP, (_e, { dryRun = true } = {}) => {
+    try {
+      // 读 settings.tag_mapping（与 ipc-utils.js 刮削入口读的是同一份配置）
+      const sRows = rows(db.exec("SELECT value FROM settings WHERE key='tag_mapping'")[0])
+      let mapping = []
+      try { mapping = JSON.parse((sRows[0] && sRows[0].value) || '[]') } catch { mapping = [] }
+      if (!Array.isArray(mapping)) mapping = []
+      // 过滤掉「原标签为空」的无效行：否则空 key 无意义，且防御脏数据把整库标签清空
+      const usable = mapping.filter(p => Array.isArray(p) && String(p[0] || '').trim())
+      if (!usable.length) return { ok: true, total: 0, changed: [], applied: 0, empty: true }
+
+      const all = rows(db.exec('SELECT id, ph, pm, bq FROM movies')[0])
+      const changed = []
+      for (const row of all) {
+        const from = String(row.bq || '')
+        const to = applyTagMapping(from, usable)
+        if (to !== from) changed.push({ id: row.id, ph: row.ph, pm: row.pm, from, to })
+      }
+      // 预览模式：只报告影响面，不写库
+      if (dryRun) return { ok: true, total: all.length, changed, applied: 0 }
+
+      if (changed.length) {
+        // 与 MOVIES_BATCH_TAGS 同一套事务写法
+        db.run('BEGIN')
+        try {
+          for (const c of changed) db.run('UPDATE movies SET bq=? WHERE id=?', [c.to, c.id])
+          db.run('COMMIT')
+        } catch (e) {
+          db.run('ROLLBACK')
+          throw e
+        }
+        persistSoon(db)
+      }
+      return { ok: true, total: all.length, changed, applied: changed.length }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

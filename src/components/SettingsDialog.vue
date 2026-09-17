@@ -94,6 +94,13 @@
               </div>
             </div>
             <span class="g-tip" v-if="showTips">刮削到的标签命中原标签时自动替换；新标签留空则删除该标签</span>
+            <!-- 已有影片不会自动重算标签，需显式触发（点后先出影响预览，确认才写库） -->
+            <div class="map-actions">
+              <el-button class="apply-map-btn" :loading="mapApplying" @click="applyMappingToLibrary">
+                应用到现有影片
+              </el-button>
+              <span class="g-tip" v-if="showTips">映射只在刮削那一刻生效；想让<b>已有影片</b>也按当前规则重算，点左边按钮</span>
+            </div>
           </div>
         </div>
       </el-tab-pane>
@@ -186,7 +193,7 @@
         <div class="set-grid">
           <div class="g-label">应用信息</div>
           <div class="g-control">
-            <div class="about-line"><b>JavTube</b>　v1.1.0</div>
+            <div class="about-line"><b>JavTube</b>　v{{ appVersion }}</div>
             <div class="about-line">框架：Electron 30 + Vue 3 + Vite 5 + sql.js</div>
             <div class="about-line about-muted">2026 · 纯本地管理，数据仅保存在本软件 data 目录内，不上传任何内容。</div>
           </div>
@@ -196,6 +203,28 @@
     <!-- 统一保存按钮（右下角）：一次性保存所有标签页的设置 -->
     <template #footer>
       <el-button type="primary" @click="saveAll">保存设置</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 标签映射影响预览：确认后才真正写库（append-to-body 避免被上层对话框裁剪） -->
+  <el-dialog v-model="mapPreviewShow" title="应用标签映射 — 影响预览" width="640px" append-to-body>
+    <div class="mp-summary">
+      共 <b>{{ mapPreview.total }}</b> 部影片，其中 <b>{{ mapPreview.changed.length }}</b> 部的标签会被修改：
+    </div>
+    <div class="mp-list">
+      <div v-for="c in mapPreview.changed" :key="c.id" class="mp-row">
+        <div class="mp-ph">{{ c.ph }}</div>
+        <div class="mp-diff">
+          <span v-if="c.removed.length" class="mp-tag mp-del">{{ c.removed.join('、') }}</span>
+          <span v-if="c.removed.length && c.added.length" class="mp-arrow">→</span>
+          <span v-if="c.added.length" class="mp-tag mp-add">{{ c.added.join('、') }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="mp-note">此操作会直接改写影片的标签字段，请确认无误后再应用。</div>
+    <template #footer>
+      <el-button @click="mapPreviewShow = false">取消</el-button>
+      <el-button type="primary" :loading="mapApplying" @click="confirmApplyMap">应用</el-button>
     </template>
   </el-dialog>
 </template>
@@ -225,6 +254,8 @@ const store = useMoviesStore()
 
 // 当前激活的标签页
 const tab = ref('basic')
+// 应用版本号（构建时由 vite define 注入，来源 package.json，见 vite.config.mjs）
+const appVersion = __APP_VERSION__
 // 基础 + 刮削设置表单（响应式；分 tab 保存）
 const st = reactive({
   player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
@@ -316,6 +347,73 @@ function addCat() {
  */
 function addMap() {
   mapRows.value.push({ _key: ++keySeq, from: '', to: '' })
+}
+
+// 标签映射影响预览（点「应用到现有影片」后先干跑，确认才写库）
+const mapPreviewShow = ref(false)
+const mapApplying = ref(false)
+const mapPreview = reactive({ total: 0, changed: [] })
+
+/**
+ * 把当前「标签映射」规则应用到已有影片
+ *
+ * 背景：映射此前只在 scrapeMovie() 刮削那一刻生效（scraper.js 里那一行是唯一应用点），
+ *       改完规则不会重算已有记录，看起来像「功能没生效」。这里补一个显式入口。
+ * 流程：规则先入库（后端按 settings.tag_mapping 计算，先存才能保证预览=结果）
+ *      → 干跑 dryRun 拿影响预览 → 用户确认 → 落库 → 刷新。
+ */
+async function applyMappingToLibrary() {
+  if (!window.api) return
+  // 与 saveAll 同一套过滤规则：两侧皆空的行丢弃
+  const mapping = mapRows.value
+    .filter(m => (m.from || '').trim() || (m.to || '').trim())
+    .map(m => [(m.from || '').trim(), (m.to || '').trim()])
+  // 没有「原标签」的规则永远不会命中，提前拦下
+  if (!mapping.some(p => p[0])) return ElMessage.warning('请先填写至少一条规则的原标签')
+
+  // 规则先落库：后端是按 settings.tag_mapping 算的，不先存会出现「预览与结果不一致」
+  const rs = await window.api.updateSetting('tag_mapping', JSON.stringify(mapping))
+  if (!rs.ok) return ElMessage.error(rs.error)
+
+  mapApplying.value = true
+  try {
+    const pre = await window.api.applyTagMap(true)   // 干跑：只预览，不写库
+    if (!pre.ok) return ElMessage.error(pre.error)
+    if (!pre.changed.length) {
+      return ElMessage.info(`现有 ${pre.total} 部影片的标签都不匹配这 ${mapping.length} 条规则，无需改动`)
+    }
+    mapPreview.total = pre.total
+    // 只呈现「删了哪些 / 加了哪些」，比整串标签更好读
+    mapPreview.changed = pre.changed.map(c => {
+      const a = splitTags(c.from), b = splitTags(c.to)
+      return {
+        id: c.id, ph: c.ph,
+        removed: a.filter(t => !b.includes(t)),
+        added: b.filter(t => !a.includes(t))
+      }
+    })
+    mapPreviewShow.value = true
+  } finally {
+    mapApplying.value = false
+  }
+}
+
+/**
+ * 确认应用：真正写库并刷新
+ */
+async function confirmApplyMap() {
+  if (!window.api) return
+  mapApplying.value = true
+  try {
+    const r = await window.api.applyTagMap(false)    // 真正落库
+    if (!r.ok) return ElMessage.error(r.error)
+    mapPreviewShow.value = false
+    ElMessage.success(`已更新 ${r.applied} 部影片的标签`)
+    await store.loadAllDbTags()
+    location.reload()
+  } finally {
+    mapApplying.value = false
+  }
 }
 
 /**
@@ -479,6 +577,26 @@ async function clearDb() {
 }
 .add-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--border-strong); }
 .add-btn:active { transform: scale(0.96); }
+
+/* 标签映射「应用到现有影片」操作行（按钮 + 说明小字同排，窄宽时换行） */
+.map-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.apply-map-btn { flex-shrink: 0; }
+
+/* 标签映射影响预览（嵌套对话框；内容由本组件模板渲染，scoped 依然生效） */
+.mp-summary { font-size: var(--fs-sm); color: var(--text); margin-bottom: 10px; }
+.mp-list {
+  max-height: 320px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: var(--r-tag);
+}
+.mp-row { display: flex; align-items: flex-start; gap: 12px; padding: 7px 12px; }
+.mp-row + .mp-row { border-top: 1px solid var(--border); }
+.mp-ph { flex-shrink: 0; width: 108px; font-size: var(--fs-sm); color: var(--muted); }
+.mp-diff { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mp-tag { font-size: var(--fs-sm); border-radius: var(--r-tag); padding: 1px 8px; }
+.mp-del { color: var(--danger); background: var(--danger-soft); text-decoration: line-through; }
+.mp-add { color: var(--accent); background: var(--accent-soft); }
+.mp-arrow { font-size: var(--fs-sm); color: var(--muted); }
+.mp-note { margin-top: 10px; font-size: var(--fs-sm); color: var(--muted); }
 
 /* 关于页文字行 */
 .about-line { padding: 3px 0; color: var(--text-2); font-size: var(--fs-md); }

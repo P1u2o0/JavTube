@@ -17,6 +17,9 @@ import { spawn } from 'child_process'
 
 // 在 ESM 环境中获取 __dirname（Vite 配置使用 ESM 语法）
 const __dirname = dirname(fileURLToPath(import.meta.url))
+// 应用版本号：以 package.json 为唯一来源，构建时注入为 __APP_VERSION__。
+// 这样「关于」页显示的版本永远跟发布版本一致，不会像以前那样手写常驻后过期。
+const APP_VERSION = JSON.parse(fs.readFileSync(resolve(__dirname, 'package.json'), 'utf8')).version
 // Electron 子进程实例引用（开发模式下启动）
 let electronProc = null
 
@@ -92,6 +95,8 @@ export default defineConfig({
   ],
   // 路径别名配置：@ 指向 src 目录，方便模块导入
   resolve: { alias: { '@': resolve(__dirname, 'src') } },
+  // 编译期常量：把版本号烘进产物（见上方 APP_VERSION 说明）
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   // 基础路径：使用相对路径，确保 Electron 加载本地文件时资源路径正确
   base: './',
   // 构建配置

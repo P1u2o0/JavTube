@@ -21,6 +21,8 @@ module.exports = {
   MOVIES_BATCH_FAV: 'movies:batchFav',
   MOVIES_BATCH_TAGS: 'movies:batchTags',
   MOVIES_GET_ALL_TAGS: 'movies:getAllTags',
+  // 把设置里的标签映射规则套用到「已有影片」（dryRun 时只返回影响预览，不写库）
+  MOVIES_APPLY_TAG_MAP: 'movies:applyTagMap',
   HOME_RECOMMEND: 'home:recommend',        // 首页推荐（轮播/类别按钮/近期上新）
   MOVIES_RECORD_PLAY: 'movies:recordPlay',
 

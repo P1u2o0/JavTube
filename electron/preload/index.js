@@ -97,6 +97,13 @@ contextBridge.exposeInMainWorld('api', {
    */
   batchAddTags: (ids, tags) => ipcRenderer.invoke(IPC.MOVIES_BATCH_TAGS, { ids, tags }),
 
+  /**
+   * 把设置里的「标签映射」规则套用到已有影片
+   * @param {boolean} [dryRun=true] true 只返回影响预览（不写库），false 才真正落库
+   * @returns {Promise<Object>} { ok, total, changed:[{id,ph,pm,from,to}], applied }
+   */
+  applyTagMap: (dryRun = true) => ipcRenderer.invoke(IPC.MOVIES_APPLY_TAG_MAP, { dryRun }),
+
   // === 女优相关接口 ===
 
   /**
