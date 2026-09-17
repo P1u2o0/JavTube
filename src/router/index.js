@@ -17,7 +17,6 @@ import Library from '@/views/Library.vue'
 import Favorite from '@/views/Favorite.vue'
 import History from '@/views/History.vue'
 import Actress from '@/views/Actress.vue'
-import Website from '@/views/Website.vue'
 import Detail from '@/views/Detail.vue'
 import ActorFilms from '@/views/ActorFilms.vue'
 
@@ -37,9 +36,6 @@ const routes = [
 
   // 女优管理 - 管理女优信息、查看参演影片
   { path: '/actress', component: Actress, meta: { title: '女优' } },
-
-  // 网址导航 - 管理收藏的网址链接
-  { path: '/website', component: Website, meta: { title: '网址' } },
 
   // 影片详情 - 展示单部影片完整信息，:id 为路由参数，props: true 将参数作为 props 传入
   { path: '/detail/:id', component: Detail, meta: { title: '详情' }, props: true },

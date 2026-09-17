@@ -35,12 +35,6 @@ module.exports = {
   // 2026-09-14 演员头像：按演员名查询其出演影片 + 演员信息（男女通用）
   ACTOR_FILMS: 'actor:films',
 
-  // === 网址 ===
-  WEBSITES_LIST: 'websites:list',
-  WEBSITES_CREATE: 'websites:create',
-  WEBSITES_UPDATE: 'websites:update',
-  WEBSITES_DELETE: 'websites:delete',
-
   // === 设置 ===
   SETTINGS_GET: 'settings:get',
   SETTINGS_UPDATE: 'settings:update',

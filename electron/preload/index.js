@@ -148,36 +148,6 @@ contextBridge.exposeInMainWorld('api', {
    */
   getActorFilms: (name) => ipcRenderer.invoke(IPC.ACTOR_FILMS, name),
 
-  // === 网址相关接口 ===
-
-  /**
-   * 获取网址列表
-   * @returns {Promise<Object>} { ok, data }
-   */
-  getWebsites: () => ipcRenderer.invoke(IPC.WEBSITES_LIST),
-
-  /**
-   * 创建网址
-   * @param {Object} d - 网址数据
-   * @returns {Promise<Object>} { ok, id }
-   */
-  createWebsite: (d) => ipcRenderer.invoke(IPC.WEBSITES_CREATE, d),
-
-  /**
-   * 更新网址
-   * @param {number} id - 网址 ID
-   * @param {Object} d - 要更新的字段
-   * @returns {Promise<Object>} { ok }
-   */
-  updateWebsite: (id, d) => ipcRenderer.invoke(IPC.WEBSITES_UPDATE, { id, data: d }),
-
-  /**
-   * 删除网址
-   * @param {number} id - 网址 ID
-   * @returns {Promise<Object>} { ok }
-   */
-  deleteWebsite: (id) => ipcRenderer.invoke(IPC.WEBSITES_DELETE, id),
-
   // === 设置相关接口 ===
 
   /**

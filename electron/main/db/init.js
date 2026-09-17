@@ -161,15 +161,6 @@ async function initDb(dataDir) {
     remark TEXT             -- 备注
   )`)
 
-  // 网址表：存储相关网站收藏
-  db.run(`CREATE TABLE IF NOT EXISTS websites (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,  -- 自增主键
-    name TEXT,             -- 网站名称
-    url TEXT,              -- 网站地址
-    grp TEXT,              -- 分组
-    img TEXT               -- 网站图标
-  )`)
-
   // 设置表：键值对形式存储应用设置
   db.run(`CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,  -- 设置项键名（主键）

@@ -3,7 +3,7 @@
  * @module electron/main/db/movies
  * @description 影片数据的 IPC 处理器注册模块。使用 sql.js 风格 API 操作数据库。
  *              包含影片的增删改查、批量操作（收藏/标签）、搜索。
- *              女优与网址的 IPC 分别位于 actress.js / websites.js（轮次 3 拆分）。
+ *              女优的 IPC 位于 actress.js（轮次 3 拆分）。
  *              所有 IPC 通道均为：渲染进程 → 主进程（ipcMain.handle）。
  *
  * @dependencies electron (ipcMain), ../constants, ./util

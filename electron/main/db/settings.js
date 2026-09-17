@@ -168,12 +168,11 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
   })
 
   // IPC: settings:clear — 渲染进程 → 主进程
-  // 清空所有数据（删除影片、女优、网址记录，保留设置）
+  // 清空所有数据（删除影片、女优记录，保留设置）
   ipcMain.handle(IPC.SETTINGS_CLEAR, () => {
     try {
       db.run('DELETE FROM movies')   // 清空影片表
       db.run('DELETE FROM actress')  // 清空女优表
-      db.run('DELETE FROM websites') // 清空网址表
       persistSoon(db)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }

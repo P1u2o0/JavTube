@@ -4,8 +4,8 @@
  * @description Electron 主进程入口文件。负责应用启动时序编排：性能开关、数据目录定位与迁移、
  *              数据库初始化、各 IPC 模块注册、窗口创建与生命周期管理。
  *              具体职责已拆分：封面协议 → cover-protocol.js；工具/对话框/刮削 IPC → ipc-utils.js；
- *              影片/女优/网址/设置 IPC → db/ 下各模块。
- * @dependencies electron (app, BrowserWindow, ipcMain), path, fs, ./db/init, ./db/movies, ./db/actress, ./db/websites, ./db/settings, ./ipc-utils, ./cover-protocol
+ *              影片/女优/设置 IPC → db/ 下各模块。
+ * @dependencies electron (app, BrowserWindow, ipcMain), path, fs, ./db/init, ./db/movies, ./db/actress, ./db/settings, ./ipc-utils, ./cover-protocol
  * @keyAPI app.whenReady(), BrowserWindow, ipcMain.handle(), app.getPath()
  */
 
@@ -16,10 +16,9 @@ const fs = require('fs')
 
 // 引入数据库初始化模块
 const { initDb } = require('./db/init')
-// 影片 / 女优 / 网址 / 设置 的 IPC 处理器注册函数（各领域独立模块）
+// 影片 / 女优 / 设置 的 IPC 处理器注册函数（各领域独立模块）
 const { registerMovieIpc } = require('./db/movies')
 const { registerActressIpc } = require('./db/actress')
-const { registerWebsitesIpc } = require('./db/websites')
 const { registerSettingsIpc, applyProxySettings } = require('./db/settings')
 // 工具类 / 对话框 / 刮削 IPC（自本文件拆出）
 const { registerUtilsIpc } = require('./ipc-utils')
@@ -260,7 +259,6 @@ app.whenReady().then(async () => {
     })                                                              // 工具类 IPC
     registerMovieIpc(ipcMain, db)                                   // 影片数据 IPC
     registerActressIpc(ipcMain, db)                                 // 女优数据 IPC
-    registerWebsitesIpc(ipcMain, db)                                // 网址数据 IPC
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
     registerHomeIpc(ipcMain, db)                                    // 首页推荐 IPC
     console.log('[main] IPC OK')
