@@ -188,7 +188,7 @@ import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, buildScrapeUpdate, safeCall, splitTags } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -245,8 +245,10 @@ const zoom = ref(1)              // 灯箱图片缩放倍数（滚轮调节）
 
 /**
  * 计算属性：海报图解析为可显示的 URL（无值时为空串）
+ * 传影片 id 作版本键：本页刮削成功后 bumpCover 会让 URL 换新（同一路径的封面文件
+ * 被覆盖写入时，URL 不变浏览器就不会重新加载，海报会停在旧图）
  */
-const cover = computed(() => m.value ? resolveCover(m.value.cover) : '')
+const cover = computed(() => m.value ? resolveCover(m.value.cover, m.value.id) : '')
 
 /**
  * 计算属性：本地预览图路径列表（m.previews 为 JSON 字符串数组）
@@ -265,7 +267,8 @@ const galleryImages = computed(() => {
   const list = []
   if (cover.value) list.push(cover.value)
   for (const p of previewList.value) {
-    const u = resolveCover(p)
+    // 预览图同样是「固定文件名覆盖写入」，共用影片 id 作版本键才能一起刷新
+    const u = resolveCover(p, m.value?.id)
     if (u) list.push(u)
   }
   return list
@@ -502,6 +505,8 @@ async function onScrape() {
       const ur = await window.api.updateMovie(m.value.id, buildScrapeUpdate(r.data))
       if (ur.ok) {
         scrapeStore.done(key, true)
+        // 封面/预览图是按固定文件名覆盖写入的，URL 不变浏览器不会重新加载 → 换新版本号强制刷新
+        bumpCover(m.value.id)
         ElMessage.success(`刮削成功（来源: ${r.data.source}）`)
         await load(m.value.id)
         await store.loadAllDbTags()  // 刷新标签统计（标签按影片数量排序，见 TagFilter.byUsage）

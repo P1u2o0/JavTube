@@ -55,7 +55,7 @@ import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { buildScrapeUpdate } from '@/utils/global'
+import { buildScrapeUpdate, bumpCover } from '@/utils/global'
 import { useMovieList } from '@/composables/useMovieList'
 
 // 路由实例（clearFilterTitle 用它跳回全部影片列表）
@@ -148,13 +148,10 @@ function onCardClick(m) {
 }
 
 /**
- * 切换喜欢状态（卡片右上角喜欢按钮，实时生效）
- * 写库后显式替换数组元素，强制该卡片重渲染（绕过响应性引用问题）
- * @param {Object} m - 影片对象
- */
-/**
  * 切换喜欢状态（卡片右上角喜欢按钮）
- * store.toggleFav 内部乐观更新：界面即时变色，写库失败自动回滚
+ * 实现说明：store.toggleFav **不是乐观更新** —— 它先 await IPC 写库，成功后才改
+ *          `movies` 里的 `cl` 字段触发重渲染；失败则保持原状、无回滚动作。
+ *          本地 sql.js 写库为毫秒级，无需乐观更新。
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id) }
@@ -188,6 +185,9 @@ async function onBatchScrape() {
         if (saveR.ok) {
           const idx = store.movies.findIndex(x => x.id === m.id)
           if (idx >= 0) store.movies[idx] = { ...store.movies[idx], ...update }
+          // 封面是「按番号固定文件名覆盖写入」的：路径没变 → <img> src 不变 → 浏览器不会重新
+          // 请求，海报会停留在旧图。bumpCover 让该影片的封面 URL 换新，海报即时刷新。
+          bumpCover(m.id)
           scrapeStore.done(key, true)
           ok++
         } else {

@@ -107,9 +107,10 @@ function onFavClick(e) {
 }
 
 // 封面 URL 计算属性：出错时返回空，否则解析封面路径
+// 传 m.id 作为版本键：该影片刮削过（bumpCover）后 URL 会带上新版本号，强制刷新海报
 const coverUrl = computed(() => {
   if (errd.value) return ''
-  return resolveCover(props.m.cover) || ''
+  return resolveCover(props.m.cover, props.m.id) || ''
 })
 
 // 侦听封面变化，重置错误状态（切换影片时重新尝试加载封面）

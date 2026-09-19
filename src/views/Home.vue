@@ -129,7 +129,7 @@ const activeIndex = computed(() => {
 
 /** 封面 URL 解析（无封面时返回空串） */
 function coverOf(m) {
-  return resolveCover(m?.cover) || ''
+  return resolveCover(m?.cover, m?.id) || ''
 }
 
 /**

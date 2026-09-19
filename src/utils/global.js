@@ -11,8 +11,27 @@
  */
 
 // 全局响应式 dataDir - 存储应用数据目录路径，供 resolveCover 使用
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 export const dataDirRef = ref('')
+
+/**
+ * 封面版本表：解决「刮削后海报不同步更新」。
+ * 原因：本地封面一律按「番号」固定文件名覆盖写入（如 covers/MNGS-071.jpg），
+ *       重新刮削后 URL 一个字符都没变 → <img> 的 src 不变 → 浏览器认为无需重新请求，
+ *       于是继续显示旧图（已实测：src 不变时请求数 = 0）。
+ * 做法：刮削成功后 bumpCover(影片 id)，让该影片的封面 URL 带上 ?v=<时间戳>，
+ *       src 变化触发重新请求；未 bump 过的影片不带版本号，缓存照旧生效。
+ */
+export const coverVersions = reactive({})
+
+/**
+ * 标记某个影片的封面已更新，使其封面/预览图 URL 换新（强制浏览器重新加载）。
+ * @param {string|number} key - 影片 id（与 resolveCover 第二参数保持一致）
+ */
+export function bumpCover(key) {
+  if (key === undefined || key === null || key === '') return
+  coverVersions[key] = Date.now()
+}
 
 /**
  * 获取封面图解析为 <img> 可加载的 URL
@@ -25,14 +44,18 @@ export const dataDirRef = ref('')
  *           我们在主进程注册了 javtube-cover:// privileged scheme，主进程会把路径白名单校验
  *           后转为 net.fetch(file://) 返回，因此这里统一改用 javtube-cover://，对调用方透明。
  * @param {string} cover - 封面路径字段值
+ * @param {string|number} [key] - 影片 id；传入且该 id 已 bumpCover 过时，URL 会带 ?v= 版本号
  * @returns {string} 可用于 img src 的 URL
  */
-export function resolveCover(cover) {
+export function resolveCover(cover, key) {
   if (!cover) return ''
-  // HTTP/HTTPS URL 直接返回（远程封面图无需走自定义协议）
+  // 该影片的封面是否被标记为「刚更新过」（读响应式表 → 调用处的 computed 会自动重算）
+  const ver = (key === undefined || key === null || key === '') ? 0 : coverVersions[key]
+  const withVer = (u) => (ver ? `${u}${u.includes('?') ? '&' : '?'}v=${ver}` : u)
+  // HTTP/HTTPS URL 直接返回（远程封面图无需走自定义协议，也不参与本地版本化）
   if (/^https?:\/\//i.test(cover)) return cover
   // 已经是 javtube-cover:// URL 直接返回（避免重复编码）
-  if (/^javtube-cover:\/\//i.test(cover)) return cover
+  if (/^javtube-cover:\/\//i.test(cover)) return withVer(cover)
   // 其他任意本地路径（含 file://、Windows 绝对路径、Unix 路径、相对路径）
   // 都统一编码为 javtube-cover:///<base64url(absolutePath)>
   const dataDir = dataDirRef.value || window.__dataDir || ''
@@ -65,7 +88,7 @@ export function resolveCover(cover) {
     .replace(/=+$/g, '')
   // 用固定占位 host = "0"，避免 base64url 串（合法 host 字符）被 Chromium 当成 host 段解析，
   // 否则 pathname 会只剩 "/" 拿不到编码内容。CRITICAL：0 是占位，主进程按 pathname.slice(1) 取。
-  return `javtube-cover://0/${enc}`
+  return withVer(`javtube-cover://0/${enc}`)
 }
 
 /**

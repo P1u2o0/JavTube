@@ -24,8 +24,6 @@
         <div class="ah-name">
           <span class="ah-sex" :class="gender">{{ gender === 'm' ? '♂' : '♀' }}</span>{{ name }}
         </div>
-        <!-- 演员资料：无资料时仅留白（不显示占位文案） -->
-        <div class="ah-meta" v-if="metaText">{{ metaText }}</div>
         <div class="ah-count">{{ films.length }} 部作品</div>
       </div>
     </div>
@@ -115,23 +113,18 @@ const sort = ref({ by: 'fxrq', order: 'DESC', random: false })
 const page = ref(1)
 const pageSize = computed(() => store.pageSize || 20)
 
+/** 默认头像资源：用 BASE_URL 前缀（base='./'）拼相对路径。
+ *  注意不能写 '/actor-female.svg' —— 这是运行时表达式，Vite 不会像静态 src 属性那样
+ *  改写路径，打包后会被解析成 file:///C:/actor-female.svg 直接 404（默认剪影显示为破图）。 */
+const DEFAULT_AVATAR = {
+  f: import.meta.env.BASE_URL + 'actor-female.svg',
+  m: import.meta.env.BASE_URL + 'actor-male.svg'
+}
+
 /** 演员头像：有本地头像走封面协议，否则按性别用默认剪影 */
 const avatarUrl = computed(() => avatar.value
   ? resolveCover(avatar.value)
-  : (gender.value === 'm' ? '/actor-male.svg' : '/actor-female.svg'))
-
-/** 演员资料文本（身高/三围/罩杯/生日/出道）：无资料则为空串（留白） */
-const metaText = computed(() => {
-  const i = info.value
-  if (!i) return ''
-  const parts = []
-  if (i.height) parts.push(`${i.height}cm`)
-  if (i.bust || i.waist || i.hip) parts.push(`B${i.bust || '-'}/W${i.waist || '-'}/H${i.hip || '-'}`)
-  if (i.zb) parts.push(`${i.zb}罩杯`)
-  if (i.birthday) parts.push(`生日 ${i.birthday}`)
-  if (i.debut) parts.push(`出道 ${i.debut}`)
-  return parts.join(' · ')
-})
+  : (gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f))
 
 /** 标签统计：该演员影片的标签出现次数降序 */
 const tagList = computed(() => {
@@ -294,7 +287,6 @@ onMounted(async () => {
 /* 性别符号：♀ 品牌红 / ♂ 柔蓝 */
 .ah-sex { font-size: var(--fs-xl); color: var(--accent); }
 .ah-sex.m { color: #3d7ebf; }
-.ah-meta { font-size: var(--fs-base); color: var(--text-2); }
 .ah-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ===== ② 标签类别栏（样式与片库页 TagFilter 一致；圆角与芯片/筛选按钮统一，见 --r-tag） ===== */
