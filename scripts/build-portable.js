@@ -1,9 +1,9 @@
 /**
  * @file build-portable.js
  * @module scripts/build-portable
- * @description 生成 Windows 绿色版（免安装）压缩包。
+ * @description 生成 Windows x64 压缩包（解压后直接运行，覆盖旧文件即为升级）。
  *
- * 产物：release/JavTube-v<版本>-win-x64-portable.zip
+ * 产物：release/JavTube-v<版本>-win-x64.zip
  * 解压后目录结构（data 与 exe 同级，实现「解压即用 + 覆盖即更新」）：
  *   JavTube/
  *   ├─ JavTube.exe
@@ -180,13 +180,13 @@ async function slimAsar() {
 /** 写入面向使用者的说明文件（随包分发） */
 function writeReadme(targetDir) {
   const txt = [
-    'JavTube v' + VERSION + ' — Windows 绿色版（免安装）',
+    'JavTube v' + VERSION + ' — Windows x64',
     '='.repeat(52),
     '',
     '【使用】',
     '  1. 把整个 JavTube 文件夹解压到任意位置（建议避开 C:\\Program Files，',
     '    因为该目录写入需要管理员权限）。',
-    '  2. 双击 JavTube.exe 即可运行，无需安装任何东西。',
+    '  2. 双击 JavTube.exe 运行。',
     '',
     '【数据存放位置】',
     '  所有数据都在软件同目录的 data 文件夹里：',
@@ -194,7 +194,7 @@ function writeReadme(targetDir) {
     '    data\\covers\\     封面与女优头像缓存',
     '  首次运行会自动创建 data 文件夹。整个文件夹拷走 = 数据一起搬走。',
     '',
-    '【升级到新版本：覆盖即更新，无需卸载重装】',
+    '【升级到新版本】',
     '  1. 把新版本的 zip 解压到任意临时位置。',
     '  2. 把解压出来的内容**全部覆盖**到旧版的 JavTube 文件夹里（同名覆盖）。',
     '     覆盖到的就是程序文件：JavTube.exe、resources\\、locales\\、',
@@ -324,7 +324,7 @@ function embedIcon() {
 function makeZip() {
   step('打包 zip')
   if (!fs.existsSync(SEVEN_ZIP)) throw new Error('找不到 7za.exe: ' + SEVEN_ZIP)
-  const zipName = `${APP_NAME}-v${VERSION}-win-x64-portable.zip`
+  const zipName = `${APP_NAME}-v${VERSION}-win-x64.zip`
   const zipPath = path.join(OUT_ROOT, zipName)
   remove(zipPath)
   // -mcu=on：强制以 UTF-8 写入文件名（否则中文「使用说明.txt」会按本机代码页存储，
@@ -333,6 +333,60 @@ function makeZip() {
   const size = fs.statSync(zipPath).size
   console.log(`\n✅ ${zipPath}\n   ${(size / 1048576).toFixed(1)} MB`)
   return zipPath
+}
+
+/**
+ * 自包含性自检：确认产物在一台「什么都没装」的 Windows 上解压即用。
+ *
+ * 为什么需要这一步：开发机上 `node_modules/electron` 就在旁边，即便产物漏了
+ * Chromium 运行时文件（icudtl.dat / *.pak / 各 dll）也能跑起来，问题只在
+ * 别人机器上暴露 —— 那边表现是「双击没反应」且没有错误弹窗，极难排查。
+ * 实测基线：v1.4.0 的 zip 解压后共 73 个文件（本清单 + locales/*.pak + 使用说明）。
+ *
+ * 也可独立运行（用于复核已发布的包）：
+ *   node scripts/build-portable.js --check-only release/JavTube
+ *
+ * @param {string} outDir - 解压后的产物目录（含 JavTube.exe）
+ * @returns {{problems: string[], warnings: string[]}}
+ */
+function checkSelfContained(outDir) {
+  const problems = [], warnings = []
+  // Electron 运行时必需文件（缺任何一个都会在别的机器上起不来）
+  const RUNTIME_FILES = [
+    'JavTube.exe', 'resources/app.asar',
+    'chrome_100_percent.pak', 'chrome_200_percent.pak', 'resources.pak',
+    'icudtl.dat', 'snapshot_blob.bin', 'v8_context_snapshot.bin',
+    'd3dcompiler_47.dll', 'ffmpeg.dll', 'libEGL.dll', 'libGLESv2.dll',
+    'vk_swiftshader.dll', 'vk_swiftshader_icd.json', 'vulkan-1.dll',
+    'LICENSE.electron.txt', 'LICENSES.chromium.html'
+  ]
+  const miss = RUNTIME_FILES.filter(f => !fs.existsSync(path.join(outDir, f)))
+  if (miss.length) problems.push('缺少 Electron 运行时文件（新电脑上无法启动）: ' + miss.join(', '))
+  const localesDir = path.join(outDir, 'locales')
+  if (!fs.existsSync(localesDir) || !fs.readdirSync(localesDir).some(f => /\.pak$/.test(f))) {
+    problems.push('缺少 locales/*.pak（Chromium 本地化资源）')
+  }
+  // 应用自身必需：空 data 目录（数据落点）、使用说明、asar 内的两个关键文件
+  for (const m of ['data', '使用说明.txt']) {
+    if (!fs.existsSync(path.join(outDir, m))) problems.push('缺少 ' + m)
+  }
+  const asarPath = path.join(outDir, 'resources', 'app.asar')
+  if (fs.existsSync(asarPath)) {
+    let appFiles = []
+    try { appFiles = asar.listPackage(asarPath) } catch (e) { problems.push('app.asar 无法解析: ' + e.message) }
+    if (appFiles.length) {
+      if (!appFiles.some(f => /sql-wasm\.wasm$/.test(f))) problems.push('asar 内缺少 sql-wasm.wasm（开库必需）')
+      if (!appFiles.some(f => /dist[\\/]index\.html$/.test(f))) problems.push('asar 内缺少 dist/index.html（界面必需）')
+    }
+    // 开发机绝对路径泄漏：打包时若把项目路径写进 asar，换机器后会指向不存在的目录
+    try {
+      const buf = fs.readFileSync(asarPath)
+      for (const s of [ROOT.replace(/\\/g, '/'), ROOT]) {
+        if (buf.includes(Buffer.from(s, 'utf8'))) { warnings.push('asar 内出现开发机绝对路径 ' + s); break }
+      }
+    } catch { }
+  }
+  return { problems, warnings }
 }
 
 async function main() {
@@ -373,11 +427,10 @@ async function main() {
   const iconOk = embedIcon()
 
   step('5/6 自检')
-  const must = ['JavTube.exe', 'resources/app.asar', '使用说明.txt', 'data']
-  for (const m of must) {
-    const p = path.join(OUT_DIR, m)
-    if (!fs.existsSync(p)) throw new Error('产物缺少 ' + m)
-  }
+  const sc = checkSelfContained(OUT_DIR)
+  if (sc.problems.length) throw new Error(sc.problems.join('；'))
+  sc.warnings.forEach(w => console.warn('  ⚠️  ' + w))
+  console.log(`自检通过：解压即用（Electron 运行时 + locales + data + 使用说明 + asar 内 sql-wasm/dist 齐备）`)
   const appFiles = asar.listPackage(path.join(OUT_DIR, 'resources', 'app.asar'))
   if (!appFiles.some(f => /sql-wasm\.wasm$/.test(f))) throw new Error('asar 内缺少 sql-wasm.wasm')
   if (!appFiles.some(f => /dist[\\/]index\.html$/.test(f))) throw new Error('asar 内缺少 dist/index.html')
@@ -394,6 +447,25 @@ async function main() {
 
   step('6/6 生成压缩包')
   makeZip()
+}
+
+// 独立复核模式（不构建，只检查已有产物能否「解压即用」）：
+//   node scripts/build-portable.js --check-only [目录]     # 默认 release/JavTube
+const argv = process.argv.slice(2)
+const ci = argv.indexOf('--check-only')
+if (ci >= 0) {
+  const dir = path.resolve(argv[ci + 1] || OUT_DIR)
+  console.log('复核目录:', dir)
+  if (!fs.existsSync(dir)) { console.error('❌ 目录不存在'); process.exit(1) }
+  const r = checkSelfContained(dir)
+  r.warnings.forEach(w => console.warn('  ⚠️  ' + w))
+  if (r.problems.length) {
+    r.problems.forEach(p => console.error('  ❌ ' + p))
+    console.error('\n❌ 复核未通过：该包在干净电脑上可能无法直接运行')
+    process.exit(1)
+  }
+  console.log('✅ 复核通过：运行时文件齐备、无外部依赖，可在新电脑解压即用')
+  process.exit(0)
 }
 
 main().catch(e => { console.error('\n❌ 打包失败:', e.message); process.exit(1) })

@@ -166,7 +166,7 @@ JavTube 基于 Electron + Vue 3 构建，所有数据（影片信息、标签、
 | 状态管理 | Pinia + Vue Router（Hash 模式） |
 | 数据库 | sql.js（SQLite WASM，纯本地文件，免原生编译） |
 | 元数据刮削 | 主进程 + 系统 curl 抓取，HTML 解析（JAVBUS / JAVDB） |
-| 打包分发 | electron-builder + 自研绿色版打包脚本 |
+| 打包分发 | electron-builder + 自研打包脚本 |
 
 **架构**：主进程（窗口 / 刮削 / 数据库 / 自定义协议）→ 预加载脚本（`contextBridge` 暴露 `window.api`）→ 渲染进程（Vue 页面）。所有 IPC 统一返回 `{ ok, data, error }` 结构。
 
@@ -174,7 +174,7 @@ JavTube 基于 Electron + Vue 3 构建，所有数据（影片信息、标签、
 
 ## 📦 下载使用
 
-前往 [**Releases**](https://github.com/P1u2o0/JavTube/releases) 下载 Windows x64 绿色版（免安装，解压即用）。
+前往 [**Releases**](https://github.com/P1u2o0/JavTube/releases) 下载 Windows x64 版本（解压后直接运行）。
 
 **覆盖即更新**：
 
@@ -197,7 +197,7 @@ npm run dev
 # 3. 代码检查
 npm run check:undefined
 
-# 4. 打包 Windows 绿色版 zip（输出到 release/）
+# 4. 打包 Windows x64 zip（输出到 release/）
 npm run release
 ```
 
@@ -227,7 +227,7 @@ javtube_dev/
 │   ├── composables/            # 列表加载复用逻辑
 │   ├── router/  utils/  styles/
 ├── scripts/
-│   └── build-portable.js       # 绿色版打包（含 asar 瘦身 / 图标版本信息写入 / 自检）
+│   └── build-portable.js       # 打包（含 asar 瘦身 / 图标版本信息写入 / 自检）
 └── build/                      # 应用图标
 ```
 

@@ -50,10 +50,14 @@ npm run check:undefined
 # 刮削全链路冒烟（脱离 Electron 直接跑 scrapeMovie；改 scraper / net-curl 后必跑）
 npm run scrape:test                 # 可传番号：npm run scrape:test -- <番号>
 
+# ★ 数据库恢复回归（改 settings:restore / init.js 落盘逻辑后必跑；约 40s，自带备份还原）
+npm run test:restore                # 断言：恢复后关窗不会被内存旧库覆盖
+npm run test:persist                # 断言：普通会话的定时/关窗落盘没被误伤
+
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 
-# 发版：打包 Windows 绿色版（免安装 zip）—— 一条命令
+# 发版：打包 Windows x64 zip —— 一条命令
 npm run release
 
 # 清理构建产物（release/ + dist/，带句柄重试）
@@ -61,13 +65,13 @@ npm run clean
 ```
 
 **脚本一览**：`scripts/check-undefined.js`（未定义引用静态检查）、`scripts/scrape-smoke.js`（刮削冒烟）、
-`scripts/build-portable.js`（绿色版打包，见 §4.1）、`scripts/clean.js`（清理产物）。
+`scripts/build-portable.js`（打包，见 §4.1）、`scripts/clean.js`（清理产物）。
 
 ---
 
-## 4.1 打包绿色版（发版必读）
+## 4.1 打包（发版必读）
 
-`npm run release` → 产出 **`release/JavTube-v<版本>-win-x64-portable.zip`**（约 102 MB）。
+`npm run release` → 产出 **`release/JavTube-v<版本>-win-x64.zip`**（约 102 MB）。
 同目录还会留下解压好的 `release/JavTube/`，可直接双击 `JavTube.exe` 试跑。
 
 解压即用、免安装，数据在 exe 同级的 `data/`，升级只需覆盖文件（别覆盖 `data/`）。
@@ -116,11 +120,41 @@ electron-builder 会把**整个 node_modules** 塞进 asar（实测 84.9 MB，�
 2. **`rm -rf` 在受管环境会被安全删除层拦截**（路由到回收站失败即整体失败）。
    脚本统一用 Node `fs.rmSync` + 重试；**先递归删文件、再删目录**成功率最高。
 
-### 产物自检
+### 产物自检（含「解压即用」自包含性）
 
-脚本会校验：`JavTube.exe` / `resources/app.asar` / `使用说明.txt` / `data/` 在位、
-asar 内含 `sql-wasm.wasm` 与 `dist/index.html`、exe 版本信息已写入。
+`checkSelfContained()`（`scripts/build-portable.js`，构建第 5 步自动跑）：
+
+- `JavTube.exe` / `resources/app.asar` / `使用说明.txt` / `data/` 在位
+- **Electron 运行时 17 个必需文件**（`icudtl.dat`、`*.pak`、`snapshot_blob.bin`、
+  `v8_context_snapshot.bin`、`d3dcompiler_47/ffmpeg/libEGL/libGLESv2/vk_swiftshader/vulkan-1.dll`、
+  `vk_swiftshader_icd.json`、两份 LICENSE）+ `locales/*.pak`
+  —— 缺任何一个，**在开发机上照样能跑**（`node_modules/electron` 就在旁边），
+  只有在别人机器上才暴露成「双击没反应」，极难排查，所以要靠自检兜住
+- asar 内含 `sql-wasm.wasm` 与 `dist/index.html`
+- exe 版本信息已写入（`ProductName` 回读校验）
+- 开发机绝对路径泄漏检查（asar 内出现项目路径 → 警告）
+
+**独立复核任意一版（不构建）**：
+
+```bash
+node scripts/build-portable.js --check-only              # 默认复核 release/JavTube
+node scripts/build-portable.js --check-only <解压后的目录>  # 复核别人给的包
+```
+
 **发版前另外手动跑一次**：解压 zip → 双击 exe → 确认窗口能开、`data/` 在同级生成。
+
+### 外部依赖（已实测：新电脑无需下载任何东西）
+
+| 依赖 | 是否随包 | 说明 |
+|---|---|---|
+| Chromium / Node 运行时 | ✅ 打包在 zip 内 | Electron 自带，不需要装 Node |
+| `sql.js` + `sql-wasm.wasm` | ✅ 在 app.asar 内 | 数据库引擎 |
+| VC++ 运行库 / .NET | 不需要 | Electron 只用 Windows 自带 UCRT |
+| `curl.exe` | ⚠️ 系统自带 | **仅刮削用**；Win10 1803+ 在 `System32` 自带，缺了不影响启动 |
+| 播放器 | 可选 | 不配则用系统默认程序打开 |
+
+系统要求写进了包内 `使用说明.txt`（Win10 1803+、避开 `C:\Program Files` 解压、
+首启 SmartScreen 提示）。
 
 ---
 
@@ -172,17 +206,19 @@ javtube_dev/
 
 | 机制 | 说明 |
 |---|---|
-| **persistSoon** | sql.js 的 `persist` 是整库同步导出（阻塞主进程）。**全部四个 db 模块**（movies / settings / actress / websites）的写操作统一用 `persistSoon(db)`（定义于 `db/util.js`，setImmediate 延迟落盘）。**新增写操作必须用它** |
+| **persistSoon** | sql.js 的 `persist` 是整库同步导出（阻塞主进程）。**三个 db 模块**（movies / settings / actress）的写操作统一用 `persistSoon(db)`（定义于 `db/util.js`，setImmediate 延迟落盘）。**新增写操作必须用它** |
 | **稳定分页** | 所有 `ORDER BY` 必须追加唯一 tie-breaker（`, id DESC`），否则同值行跨 LIMIT/OFFSET 查询顺序不保证 → 影片在页间跳动 |
 | **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
-| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。当前 40/40 配对，返回格式 `{ ok, data?, error? }` |
+| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。当前 38/38 配对，返回格式 `{ ok, data?, error? }` |
+| **★ 数据库恢复需重启** | `settings:restore` 只替换磁盘文件，内存里仍是旧库 → 恢复后置 `db._blockPersist = true`，**一切落盘被 `saveDbToDisk` 拦截**（否则关窗的 `_forceSave`／10s 定时／`persistSoon` 会把刚恢复的文件覆盖回去，恢复白做）。前端弹「立即重启」→ `app:relaunch`（`app.relaunch()+exit`）。**改动这段务必跑 `npm run test:restore`** |
+| **落盘失败会重试** | `saveDbToDisk` 返回布尔值；定时器与 `force` **仅在成功时清 `dirty`** → 一次写盘失败（磁盘满/占用）不会丢标记，下一轮还会重试 |
 | **三视图共享 store** | 片库 / 喜欢 / 历史共用 `store.movies`——各视图挂载时必须重新加载自己视图的全量语义（片库=全量、喜欢=onlyFavorite、历史=historyOnly） |
 | **刮削进度** | 顶栏铃铛按钮（`useScrapeStore`：enqueue / begin / done / clear），红色角标=待刮削数量；单个与批量刮削都接入 |
 | **灯箱查看器** | 详情页点击预览小图 → `<Teleport to="body">` 全屏遮罩 + 滚轮缩放 0.5-5x + 左右按钮/方向键循环 + Esc 关闭 |
 | **详情页海报区** | 框尺寸 JS 计算：`min((视口高-300px)/海报高, 视口宽×0.56/海报宽)`，小分辨率海报强制放大；窗口 resize 重算 |
 | **封面协议** | `javtube-cover://0/<base64url>` 自定义 privileged scheme（`electron/main/index.js` 注册，`cover-protocol.js` 解析） |
 | **刮削网络层** | 走系统 curl（`net-curl.js`）：页面请求按设置走代理并携带用户 Cookie；图片按域名决定代理/直连优先级；**不加 `-L`**（见 §6 坑 12） |
-| **乐观更新** | 交互路径写库已延迟落盘，UI 侧可乐观翻转、失败回滚 |
+| **乐观更新（仅部分路径）** | `store.toggleFav` **不是**乐观更新：先 await IPC 写库、成功后才改状态（本地 sql.js 毫秒级，无需乐观）。其余写库已延迟落盘，UI 侧可乐观翻转、失败回滚 —— 改之前先确认具体函数实现，别照抄注释 |
 
 ---
 

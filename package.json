@@ -1,6 +1,6 @@
 {
   "name": "javtube",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "JavTube - 本地影片管理软件",
   "main": "electron/main/index.js",
   "author": "JavTube",
@@ -15,7 +15,9 @@
     "preview": "vite preview",
     "start": "electron .",
     "check:undefined": "node scripts/check-undefined.js",
-    "scrape:test": "node scripts/scrape-smoke.js"
+    "scrape:test": "node scripts/scrape-smoke.js",
+    "test:restore": "node scripts/test-restore.js",
+    "test:persist": "node scripts/test-persist.js"
   },
   "dependencies": {
     "element-plus": "^2.8.0",
