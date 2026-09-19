@@ -159,11 +159,16 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       if (!sourcePath || !db._dbPath) return { ok: false, error: 'invalid path' }
       if (!fs.existsSync(sourcePath)) return { ok: false, error: 'source not found' }
       // 将备份文件复制到当前数据库路径
-      // 注意：这里不能调用 db._forceSave()！那会把内存中的旧数据库导出并覆盖刚恢复的备份文件，
-      // 导致恢复操作失效（复制进去的新数据被旧内存数据覆盖回去）。
+      // ⚠️ 这里不能调用 db._forceSave()：那会把内存中的旧数据库导出并覆盖刚恢复的备份文件。
+      // 同样地，**恢复之后必须禁止一切落盘**——关窗时的 _forceSave、10 秒定时落盘、
+      // 以及后续任何写操作的 persistSoon 都会把内存里的旧库写回去，让恢复白做。
+      // 故此处置 _blockPersist=true（由 init.js 的 saveDbToDisk 统一拦截），
+      // 直到用户重启应用、重新从磁盘加载恢复后的数据库为止。
       fs.copyFileSync(sourcePath, db._dbPath)
+      db._blockPersist = true
+      console.log('[db] restored from', sourcePath, '— persist blocked until restart')
       // sql.js 数据库实例在内存中，替换磁盘文件后需要重启应用才能加载新数据
-      return { ok: true, info: 'Please restart app to load restored DB' }
+      return { ok: true, info: '请重启软件以加载恢复后的数据（重启前不会再写入数据库）' }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

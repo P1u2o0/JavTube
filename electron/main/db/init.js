@@ -20,7 +20,7 @@ let SQL = null
  * 查找 sql.js 的 WASM 文件路径。
  * WASM 文件是 sql.js 运行所需的核心二进制模块。
  * 依次尝试：指定基准目录 → 当前工作目录 → exe 同级目录 → 打包资源目录 → sql.js 包自身目录。
- * 打包成绿色版后 cwd 不可靠（用户可能从任意位置启动 exe），因此必须有多重兜底；
+ * 打包分发后 cwd 不可靠（用户可能从任意位置启动 exe），因此必须有多重兜底；
  * 最后一档直接从包内解析（asar 内也可被 Electron 的 fs 读取），保证打包后一定能加载。
  * @param {string} [cwdBase] - 查找的基准目录（默认为当前工作目录）
  * @returns {string} WASM 文件路径，找不到返回空字符串
@@ -71,6 +71,10 @@ async function getSQL() {
  * @param {string} dbPath - 数据库文件路径
  */
 function saveDbToDisk(db, dbPath) {
+  // 恢复备份后到重启前：禁止任何落盘。
+  // 原因见 settings.js 的 settings:restore —— 那时内存里还是旧库，一旦导出写回
+  // 就会把刚恢复的备份文件覆盖掉（关窗时的 _forceSave、10 秒定时、persistSoon 都会触发）。
+  if (db._blockPersist) return false
   try {
     const data = db.export()          // 导出数据库为 Uint8Array
     const buf = Buffer.from(data)     // 转为 Node.js Buffer
@@ -82,7 +86,11 @@ function saveDbToDisk(db, dbPath) {
       fs.renameSync(dbPath, bak)      // 旧库改名保留（原子，不经过"无文件"状态）
     }
     fs.renameSync(tmp, dbPath)        // 新库就位（原子操作）
-  } catch (e) { console.error('[db] save failed:', e) }
+    return true
+  } catch (e) {
+    console.error('[db] save failed:', e)
+    return false                      // 失败必须让调用方知道，否则脏标记被清掉就不再重试
+  }
 }
 
 /**
@@ -250,13 +258,15 @@ async function initDb(dataDir) {
 
   // sql.js 的 exec/prepare/run 不返回修改记录（没有 ROWID hooks via run API）
   // 保守策略：任何 run() 触发 dirty，10 秒后写盘。
-  // 每 10 秒检查一次，如果有脏数据则写入磁盘
+  // 每 10 秒检查一次，如果有脏数据则写入磁盘。
+  // ⚠️ 只有在**写盘成功**时才清 dirty：否则一次失败（磁盘满/权限/被占用）就丢了标记，
+  //    在下次写操作之前不会再重试，此时退出会丢这一轮修改。
   setInterval(() => {
-    if (dirty) { saveDbToDisk(db, dbPath); dirty = false }
+    if (dirty && saveDbToDisk(db, dbPath)) dirty = false
   }, 10000)
 
-  // 手动强制保存函数：立即将数据库写入磁盘
-  const force = () => { saveDbToDisk(db, dbPath); dirty = false }
+  // 手动强制保存函数：立即将数据库写入磁盘（失败时保留 dirty 以便下一轮重试）
+  const force = () => { if (saveDbToDisk(db, dbPath)) dirty = false }
   // 进程退出时强制保存
   process.on('exit', force)
 
@@ -264,6 +274,7 @@ async function initDb(dataDir) {
   db._dbPath = dbPath       // 数据库文件路径
   db._dataDir = dataDir     // 数据目录路径
   db._forceSave = force     // 强制保存方法
+  db._blockPersist = false  // 恢复备份后置 true：重启前禁止落盘（见 saveDbToDisk 说明）
 
   return db
 }

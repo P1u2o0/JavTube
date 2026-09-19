@@ -183,7 +183,7 @@
                 <AppIcon name="trash" :size="14" style="margin-right:5px" />清空所有数据
               </el-button>
             </div>
-            <span class="g-tip" v-if="showTips">清空不可逆，请先备份；恢复会覆盖现有数据</span>
+            <span class="g-tip" v-if="showTips">清空不可逆，请先备份；恢复会覆盖现有数据，恢复后需要重启软件</span>
           </div>
         </div>
       </el-tab-pane>
@@ -491,9 +491,19 @@ async function restoreDb() {
     const src = await window.api.openDbDialog()
     if (!src) return
     const r = await window.api.restoreDb(src)
-    if (r.ok) {
-      ElMessage.success('恢复成功：' + (r.info || '请重启软件'))
-    } else ElMessage.error(r.error)
+    if (!r.ok) return ElMessage.error(r.error)
+    // 恢复只替换了磁盘文件，内存里仍是旧库 → 必须重启才会生效。
+    // 主进程此时已禁止落盘（否则关窗时的强制保存会把刚恢复的文件覆盖回去），
+    // 所以这里直接引导用户立即重启，避免"继续操作 → 改动看似成功但重启后消失"。
+    try {
+      await ElMessageBox.confirm(
+        '数据库已恢复。需要重启软件才能加载恢复后的数据 —— 重启前的所有操作都不会被保存。',
+        '需要重启', { type: 'warning', confirmButtonText: '立即重启', cancelButtonText: '稍后手动重启' }
+      )
+      await window.api.relaunchApp()
+    } catch {
+      ElMessage.warning('已恢复：请手动关闭并重新打开软件，重启前的操作不会被保存')
+    }
   } catch {}
 }
 

@@ -10,7 +10,7 @@
  * @dependencies electron (ipcMain, dialog, shell), fs, path, ../constants, ../common/ipc-channels, ./scraper
  */
 
-const { ipcMain, dialog, shell } = require('electron')
+const { ipcMain, dialog, shell, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { VIDEO_EXTS, COVER_DIR } = require('./constants')
@@ -27,6 +27,17 @@ const { readMp4DurationMinutes } = require('./video-meta')
  * @param {string} ctx.dataDir - 应用数据目录（刮削封面保存位置）
  */
 function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
+  // === 应用控制 ===
+  // 渲染进程 → 主进程：立即重启应用。
+  // 使用场景：settings:restore 只替换了磁盘上的数据库文件，内存里仍是旧库，
+  // 必须重启才能加载恢复后的数据。这里先 relaunch（带上原命令行参数）再退出，
+  // 避免用户「手动关窗」时误触发落盘逻辑（恢复后落盘已被 _blockPersist 拦掉，
+  // 但自动重启体验更明确、也不会留下"以为恢复了其实没生效"的状态）。
+  ipcMain.handle(IPC.APP_RELAUNCH, () => {
+    try { app.relaunch(); app.exit(0); return { ok: true } }
+    catch (e) { return { ok: false, error: e.message } }
+  })
+
   // === 播放视频 ===
   // 渲染进程 → 主进程：根据设置中的自定义播放器路径播放视频，否则用系统默认程序打开
   ipcMain.handle(IPC.UTILS_PLAY_VIDEO, async (_e, filePath) => {

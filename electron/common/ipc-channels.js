@@ -45,6 +45,8 @@ module.exports = {
   SETTINGS_RESTORE: 'settings:restore',
   SETTINGS_CLEAR: 'settings:clear',
   MISC_DATA_DIR: 'misc:dataDir',
+  // 立即重启应用（恢复数据库后需要重启才能加载新数据，见 settings:restore）
+  APP_RELAUNCH: 'app:relaunch',
 
   // === 工具 ===
   UTILS_PLAY_VIDEO: 'utils:playVideo',

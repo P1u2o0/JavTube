@@ -269,5 +269,13 @@ contextBridge.exposeInMainWorld('api', {
    * 获取应用数据目录路径
    * @returns {Promise<string>} 数据目录路径
    */
-  getDataDir: () => ipcRenderer.invoke(IPC.MISC_DATA_DIR)
+  getDataDir: () => ipcRenderer.invoke(IPC.MISC_DATA_DIR),
+
+  /**
+   * 立即重启应用。
+   * 用于「从备份恢复数据库」之后：恢复只替换了磁盘文件，内存里仍是旧库，
+   * 必须重启才能加载恢复后的数据（重启前主进程已禁止落盘，不会覆盖恢复结果）。
+   * @returns {Promise<{ok: boolean}>}
+   */
+  relaunchApp: () => ipcRenderer.invoke(IPC.APP_RELAUNCH)
 })

@@ -75,16 +75,19 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
    * 收拢后三视图统一为带标题的 warning 确认框。
    */
   async function onBatchDelete() {
+    // 确认框单独 try：用户点「取消」是正常路径，不能和真正的删除失败混在一个 catch 里
+    // （原实现把两者一起吞掉，删除真失败时用户看不到任何提示、列表也不刷新）
     try {
       await ElMessageBox.confirm(
         `确定删除选中的 ${store.selectedIds.length} 项？`, '批量删除', { type: 'warning' }
       )
-      const r = await window.api.deleteMovies([...store.selectedIds])
-      if (!r.ok) return ElMessage.error(r.error)
-      store.selectedIds = []
-      ElMessage.success('已删除')
-      if (onRefresh) await onRefresh()
-    } catch {}
+    } catch { return }   // 用户取消
+    const r = await window.api.deleteMovies([...store.selectedIds]).catch(() => null)
+    if (!r) return ElMessage.error('删除失败：主进程未响应')
+    if (!r.ok) return ElMessage.error(r.error || '删除失败')
+    store.selectedIds = []
+    ElMessage.success('已删除')
+    if (onRefresh) await onRefresh()
   }
 
   /**
@@ -93,11 +96,11 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
    */
   async function onBatchFav(isFav) {
     if (!window.api) return
-    const r = await window.api.batchSetFavorite([...store.selectedIds], isFav)
-    if (r.ok) {
-      ElMessage.success('操作成功')
-      if (onRefresh) await onRefresh()
-    }
+    const r = await window.api.batchSetFavorite([...store.selectedIds], isFav).catch(() => null)
+    // 原实现只在成功时提示，失败静默（用户以为点了没反应）
+    if (!r || !r.ok) return ElMessage.error(r?.error || '操作失败')
+    ElMessage.success('操作成功')
+    if (onRefresh) await onRefresh()
   }
 
   return { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav }

@@ -145,7 +145,13 @@ export const useMoviesStore = defineStore('movies', {
             this.movies = newMovies
           }
           this.total = Number(r.total) || 0
+        } else {
+          console.warn('[store] loadMovies 失败:', r.error)
         }
+      } catch (e) {
+        // IPC 抛异常时不能把异常抛给调用方（10 处调用都没包 catch，会变成
+        // unhandled rejection，而且界面会静默停在旧列表）；这里记日志并保留旧数据。
+        console.error('[store] loadMovies 异常:', e)
       } finally { this.loading = false }
     },
 
