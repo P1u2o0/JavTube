@@ -16,6 +16,7 @@
       @sortChange="onSortChange"
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
+      @batchAddTag="onBatchAddTag"
     />
     <!-- 空状态：无观看记录时显示提示 -->
     <el-empty v-if="store.total === 0 && !store.loading" description="还没有观看记录" />
@@ -50,7 +51,7 @@ import MovieGrid from '@/components/MovieGrid.vue'
 const store = useMoviesStore()
 // 公共列表交互：批量选中切换 / 翻页（历史页固定加载 historyOnly）/ 详情跳转
 // onPlay / onBatchDelete / onBatchFav 由 composable 统一提供
-const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav } = useMovieList(store, {
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag } = useMovieList(store, {
   buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true } }),
   onRefresh: () => loadHistory()
 })

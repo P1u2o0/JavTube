@@ -18,6 +18,7 @@
       @sortChange="onSortChange"
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
+      @batchAddTag="onBatchAddTag"
     />
     <!-- 空状态：无收藏影片时显示提示 -->
     <el-empty v-if="store.total === 0 && !store.loading" description="还没有收藏影片，去片库挑选喜欢的吧" />
@@ -50,7 +51,7 @@ import MovieGrid from '@/components/MovieGrid.vue'
 const store = useMoviesStore()
 // 公共列表交互：批量选中切换 / 翻页（收藏页固定加载 onlyFavorite）
 // onPlay / onBatchDelete / onBatchFav / onDetail 由 composable 统一提供
-const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav } = useMovieList(store, {
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag } = useMovieList(store, {
   buildLoadArgs: () => ({ onlyFavorite: true }),
   onRefresh: () => onRefresh()
 })

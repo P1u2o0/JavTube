@@ -30,6 +30,7 @@
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
       @batchScrape="onBatchScrape"
+      @batchAddTag="onBatchAddTag"
     />
     <!-- 影片网格组件，展示当前页影片 -->
     <MovieGrid
@@ -75,7 +76,7 @@ const scrapeStore = useScrapeStore()
 const route = useRoute()
 // 公共列表交互：批量选中切换 / 翻页 / 详情跳转（翻页时携带路由筛选参数不丢条件）
 // onPlay / onBatchDelete / onBatchFav 由 composable 统一提供（见 useMovieList）
-const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav } = useMovieList(store, {
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag } = useMovieList(store, {
   buildLoadArgs: () => ({ append: false, extraFilter: routeExtra() }),
   onRefresh: () => onRefresh()
 })

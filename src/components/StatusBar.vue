@@ -34,6 +34,10 @@
       <el-button size="small" class="batch-btn batch-scrape" :disabled="!store.selectedIds.length" @click="$emit('batchScrape')">
         <AppIcon name="globe" :size="14" style="margin-right:4px" />批量刮削
       </el-button>
+      <!-- 批量添加标签：给选中影片追加同一个标签（无选中项时禁用） -->
+      <el-button size="small" :disabled="!store.selectedIds.length" @click="$emit('batchAddTag')">
+        <AppIcon name="tag" :size="14" style="margin-right:4px" />批量添加标签
+      </el-button>
       <!-- 批量收藏：无选中项时禁用 -->
       <el-button size="small" :disabled="!store.selectedIds.length" @click="$emit('batchFav', true)">
         <AppIcon name="heart" :size="14" style="margin-right:4px" />全部收藏
@@ -68,8 +72,9 @@ const props = defineProps({ total: Number })
 // - batchDelete: 批量删除按钮点击时触发
 // - batchFav: 批量收藏/取消收藏时触发，参数为 true(收藏) 或 false(取消)
 // - batchScrape: 批量刮削按钮点击时触发
+// - batchAddTag: 批量添加标签按钮点击时触发
 // - sortChange: 排序方式变更时触发（父页面按各自筛选场景重新加载列表）
-const emit = defineEmits(['toggle', 'batchDelete', 'batchFav', 'batchScrape', 'sortChange'])
+const emit = defineEmits(['toggle', 'batchDelete', 'batchFav', 'batchScrape', 'batchAddTag', 'sortChange'])
 
 // 获取 store 实例
 const store = useMoviesStore()

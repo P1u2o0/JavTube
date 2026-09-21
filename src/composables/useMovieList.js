@@ -27,7 +27,8 @@ import { safeCall } from '@/utils/global'
  *   onDetail: (m: Object) => void,
  *   onPlay: (m: Object) => Promise<void>,
  *   onBatchDelete: () => Promise<void>,
- *   onBatchFav: (isFav: boolean) => Promise<void>
+ *   onBatchFav: (isFav: boolean) => Promise<void>,
+ *   onBatchAddTag: () => Promise<void>
  * }}
  */
 export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
@@ -103,5 +104,38 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
     if (onRefresh) await onRefresh()
   }
 
-  return { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav }
+  /**
+   * 批量添加标签：把同一个（或同一批）标签追加到所有选中影片。
+   * 追加语义由主进程 `movies:batchTags` 保证 —— 它在事务里按「，」拆分现有标签、
+   * 去重后再写回，因此重复添加同一标签是幂等的，不会产生重复项。
+   * 成功后刷新标签栏（新标签要立刻能在筛选面板看到）。
+   */
+  async function onBatchAddTag() {
+    if (!window.api) return
+    const count = store.selectedIds.length
+    if (!count) return ElMessage.warning('请先选择影片')
+    let input = ''
+    try {
+      const r = await ElMessageBox.prompt(
+        `将标签添加到选中的 ${count} 部影片：`, '批量添加标签',
+        {
+          confirmButtonText: '添加', cancelButtonText: '取消',
+          inputPlaceholder: '输入标签，多个用「，」分隔',
+          inputValidator: v => (String(v || '').trim() ? true : '标签不能为空')
+        }
+      )
+      input = r.value
+    } catch { return }   // 用户取消
+    // 拆分规则与主进程一致：中英文逗号都认，去空白、去重
+    const tags = [...new Set(String(input).split(/[，,]/).map(s => s.trim()).filter(Boolean))]
+    if (!tags.length) return ElMessage.warning('标签不能为空')
+    const r = await window.api.batchAddTags([...store.selectedIds], tags).catch(() => null)
+    if (!r || !r.ok) return ElMessage.error(r?.error || '添加标签失败')
+    ElMessage.success(`已为 ${count} 部影片添加标签：${tags.join('、')}`)
+    // 刷新标签栏（保留选中状态，便于继续加下一个标签）
+    await store.loadAllDbTags()
+    if (onRefresh) await onRefresh()
+  }
+
+  return { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag }
 }
