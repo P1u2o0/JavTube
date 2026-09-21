@@ -15,7 +15,7 @@
     <!-- 封面区域 -->
     <div class="cover">
       <!-- 有封面 URL 且未加载出错时显示图片 -->
-      <img v-if="coverUrl && !errd" :src="coverUrl" @error="onErr" />
+      <img v-if="coverUrl && !errd" :src="coverUrl" loading="lazy" decoding="async" @error="onErr" />
       <!-- 无封面时显示占位 -->
       <div v-else class="no-cover">
         <AppIcon name="image" :size="26" />

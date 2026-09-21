@@ -17,8 +17,10 @@ const DEFAULT_CATS = [
   { cat: 'C7', tags: [] }, { cat: 'C8', tags: [] }, { cat: 'C9', tags: [] }
 ]
 
-export const useMoviesStore = defineStore('movies', {
-  // ====== 状态定义 ======
+// 加载序号（模块级即可：每个渲染进程只有一份 store 实例），用于丢弃过期响应
+let loadSeq = 0
+
+export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ======
   state: () => ({
     inited: false,        // 是否已初始化（防止重复初始化）
     settings: {},         // 全局设置对象
@@ -41,7 +43,11 @@ export const useMoviesStore = defineStore('movies', {
 
     // 批量选择
     selectMode: false,    // 是否处于批量选择模式
-    selectedIds: []       // 选中的影片 ID 列表
+    selectedIds: [],      // 选中的影片 ID 列表
+
+    // 片库重置信号：顶栏点「片库」时自增，Library 监听它把筛选/页码复位后重新加载。
+    // 用信号而不是路由 query —— 路由本来就是 /library（无 query）时 push 不产生任何变化
+    libraryResetToken: 0
   }),
 
   // ====== 计算属性 ======
@@ -122,6 +128,9 @@ export const useMoviesStore = defineStore('movies', {
      */
     async loadMovies({ onlyFavorite = false, extraFilter = {}, append = false } = {}) {
       if (!window.api) { this.movies = []; this.total = 0; return }
+      // 加载序号：连续点翻页/快速切筛选时会有多个请求同时在飞，只让**最后一次**的结果生效。
+      // 否则先发的慢请求后返回，会把新一页的数据覆盖回旧页（表现为「翻页跳来跳去」）。
+      const seq = ++loadSeq
       this.loading = true
       try {
         // 合并标签筛选与额外筛选条件；搜索词并入 filter.q（主进程按番号/片名/标签 LIKE）
@@ -134,7 +143,7 @@ export const useMoviesStore = defineStore('movies', {
           pageSize: this.pageSize,
           onlyFavorite
         })
-        if (r.ok) {
+        if (r.ok && seq === loadSeq) {
           const newMovies = r.data || []
           if (append) {
             // 追加模式：去重后追加
@@ -180,6 +189,15 @@ export const useMoviesStore = defineStore('movies', {
       } else {
         this.tagSelected[catIdx] = [...present]
       }
+    },
+
+    /**
+     * 顶栏点「片库」：把筛选/排序/页码复位到初始状态，并通知片库页重新加载。
+     * 需求：无论此前在片库里选了多少标签、翻到第几页，点「片库」都回到初始（无标签选中）状态。
+     */
+    requestLibraryReset() {
+      this.resetAll()
+      this.libraryResetToken++
     },
 
     /**

@@ -22,7 +22,7 @@
           <AppIcon name="home" :size="19" />
           <span>首页</span>
         </router-link>
-        <router-link to="/library" class="tab" active-class="active">
+        <router-link to="/library" class="tab" active-class="active" @click="onLibraryClick">
           <AppIcon name="library" :size="19" />
           <span>片库</span>
         </router-link>
@@ -166,6 +166,22 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 function goLibrary() { router.push('/library') }
 // 打开添加影片对话框
 function onAdd() { showAdd.value = true }
+
+/**
+ * 顶栏点「片库」：回到片库初始状态（清空标签筛选/搜索词、回到第 1 页）。
+ * 两种情形分开处理，避免重复加载：
+ *  - 已在片库且无筛选参数 → 路由不会变化，用 store 信号通知 Library 复位并重载；
+ *  - 有筛选参数或不在片库 → 先复位 store，再走路由；Library 的路由 watcher 负责重载。
+ */
+function onLibraryClick() {
+  const cleanRoute = route.path === '/library' && !Object.keys(route.query).length
+  if (cleanRoute) {
+    store.requestLibraryReset()
+  } else {
+    store.resetAll()
+    router.push({ path: '/library' })
+  }
+}
 
 // 影片添加成功后的回调：重新加载标签库和影片列表
 // 触发时机：AddMovieDialog 组件 emit('created') 事件时

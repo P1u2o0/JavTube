@@ -11,7 +11,7 @@
     <!-- 空状态：无影片且未加载时显示 -->
     <el-empty v-if="!movies.length && !loading" description="共找到 0 个结果" />
     <!-- 影片网格：动态设置列数 -->
-    <div class="grid" v-else :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }">
+    <div class="grid" v-else :class="{ 'no-anim': !animateIn }" :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }">
       <!-- 遍历影片列表渲染卡片，注入索引驱动错峰入场动画 -->
       <MovieCard
         v-for="(m, i) in movies" :key="m.id"
@@ -47,7 +47,7 @@
 
 <script setup>
 // 引入影片卡片子组件
-import { computed } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import MovieCard from './MovieCard.vue'
 
 // 组件 props 定义
@@ -67,6 +67,15 @@ const props = defineProps({
 // 每张卡片都线性扫一遍选中数组（每页 200 张 = 4 万次比较，且每次勾选都全量重算）。
 // 用 Set 后单次查找 O(1)，多选模式下的勾选/翻页明显变顺。
 const selSet = computed(() => new Set(props.selectedIds || []))
+
+// 入场动画只在「本次进入页面」的首屏播一次。
+// 卡片是 v-for keyed 渲染，翻页会整批重建 —— 若每次都重播错峰动画（最迟 15×36ms≈540ms
+// 才轮到最后一排淡入），每次翻页都有近 1 秒的"缓入"观感，用户感知就是「翻页卡顿」。
+const animateIn = ref(true)
+onMounted(async () => {
+  await nextTick()
+  setTimeout(() => { animateIn.value = false }, 800)
+})
 
 // 定义 emit 事件：
 // - page: 分页切换事件，参数为目标页码
@@ -91,6 +100,8 @@ function onPageChange(p) {
   gap: 12px;
   align-items: start;
 }
+/* 翻页/换筛选后不再重播入场动画：卡片即时呈现 */
+.grid.no-anim :deep(.movie-card) { animation: none; }
 /* 加载中提示文字样式 */
 .loading-tip { text-align: center; color: var(--muted); padding: 20px; }
 /* 分页器容器：居中显示 */

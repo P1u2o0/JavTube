@@ -82,6 +82,15 @@ const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onB
 })
 
 /**
+ * 从路由 query 提取「筛选签名」：用于判断是「同一套筛选（返回）」还是「换了筛选（新跳转）」
+ */
+function routeSig(q) {
+  return [q.tag || '', q.actress || '', q.director || '', q.studio || '', q.series || '', q.q || ''].join('|')
+}
+// 上一次已应用的筛选签名（模块级，跨挂载保留）
+let lastAppliedSig = null
+
+/**
  * 从路由 query 提取翻页需保留的筛选参数（导演/片商/系列）
  */
 function routeExtra() {
@@ -95,7 +104,12 @@ function routeExtra() {
 }
 
 /**
- * 计算属性：结果页标题条文案（按跳转来源生成说明）
+ * 计算属性：结果页标题条文案（按跳转来源生成说明）。
+ *
+ * 注意：**标签跳转（?tag=）不再显示标题条** —— 标签在标签栏里有对应的选中态，
+ * 直接照片库原本的样子呈现（标签栏 + 巨乳选中）比多一条「含有「巨乳」的影片」更直观，
+ * 用户也要求从详情页点标签进来时「跟片库一样」。
+ * 演员/导演/系列/片商/搜索词在标签栏里没有对应项，仍用标题条说明来源。
  */
 const pageTitle = computed(() => {
   const q = route.query
@@ -103,7 +117,6 @@ const pageTitle = computed(() => {
   if (q.director) return `${q.director}执导的影片`
   if (q.series) return `${q.series}系列影片`
   if (q.studio) return `${q.studio}出品的影片`
-  if (q.tag) return `含有「${q.tag}」的影片`
   if (q.q) return `含有「${q.q}」的影片`
   return ''
 })
@@ -279,13 +292,19 @@ onMounted(async () => {
   await store.initIfNeeded()
   // 标签库与影片列表互不依赖，并行拉取，减少切换页面时的等待
   const tagsP = store.loadAllDbTags()
-  // 优先处理从详情页跳转来的筛选 query
-  if (!await applyRouteFilter(route.query)) {
+  const sig = routeSig(route.query)
+  if (sig && sig === lastAppliedSig) {
+    // 同一套筛选参数（典型场景：从影片详情页返回）→ **保留当前页码**，只重载这一页的数据。
+    // store.movies 是三个视图共享的，从喜欢/历史页回来时它已被换成子集，所以必须重载。
+    await store.loadMovies({ append: false, extraFilter: routeExtra() })
+  } else if (!await applyRouteFilter(route.query)) {
     // 无筛选条件时也必须重新加载全量列表：store.movies 是三个视图共享的，
     // 切到喜欢/历史页后它已被替换为子集数据，不重载会导致片库影片「消失」
-    store.page = 1
+    // 页码不在这里写死 1：顶栏点「片库」会通过 requestLibraryReset() 把页码复位，
+    // 而「详情页返回」要保持原页码（见上面的 sig 分支）。
     await store.loadMovies({ append: false, extraFilter: routeExtra() })
   }
+  lastAppliedSig = sig
   await tagsP
 })
 
@@ -294,14 +313,24 @@ watch(() => store.sort.random, () => onRefresh())
 
 // 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库、或顶栏搜索跳转时自动过滤）
 watch(() => route.query, async (q) => {
+  const sig = routeSig(q)
+  // 同一套筛选参数：典型场景是从详情页返回，页码与列表都保持原样，不做任何重置
+  if (sig === lastAppliedSig) return
+  lastAppliedSig = sig
   if (await applyRouteFilter(q)) return
-  // 无任何筛选参数（如点导航回到片库）：若此前有搜索词则清空并重载全部
-  if (store.searchQ) {
-    store.searchQ = ''
-    store.page = 1
-    await store.loadMovies({ append: false })
-  }
+  // 筛选被清空（点导航回片库 / 点标题条上的 ×）：标签与搜索条件一并复位，回到第 1 页。
+  // 排序保持用户选择（不在这里重置），避免「只想清筛选却被改了排序」。
+  store.tagSelected = [[], [], [], [], [], [], [], [], []]
+  store.searchQ = ''
+  store.page = 1
+  await store.loadMovies({ append: false, extraFilter: routeExtra() })
 }, { deep: true })
+
+// 顶栏点「片库」：路由本身没变化（已在 /library 且无 query）时，靠这个信号复位并重载
+watch(() => store.libraryResetToken, async () => {
+  lastAppliedSig = routeSig(route.query)
+  await onRefresh()
+})
 </script>
 
 <style scoped>

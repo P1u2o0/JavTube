@@ -96,7 +96,17 @@ function setupCoverProtocol(dataDir) {
       // 用 net.fetch 走本地文件协议交给 Electron 处理，返回标准 Response
       // URL 用 pathToFileURL 来正确编码（处理中文、空格、# 等字符）
       const fileUrl = require('url').pathToFileURL(resolved).href
-      return await net.fetch(fileUrl)
+      const res = await net.fetch(fileUrl)
+      // 缓存头（2026-09-21 新增，翻页性能）：
+      // 封面文件名是按番号固定的（覆盖写入），内容变化时前端会给 URL 换 ?v= 版本号，
+      // 所以这里可以放心长期缓存 —— 翻页/来回切页时 Chromium 直接命中缓存，
+      // 不再逐个文件走协议读盘 + 重新解码（一页 20~200 张，差别很明显）。
+      // 同时补上 Content-Type：net.fetch(file://) 不一定带，缺了会让解码路径退化。
+      const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' }
+      const headers = new Headers(res.headers)
+      if (!headers.get('content-type')) headers.set('content-type', MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream')
+      headers.set('cache-control', 'public, max-age=31536000, immutable')
+      return new Response(res.body, { status: res.status, headers })
     } catch (e) {
       console.warn('[cover-protocol] err:', e.message)
       return new Response('error: ' + e.message, { status: 500 })
