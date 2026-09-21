@@ -137,7 +137,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 渲染进程 → 主进程：根据番号从网络刮削影片信息
   // 参数：ph（番号）、source（刮削来源：auto/javbus/javdb）、coverDir（封面保存目录名）
   // 刮削选项（预览图下载开关/数量、统计开关）从 settings 表读取，前端无需逐次传递
-  ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir }) => {
+  ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir, skipPreviews }) => {
     try {
       // 一次性取出全部刮削相关设置（原实现逐键 6 次 db.exec，合并为单次 IN 查询）
       const settings = {}
@@ -155,7 +155,8 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
         source: source || 'auto',
         coverDir: coverDir || COVER_DIR,
         dataDir,
-        downloadPreviews: settings.scrape_previews === 'y',
+        // skipPreviews：补全字段模式且该影片已有预览图时，不必重复下载（10 张/部，批量补全时差别很大）
+        downloadPreviews: settings.scrape_previews === 'y' && !skipPreviews,
         previewCount: Number(settings.preview_count || 0),
         fetchStats: settings.scrape_stats !== 'n',
         javdbCookie: settings.javdb_cookie || '',

@@ -17,7 +17,9 @@
     "check:undefined": "node scripts/check-undefined.js",
     "scrape:test": "node scripts/scrape-smoke.js",
     "test:restore": "node scripts/test-restore.js",
-    "test:persist": "node scripts/test-persist.js"
+    "test:persist": "node scripts/test-persist.js",
+    "test:fill": "node scripts/test-fill-unit.mjs",
+    "test:fill:e2e": "node scripts/test-fill-scrape.js"
   },
   "dependencies": {
     "element-plus": "^2.8.0",

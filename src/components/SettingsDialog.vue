@@ -115,8 +115,9 @@
               <el-option label="自动（JAVBUS 优先，JAVDB 兜底）" value="auto" />
               <el-option label="仅使用 JAVBUS" value="javbus" />
               <el-option label="仅使用 JAVDB" value="javdb" />
+              <el-option label="补全字段（只填补缺失项）" value="fill" />
             </el-select>
-            <span class="g-tip" v-if="showTips">自动：JAVBUS 优先，失败换 JAVDB</span>
+            <span class="g-tip" v-if="showTips">自动：JAVBUS 优先，失败换 JAVDB；补全字段：先把缺失的字段补齐（如评分、想看/看过人数），已有的字段不动</span>
           </div>
           <!-- 下载预览图 -->
           <div class="g-label">下载预览图</div>
@@ -436,6 +437,9 @@ async function saveAll() {
   for (const k of kvKeys) batch[k] = String(st[k] ?? '')
   const rb = await window.api.updateSettingsBatch(batch)
   if (!rb.ok) return ElMessage.error(rb.error)
+  // 同步回 store：刮削来源、预览图开关等设置由 Detail/Library 直接读 store.settings，
+  // 此前保存后不刷新，导致改完设置要重启软件才生效（例如把来源改成「补全字段」后点刮削仍走旧来源）
+  store.settings = { ...store.settings, ...batch }
   // 标签类别（补齐 9 大类）
   const cats = catRows.value
     .map(r => ({ cat: (r.cat || '').trim(), tags: splitTags(r.tags) }))

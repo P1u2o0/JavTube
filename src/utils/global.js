@@ -127,33 +127,89 @@ export function splitTags(v) {
 }
 
 /**
+ * 刮削字段的中文名（用于「补全字段」后提示补了哪些字段）。
+ */
+export const SCRAPE_FIELD_LABELS = {
+  pm: '片名', fl: '分类', fxrq: '发行日期', yid: '演员', dy: '导演',
+  ps: '制作商', fx: '发行商', xl: '系列', bq: '标签', cover: '封面',
+  previews: '预览图', want: '想看人数', watched: '看过人数', score: '评分',
+  cast_json: '演员信息'
+}
+
+/**
+ * 判断影片记录里某字段是否为「空」（补全模式据此决定要不要写）。
+ * 0 视为空：评分/想看/看过 三项在库里以 0 表示「没有数据」。
+ * @param {*} v - 字段当前值
+ * @returns {boolean}
+ */
+function isEmptyField(v) {
+  if (v === null || v === undefined || v === '') return true
+  if (v === 0 || v === '0') return true
+  // 空数组序列化后是 '[]'
+  if (typeof v === 'string' && v.trim() === '[]') return true
+  return false
+}
+
+/**
+ * 补全模式下，检查「本来就缺、本次也没补上」的统计字段（评分 / 想看 / 看过）。
+ *
+ * 这三项只来自 JAVDB。Cookie 过期、Cloudflare 拦截（实测直接 403）或代理不通时，
+ * 主进程的跨源补全会静默失败（只在控制台留一行日志）；前端若什么都不说，
+ * 用户会以为「补全没生效」却查不出原因 —— 所以显式提示。
+ *
+ * @param {Object} current - 当前影片记录
+ * @param {boolean} statsEnabled - 设置里是否开启抓取想看/看过/评分
+ * @returns {string} 形如「评分、想看人数」的缺失清单；无缺失时返回空串
+ */
+export function statsFillHint(current, statsEnabled) {
+  if (!statsEnabled || !current) return ''
+  const names = { score: '评分', want: '想看人数', watched: '看过人数' }
+  const missing = Object.keys(names).filter(k => isEmptyField(current[k]))
+  return missing.map(k => names[k]).join('、')
+}
+
+/**
  * 将刮削结果对象转换为影片更新字段对象（仅保留有值的字段）。
  * 原 Library.vue（onBatchScrape）与 Detail.vue（onScrape）各有一份相同的
  * 10 字段映射，提取为公共函数消除重复。映射关系与原实现逐字段一致：
  * 刮削返回字段 yy → 更新字段 yid（演员），其余字段同名透传，空值跳过。
+ *
+ * `fillOnly`（刮削来源=补全字段）时：只写「当前记录为空」的字段，
+ * 已有值的字段一律跳过 —— 用于把早年刮削不全的影片补齐，而不覆盖已有正确数据。
+ *
  * @param {Object} d - 刮削结果对象（scraper:scrape 返回的 data）
+ * @param {Object} [current] - 当前影片记录（fillOnly 时必需，用于判断字段是否已有值）
+ * @param {Object} [opts]
+ * @param {boolean} [opts.fillOnly=false] - 只补全缺失字段
  * @returns {Object} 可直接传给 window.api.updateMovie 的字段对象
  */
-export function buildScrapeUpdate(d) {
+export function buildScrapeUpdate(d, current = null, { fillOnly = false } = {}) {
   const update = {}
   if (!d) return update
-  if (d.pm) update.pm = d.pm        // 片名
-  if (d.fl) update.fl = d.fl        // 分类（有码/无码/欧美）
-  if (d.fxrq) update.fxrq = d.fxrq  // 发行日期
-  if (d.yy) update.yid = d.yy       // 演员
-  if (d.dy) update.dy = d.dy        // 导演
-  if (d.ps) update.ps = d.ps        // 制作商
-  if (d.fx) update.fx = d.fx        // 发行商
-  if (d.xl) update.xl = d.xl        // 系列
-  if (d.bq) update.bq = d.bq        // 标签
-  if (d.cover) update.cover = d.cover // 封面
+  // 补全模式：字段在库里已有值 → 跳过（current 缺失时退化为普通覆盖，避免误写空）
+  const keep = (field) => !fillOnly || isEmptyField(current ? current[field] : '')
+  if (d.pm && keep('pm')) update.pm = d.pm        // 片名
+  if (d.fl && keep('fl')) update.fl = d.fl        // 分类（有码/无码/欧美）
+  if (d.fxrq && keep('fxrq')) update.fxrq = d.fxrq // 发行日期
+  if (d.yy && keep('yid')) update.yid = d.yy      // 演员
+  if (d.dy && keep('dy')) update.dy = d.dy        // 导演
+  if (d.ps && keep('ps')) update.ps = d.ps        // 制作商
+  if (d.fx && keep('fx')) update.fx = d.fx        // 发行商
+  if (d.xl && keep('xl')) update.xl = d.xl        // 系列
+  if (d.bq && keep('bq')) update.bq = d.bq        // 标签
+  if (d.cover && keep('cover')) update.cover = d.cover // 封面
   // 2026-09-09 刮削增强新增（预览图本地路径数组序列化入库；统计仅在有值时写入）
-  if (Array.isArray(d.previews) && d.previews.length) update.previews = JSON.stringify(d.previews)
-  if (d.want) update.want = Number(d.want) || 0      // 想看人数（JAVDB）
-  if (d.watched) update.watched = Number(d.watched) || 0 // 看过人数（JAVDB）
-  if (d.score) update.score = Number(d.score) || 0   // 评分（JAVDB）
+  if (Array.isArray(d.previews) && d.previews.length && keep('previews')) {
+    update.previews = JSON.stringify(d.previews)
+  }
+  // 想看/看过/评分：0 表示无数据，补全模式下只填当前为 0 的
+  if (d.want && keep('want')) update.want = Number(d.want) || 0
+  if (d.watched && keep('watched')) update.watched = Number(d.watched) || 0
+  if (d.score && keep('score')) update.score = Number(d.score) || 0
   // 2026-09-14 演员头像：演员列表 [{name,gender,avatar}] 序列化入库
-  if (Array.isArray(d.cast) && d.cast.length) update.cast_json = JSON.stringify(d.cast)
+  if (Array.isArray(d.cast) && d.cast.length && keep('cast_json')) {
+    update.cast_json = JSON.stringify(d.cast)
+  }
   return update
 }
 

@@ -188,7 +188,7 @@ import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -499,15 +499,39 @@ async function onScrape() {
   if (!m.value.ph) return ElMessage.warning('该影片没有番号，无法刮削')
   scraping.value = true
   const key = scrapeStore.start(m.value.ph, m.value.pm)
+  // 刮削来源：fill = 补全字段模式（照常走自动刮削，但只写当前为空的字段）
+  const mode = store.settings.scrape_source || 'auto'
+  const fillOnly = mode === 'fill'
+  const source = fillOnly ? 'auto' : mode
   try {
-    const r = await window.api.scrapeMovie(m.value.ph, store.settings.scrape_source || 'auto')
+    const r = await window.api.scrapeMovie(m.value.ph, source, {
+      // 补全模式且已有预览图时不必重复下载（10 张/部）
+      skipPreviews: fillOnly && !!m.value.previews
+    })
     if (r.ok && r.data) {
-      const ur = await window.api.updateMovie(m.value.id, buildScrapeUpdate(r.data))
+      const update = buildScrapeUpdate(r.data, m.value, { fillOnly })
+      const fields = Object.keys(update)
+      // 评分/想看/看过 只来自 JAVDB：Cookie 过期或 403 时静默拿不到，这里给出明确原因
+      // 判断依据是「合并本次更新之后」的记录：已补上的字段不能再报未取到
+      const statsHint = fillOnly ? statsFillHint({ ...m.value, ...update }, store.settings.scrape_stats !== 'n') : ''
+      if (fillOnly && !fields.length) {
+        // 该影片所有可补字段都已有值 —— 不写库，避免无谓覆盖
+        scrapeStore.done(key, true)
+        if (statsHint) ElMessage.warning(`未能补全 ${statsHint}：JAVDB 未返回数据（请检查 Cookie 与代理设置）`)
+        else ElMessage.info('该影片字段已完整，无需补全')
+        return
+      }
+      const ur = await window.api.updateMovie(m.value.id, update)
       if (ur.ok) {
         scrapeStore.done(key, true)
         // 封面/预览图是按固定文件名覆盖写入的，URL 不变浏览器不会重新加载 → 换新版本号强制刷新
         bumpCover(m.value.id)
-        ElMessage.success(`刮削成功（来源: ${r.data.source}）`)
+        if (fillOnly) {
+          const hint = statsHint ? `；${statsHint} 未取到（检查 JAVDB Cookie 与代理）` : ''
+          ElMessage.success(`已补全 ${fields.length} 个字段：${fields.map(f => SCRAPE_FIELD_LABELS[f] || f).join('、')}${hint}`)
+        } else {
+          ElMessage.success(`刮削成功（来源: ${r.data.source}）`)
+        }
         await load(m.value.id)
         await store.loadAllDbTags()  // 刷新标签统计（标签按影片数量排序，见 TagFilter.byUsage）
       } else {

@@ -222,6 +222,7 @@ async function initDb(dataDir) {
     ['click_action','detail'], // 点击影片时的行为（详情/播放）
     // === 刮削与网络（2026-09-09 新增） ===
     ['scrape_source','auto'],   // 刮削来源：auto=JAVBUS优先JAVDB兜底 / javbus=仅JAVBUS / javdb=仅JAVDB
+                                //   fill=补全字段（照常刮削，但只写当前为空的字段，用于补齐早年刮削不全的影片）
     ['scrape_previews','n'],    // 是否下载影片预览图 (y/n)
     ['preview_count','0'],      // 下载预览图数量（0 = 全部下载）
     ['scrape_stats','y'],       // 是否抓取想看/看过人数与评分 (y/n，来源 JAVDB)

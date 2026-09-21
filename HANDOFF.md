@@ -54,6 +54,10 @@ npm run scrape:test                 # 可传番号：npm run scrape:test -- <番
 npm run test:restore                # 断言：恢复后关窗不会被内存旧库覆盖
 npm run test:persist                # 断言：普通会话的定时/关窗落盘没被误伤
 
+# ★ 补全字段逻辑（改 buildScrapeUpdate / 刮削来源相关代码后必跑）
+npm run test:fill                   # 纯函数单测，秒级，无需网络
+npm run test:fill:e2e               # 端到端（需网络+代理，自带 dev 库备份还原）
+
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 
@@ -211,6 +215,7 @@ javtube_dev/
 | **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
 | **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。当前 38/38 配对，返回格式 `{ ok, data?, error? }` |
 | **★ 数据库恢复需重启** | `settings:restore` 只替换磁盘文件，内存里仍是旧库 → 恢复后置 `db._blockPersist = true`，**一切落盘被 `saveDbToDisk` 拦截**（否则关窗的 `_forceSave`／10s 定时／`persistSoon` 会把刚恢复的文件覆盖回去，恢复白做）。前端弹「立即重启」→ `app:relaunch`（`app.relaunch()+exit`）。**改动这段务必跑 `npm run test:restore`** |
+| **★ 刮削来源「补全字段」** | `scrape_source='fill'`：照常走自动刮削，但落库前用 `buildScrapeUpdate(d, current, { fillOnly:true })`（`src/utils/global.js`）**只写当前为空/为 0 的字段**，已有值一律跳过；无缺失时不写库并提示「字段已完整」。0 与 `'[]'` 都算空（评分/想看/看过在库里以 0 表示无数据）。**统计字段只来自 JAVDB**：Cookie 过期或 Cloudflare 403 时会静默拿不到，故 `statsFillHint()` 会显式提示「未取到（检查 Cookie 与代理）」。单部（Detail）与批量（Library）共用同一套逻辑；补全时传 `skipPreviews` 避免重复下载已有预览图 |
 | **落盘失败会重试** | `saveDbToDisk` 返回布尔值；定时器与 `force` **仅在成功时清 `dirty`** → 一次写盘失败（磁盘满/占用）不会丢标记，下一轮还会重试 |
 | **三视图共享 store** | 片库 / 喜欢 / 历史共用 `store.movies`——各视图挂载时必须重新加载自己视图的全量语义（片库=全量、喜欢=onlyFavorite、历史=historyOnly） |
 | **刮削进度** | 顶栏铃铛按钮（`useScrapeStore`：enqueue / begin / done / clear），红色角标=待刮削数量；单个与批量刮削都接入 |

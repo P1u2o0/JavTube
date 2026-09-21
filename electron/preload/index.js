@@ -261,7 +261,7 @@ contextBridge.exposeInMainWorld('api', {
    * @param {string} source - 刮削来源（'auto' 或具体名称）
    * @returns {Promise<Object>} { ok, data, source }
    */
-  scrapeMovie: (ph, source) => ipcRenderer.invoke(IPC.SCRAPER_SCRAPE, { ph, source }),
+  scrapeMovie: (ph, source, opts) => ipcRenderer.invoke(IPC.SCRAPER_SCRAPE, { ph, source, ...(opts || {}) }),
 
   // === 杂项接口 ===
 
