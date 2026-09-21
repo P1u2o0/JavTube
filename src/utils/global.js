@@ -12,6 +12,7 @@
 
 // 全局响应式 dataDir - 存储应用数据目录路径，供 resolveCover 使用
 import { ref, reactive } from 'vue'
+import { ElMessage } from 'element-plus'
 export const dataDirRef = ref('')
 
 /**
@@ -107,12 +108,27 @@ export function extractCode(name) {
 
 /**
  * 安全调用 fire-and-forget 的 IPC Promise（如 playVideo / recordPlay）。
- * 失败仅输出控制台警告，不弹 UI 提示（保持这些调用原有的"无感知"语义），
- * 同时避免 unhandled promise rejection。
- * @param {Promise} promise - ipcRenderer.invoke 返回的 Promise
+ * 失败仅输出控制台警告（可选用 errMsg 弹一条错误提示），同时避免 unhandled promise rejection。
+ *
+ * ⚠️ 2026-09-21 修正：**同时接受 Promise 与返回 Promise 的函数**。
+ * 此前只接受 Promise，而演员影片页传的是箭头函数（`safeCall(() => window.api.playMovie(...))`），
+ * `Promise.resolve(函数)` 会把函数本身当成结果直接 resolve —— **函数从未执行、也不报错**，
+ * 表现为「播放/喜欢按钮点了没反应」，且喜欢按钮还会因为乐观更新而"看起来生效了"却没写库。
+ * @param {Promise|Function} promiseOrFn - ipcRenderer.invoke 返回的 Promise，或返回 Promise 的函数
+ * @param {string} [errMsg] - 失败时要弹出的提示文案（留空则只打 console.warn）
+ * @returns {Promise<void>}
  */
-export function safeCall(promise) {
-  Promise.resolve(promise).catch(e => console.warn('[ipc] call failed:', e?.message || e))
+export function safeCall(promiseOrFn, errMsg = '') {
+  let p
+  if (typeof promiseOrFn === 'function') {
+    try { p = promiseOrFn() } catch (e) { p = Promise.reject(e) }
+  } else {
+    p = promiseOrFn
+  }
+  return Promise.resolve(p).catch(e => {
+    console.warn('[ipc] call failed:', e?.message || e)
+    if (errMsg) ElMessage.error(errMsg)
+  })
 }
 
 /**

@@ -225,17 +225,33 @@ function onSortChange(next) {
 function onCardClick(m) {
   router.push(`/detail/${m.id}`)
 }
-/** 播放 */
-function onPlay(m) {
-  if (m?.py) safeCall(() => window.api.playMovie(m.py))
+/**
+ * 播放。
+ * 原实现是 `safeCall(() => window.api.playMovie(m.py))`：safeCall 只吃 Promise，
+ * 传函数等于永不执行（点了没反应）；且没有失败提示、不记录播放次数。
+ * 现与其他页面（useMovieList.onPlay / Detail.onPlay）保持一致：
+ * 校验视频路径 → playVideo → 失败给明确原因 → 成功后记一次播放（累加观看记录）。
+ */
+async function onPlay(m) {
+  if (!window.api || !m?.py) return ElMessage.warning('未设置视频路径')
+  const r = await window.api.playVideo(m.py).catch(() => null)
+  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
+  safeCall(window.api.recordPlay(m.id))
 }
-/** 切换喜欢（乐观更新） */
+/** 切换喜欢（乐观更新 + 失败回滚）
+ *  原实现的写库调用同样因为 safeCall 传函数而从未执行 —— 界面已变红、库里却没变，
+ *  重启后"喜欢"会复原。这里改为直接 await 并校验 r.ok，失败回滚。 */
 async function onFav(m) {
   if (!window.api) return
   const next = m.cl === 'y' ? 'n' : 'y'
   const idx = films.value.findIndex(x => x.id === m.id)
   if (idx >= 0) films.value[idx] = { ...films.value[idx], cl: next }
-  await safeCall(() => window.api.updateMovie(m.id, { cl: next }), '操作失败')
+  const r = await window.api.updateMovie(m.id, { cl: next }).catch(() => null)
+  if (!r || !r.ok) {
+    const i2 = films.value.findIndex(x => x.id === m.id)
+    if (i2 >= 0) films.value[i2] = { ...films.value[i2], cl: m.cl }
+    ElMessage.error(r?.error || '操作失败')
+  }
 }
 
 /** 加载演员影片数据 */
@@ -256,8 +272,10 @@ async function load() {
 
 onMounted(async () => {
   // 确保设置与全局标签已加载（每行数量 + 标签分类栏都依赖 store）
-  await safeCall(() => store.initIfNeeded())
-  await safeCall(() => store.loadAllDbTags())
+  // 注：这两行此前用 `safeCall(() => ...)` 传函数，实际从未执行 ——
+  // 直接进本页（不先经过片库）时 store 未初始化、标签栏为空。现修正为直接 await。
+  await store.initIfNeeded()
+  await store.ensureTagsLoaded()
   await load()
 })
 </script>

@@ -58,6 +58,12 @@ npm run test:persist                # 断言：普通会话的定时/关窗落�
 npm run test:fill                   # 纯函数单测，秒级，无需网络
 npm run test:fill:e2e               # 端到端（需网络+代理，自带 dev 库备份还原）
 
+# ★ 接线审计（改渲染层事件 / preload 接口 / IPC 通道后必跑；秒级）
+npm run audit:wiring                # 死按钮、死事件、未暴露接口、safeCall 误用
+
+# ★ 落盘合并窗口单测（改 db/util.js persistSoon 后必跑）
+npm run test:persist-coalesce
+
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 
@@ -210,7 +216,9 @@ javtube_dev/
 
 | 机制 | 说明 |
 |---|---|
-| **persistSoon** | sql.js 的 `persist` 是整库同步导出（阻塞主进程）。**三个 db 模块**（movies / settings / actress）的写操作统一用 `persistSoon(db)`（定义于 `db/util.js`，setImmediate 延迟落盘）。**新增写操作必须用它** |
+| **persistSoon** | sql.js 的 `persist` 是整库同步导出（阻塞主进程）。**三个 db 模块**（movies / settings / actress）的写操作统一用 `persistSoon(db)`（定义于 `db/util.js`）。**新增写操作必须用它** |
+| **★ 落盘合并窗口** | `persistSoon` 是「前缘节流」：距上次落盘 >120ms 时**立即**落盘（单次写延迟不变），窗口内的后续写合并成窗口末尾的一次。实测同 tick 20 次写从 **20 次整库导出降到 2 次**。改这里务必跑 `npm run test:persist-coalesce` |
+| **★ 接线审计** | 「按钮点了没反应」这类问题一律先跑 `npm run audit:wiring`（检查 ①`window.api.X` 是否暴露 ②接口→通道→`ipcMain.handle` 三方对齐 ③组件 emit 是否有人监听 ④`safeCall` 用法）。改事件/接口后必跑 |
 | **稳定分页** | 所有 `ORDER BY` 必须追加唯一 tie-breaker（`, id DESC`），否则同值行跨 LIMIT/OFFSET 查询顺序不保证 → 影片在页间跳动 |
 | **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
 | **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。当前 38/38 配对，返回格式 `{ ok, data?, error? }` |
@@ -228,6 +236,17 @@ javtube_dev/
 ---
 
 ## 6. 已知坑（勿重蹈）
+
+### safeCall 只吃 Promise（2026-09-21 修）
+
+`src/utils/global.js` 的 `safeCall` 原本签名是 `safeCall(promise)`。演员影片页写成了
+`safeCall(() => window.api.playMovie(m.py))` —— `Promise.resolve(函数)` 会把函数当值直接 resolve，
+**函数永不执行且不报错**：播放按钮、喜欢按钮（界面已乐观变红但库里没写）、`initIfNeeded`/
+`loadAllDbTags` 全部静默失效。
+
+- 现已让 `safeCall` **同时接受 Promise 与函数**（传函数会自动执行），但**正确写法是直接传 Promise**：
+  `safeCall(window.api.recordPlay(m.id))`。
+- 教训：凡是「点了没反应」先跑 `npm run audit:wiring`，不要靠肉眼。
 
 1. **分页 `ORDER BY` 必须带唯一 tie-breaker**（`, id DESC`）——同值行跨查询顺序不保证 → 影片"页间跳动/消失"
 2. **三视图共享 store.movies**——挂载时必须无条件重载自己视图的全量语义；"dirty 才加载"的优化对共享数据是错误优化

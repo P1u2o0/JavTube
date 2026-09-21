@@ -10,7 +10,8 @@
  */
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { safeCall } from '@/utils/global'
+import { safeCall, buildScrapeUpdate, bumpCover, statsFillHint } from '@/utils/global'
+import { useScrapeStore } from '@/store/scrape'
 
 /**
  * 影片列表页公共交互。
@@ -137,5 +138,80 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
     if (onRefresh) await onRefresh()
   }
 
-  return { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag }
+  /**
+   * 批量刮削选中的影片（片库 / 喜欢 / 观看记录三页共用）。
+   * 语义（2026-09-08 用户确认）：仅处理「当前页」内被选中的影片，跨页勾选不在数据源中属预期行为。
+   * 刮削来源跟随设置（此前写死 'auto'，设置里的来源选项对批量刮削不生效）；
+   * 来源为 fill 时进入「补全字段」模式：只写当前为空的字段，且已有预览图时不再重复下载。
+   */
+  async function onBatchScrape() {
+    if (!window.api) return
+    const ids = [...store.selectedIds]
+    const selected = store.movies.filter(m => ids.includes(m.id))
+    if (!selected.length) return
+    const scrapeStore = useScrapeStore()
+    const mode = store.settings.scrape_source || 'auto'
+    const fillOnly = mode === 'fill'
+    const source = fillOnly ? 'auto' : mode
+    // 批量刮削进度走顶栏铃铛面板（取代 ElNotification 右上角弹窗）
+    let ok = 0, fail = 0, filled = 0, skipped = 0, statsBlocked = 0
+    // 先把全部选中影片登记为「待刮削」（pending），铃铛红标立即显示任务总数
+    const keys = selected.map(m => scrapeStore.enqueue(m.ph, m.pm))
+    for (let idx = 0; idx < selected.length; idx++) {
+      const m = selected[idx]
+      const key = keys[idx]
+      scrapeStore.begin(key)   // 待刮削 → 正在刮削
+      try {
+        const r = await window.api.scrapeMovie(m.ph, source, { skipPreviews: fillOnly && !!m.previews })
+        if (r.ok && r.data) {
+          // 刮削结果 → 更新字段映射（公共函数，与 Detail.vue 共用）
+          const update = buildScrapeUpdate(r.data, m, { fillOnly })
+          // 补全模式下若没有缺失字段，直接跳过写库（该影片本来就完整）
+          if (fillOnly && !Object.keys(update).length) {
+            if (statsFillHint({ ...m, ...update }, store.settings.scrape_stats !== 'n')) statsBlocked++
+            scrapeStore.done(key, true)
+            skipped++
+            ok++
+            continue
+          }
+          const saveR = await window.api.updateMovie(m.id, update)
+          if (saveR.ok) {
+            const i = store.movies.findIndex(x => x.id === m.id)
+            if (i >= 0) store.movies[i] = { ...store.movies[i], ...update }
+            // 封面是按番号固定文件名覆盖写入的：URL 不变浏览器不会重新请求 → 换版本号强制刷新
+            bumpCover(m.id)
+            scrapeStore.done(key, true)
+            if (fillOnly) {
+              filled++
+              if (statsFillHint({ ...m, ...update }, store.settings.scrape_stats !== 'n')) statsBlocked++
+            }
+            ok++
+          } else {
+            scrapeStore.done(key, false, saveR.error || '入库失败')
+            fail++
+          }
+        } else {
+          scrapeStore.done(key, false, r.error || '刮削失败')
+          fail++
+        }
+      } catch (e) {
+        scrapeStore.done(key, false, e.message)
+        fail++
+      }
+    }
+    if (fillOnly) {
+      const statsTip = statsBlocked ? `；${statsBlocked} 部的评分/想看/看过未取到（JAVDB 未返回，检查 Cookie 与代理）` : ''
+      const tail = fail ? `，失败 ${fail} 部（详情见顶栏铃铛）` : ''
+      const msg = `补全完成：${filled} 部补齐字段，${skipped} 部无需补全${tail}${statsTip}`
+      if (fail || statsBlocked) ElMessage.warning(msg)
+      else ElMessage.success(msg)
+    } else if (fail === 0) {
+      ElMessage.success(`批量刮削完成，成功 ${ok} 部`)
+    } else {
+      ElMessage.warning(`刮削完成：成功 ${ok} 部，失败 ${fail} 部（详情见顶栏铃铛）`)
+    }
+    await store.loadAllDbTags()
+  }
+
+  return { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag, onBatchScrape }
 }

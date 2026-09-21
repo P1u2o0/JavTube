@@ -235,9 +235,23 @@ function onPosterLoad(e) {
   computeBox()
 }
 
-// 窗口尺寸变化时重算海报框
-onMounted(() => window.addEventListener('resize', computeBox))
-onBeforeUnmount(() => window.removeEventListener('resize', computeBox))
+// 窗口尺寸变化时重算海报框。
+// 用 rAF 合帧：拖动窗口时 resize 每秒可触发数十次，原实现每次都执行 computeBox()
+// 并写入两个 ref（boxW/boxH）→ 几乎每帧都在算尺寸 + 触发重排；合帧后每帧最多算一次。
+let resizeRaf = 0
+// 灯箱滚轮缩放的合帧累加器（与 resizeRaf 一样只在本组件内使用）
+let zoomAcc = 0
+let zoomRaf = 0
+function onWindowResize() {
+  if (resizeRaf) return
+  resizeRaf = requestAnimationFrame(() => { resizeRaf = 0; computeBox() })
+}
+onMounted(() => window.addEventListener('resize', onWindowResize))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWindowResize)
+  if (resizeRaf) cancelAnimationFrame(resizeRaf)
+  if (zoomRaf) cancelAnimationFrame(zoomRaf)
+})
 // 灯箱查看器状态
 const lightboxShow = ref(false)  // 灯箱显隐
 const lightboxIdx = ref(0)       // 灯箱当前图片索引（galleryImages 内）
@@ -304,11 +318,22 @@ function stepLightbox(dir) {
 }
 
 /**
- * 灯箱：鼠标滚轮缩放（上滚放大 / 下滚缩小，0.5 ~ 5 倍）
+ * 灯箱：鼠标滚轮缩放（上滚放大 / 下滚缩小，0.5 ~ 5 倍）。
+ *
+ * 合帧处理（2026-09-21）：原实现每个 wheel 事件都直接写 zoom.value ——
+ * 一次连续滚动/触控板惯性会在一帧内触发十几次，等于每帧重渲染十几次，
+ * 且 `transition: transform` 被反复重启，缩放观感发黏发颤。
+ * 现在把同一帧内的位移累积起来，每帧只写一次。
  */
 function onWheel(e) {
-  const delta = e.deltaY > 0 ? -0.15 : 0.15
-  zoom.value = Math.min(5, Math.max(0.5, zoom.value + delta))
+  zoomAcc += e.deltaY > 0 ? -0.15 : 0.15
+  if (zoomRaf) return
+  zoomRaf = requestAnimationFrame(() => {
+    zoomRaf = 0
+    const next = Math.min(5, Math.max(0.5, zoom.value + zoomAcc))
+    zoomAcc = 0
+    if (next !== zoom.value) zoom.value = next
+  })
 }
 
 /**

@@ -70,14 +70,16 @@ function curlGet(url, opts = {}) {
   return new Promise((resolve) => {
     const tmp = path.join(os.tmpdir(), `javtube-curl-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`)
     const args = [...buildCommonArgs(opts), '-o', tmp, '-w', '%{http_code}', url]
-    execFile(CURL_BIN, args, { maxBuffer: 8 * 1024 * 1024, encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, (err, stdout) => {
+    execFile(CURL_BIN, args, { maxBuffer: 8 * 1024 * 1024, encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, async (err, stdout) => {
       if (err) {
         try { fs.unlinkSync(tmp) } catch {}
         return resolve({ ok: false, error: err.message })
       }
       let html = ''
       try {
-        html = fs.readFileSync(tmp, 'utf8')
+        // 异步读：原实现用 readFileSync 同步读整页（JAVDB/JAVBUS 详情页可达数百 KB），
+        // 会在主进程上造成一次可见的同步阻塞（批量刮削时反复发生）。改用 promises 读。
+        html = await fs.promises.readFile(tmp, 'utf8')
         fs.unlinkSync(tmp)
       } catch (e) {
         return resolve({ ok: false, error: '读取响应失败: ' + e.message })

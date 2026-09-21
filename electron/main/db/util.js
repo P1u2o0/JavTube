@@ -66,10 +66,32 @@ function persist(db) {
  * 阻塞主进程事件循环，拖慢并发请求与交互响应（表现为播放/点击卡顿）。
  * persistSoon 立即返回、把落盘推迟到本轮事件循环之后；崩溃窗口为毫秒级，
  * 且 init.js 的 10 秒定时持久化可兜底。
+ *
+ * 2026-09-21 增强：**合并短时间内的多次落盘**。
+ * 原实现是 setImmediate(每次调用各导出一次整库)，于是批量操作（批量刮削会逐部
+ * updateMovie、批量加标签/收藏等）在一两百毫秒内能触发十几次「整库导出 + 写盘 +
+ * 两次 rename」，主进程被反复同步阻塞 → 界面明显卡顿。
+ * 现改为「前缘节流」：距上次落盘已超过 120ms 时仍然**立即**落盘（单次写延迟不变），
+ * 窗口内的后续写合并为窗口结束时的一次 —— 突发写从 N 次导出降到 1~2 次。
  * @param {Object} db - sql.js 数据库实例
  */
+const PERSIST_WINDOW_MS = 120
+let lastPersistAt = 0
+let persistTimer = null
+
 function persistSoon(db) {
-  setImmediate(() => { try { persist(db) } catch {} })
+  const wait = PERSIST_WINDOW_MS - (Date.now() - lastPersistAt)
+  if (wait <= 0) {                    // 距上次落盘足够久：立即落盘，保持原有的"毫秒级"语义
+    lastPersistAt = Date.now()
+    try { persist(db) } catch {}
+    return
+  }
+  if (persistTimer) return          // 已在合并窗口内：本次写由窗口结束时的那次落盘一并覆盖
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    lastPersistAt = Date.now()
+    try { persist(db) } catch {}
+  }, wait)
 }
 
 module.exports = { rows, firstRow, firstScalar, nowLocal, persist, persistSoon }

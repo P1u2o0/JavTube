@@ -17,8 +17,6 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 // 引入 Element Plus 的中文语言包
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-// 引入 Element Plus 的所有图标组件
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 // 引入根组件 App
 import App from './App.vue'
@@ -39,11 +37,9 @@ app.use(router)
 // 注册 Element Plus，并设置中文语言环境
 app.use(ElementPlus, { locale: zhCn })
 
-// 遍历并全局注册所有 Element Plus 图标组件
-// 这样在模板中可以直接使用图标组件名引用图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
+// 注：原实现用 `import * as ElementPlusIconsVue` 遍历注册了全部图标组件（约 300 个），
+// 但本项目图标全部走自研 AppIcon.vue（内联 SVG），模板里从未使用过 `el-icon-*`
+// （2026-09-21 全仓 grep 确认）→ 注册属纯开销，已移除：少解析一个图标包、少注册 300 个组件。
 
 // 将应用挂载到 index.html 中 id 为 "app" 的 DOM 元素上
 app.mount('#app')

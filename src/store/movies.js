@@ -19,6 +19,8 @@ const DEFAULT_CATS = [
 
 // 加载序号（模块级即可：每个渲染进程只有一份 store 实例），用于丢弃过期响应
 let loadSeq = 0
+// 标签库是否已加载（模块级：跨页面挂载保留；见 ensureTagsLoaded）
+let tagsLoaded = false
 
 export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ======
   state: () => ({
@@ -108,14 +110,30 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      * 加载数据库中实际存在的所有标签
      * @returns {Promise<Array>} 标签数组
      */
+    /**
+     * 拉取全库标签（标签栏数据源）。
+     * 每次调用都会走一次 IPC + 主进程全表扫描，所以：
+     *  - 页面挂载这类「只是想拿到标签」的场景请用 ensureTagsLoaded()（有守卫，只拉一次）
+     *  - 写操作之后（刮削 / 编辑标签 / 批量加标签）必须用本方法强制刷新
+     */
     async loadAllDbTags() {
       if (!window.api) return []
       const r = await window.api.getAllTags()
       if (r.ok) {
         this.allDbTags = r.tags || []
         this.tagCounts = r.counts || {}
+        tagsLoaded = true
       }
       return this.allDbTags
+    },
+
+    /**
+     * 标签库「按需加载」：已加载过就直接返回，避免每次进片库/喜欢都重拉一遍全量标签。
+     * 标签集合只会在写操作后变化，那些路径都会显式调用 loadAllDbTags() 刷新。
+     */
+    async ensureTagsLoaded() {
+      if (tagsLoaded) return this.allDbTags
+      return this.loadAllDbTags()
     },
 
     /**

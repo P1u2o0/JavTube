@@ -113,6 +113,11 @@ function registerActressIpc(ipcMain, db) {
       }
       // 演员资料（actress 表，用户维护）：身高/三围/生日等，无则留空
       const info = firstRow(db.exec('SELECT * FROM actress WHERE name=?', [nm])[0]) || null
+      // 返回渲染层前剥掉两个大 JSON 字段（2026-09-21）：
+      // 本页只需要番号/片名/封面/标签/喜欢/视频路径等标量字段，previews（预览图路径数组）
+      // 与 cast_json（演员列表）既不展示也不需要，而参演影片多时这两项占整个响应的绝大部分。
+      // 详情页需要它们时是单独查单部的，不受影响。
+      for (const mv of movies) { delete mv.previews; delete mv.cast_json }
       return { ok: true, data: { name: nm, gender, avatar, info, movies } }
     } catch (e) { return { ok: false, error: e.message, data: empty } }
   })

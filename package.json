@@ -15,10 +15,12 @@
     "preview": "vite preview",
     "start": "electron .",
     "check:undefined": "node scripts/check-undefined.js",
+    "audit:wiring": "node scripts/audit-wiring.js",
     "scrape:test": "node scripts/scrape-smoke.js",
     "test:restore": "node scripts/test-restore.js",
     "test:persist": "node scripts/test-persist.js",
     "test:fill": "node scripts/test-fill-unit.mjs",
+    "test:persist-coalesce": "node scripts/test-persist-coalesce.js",
     "test:fill:e2e": "node scripts/test-fill-scrape.js"
   },
   "dependencies": {

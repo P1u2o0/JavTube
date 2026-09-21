@@ -19,6 +19,7 @@
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
       @batchAddTag="onBatchAddTag"
+      @batchScrape="onBatchScrape"
     />
     <!-- 空状态：无收藏影片时显示提示 -->
     <el-empty v-if="store.total === 0 && !store.loading" description="还没有收藏影片，去片库挑选喜欢的吧" />
@@ -32,6 +33,7 @@
       :selectMode="store.selectMode"
       :selectedIds="store.selectedIds"
       @page="onPageChange"
+      @click="onDetail"
       @play="onPlay"
       @fav="onFav"
       @toggle="onToggle"
@@ -51,7 +53,7 @@ import MovieGrid from '@/components/MovieGrid.vue'
 const store = useMoviesStore()
 // 公共列表交互：批量选中切换 / 翻页（收藏页固定加载 onlyFavorite）
 // onPlay / onBatchDelete / onBatchFav / onDetail 由 composable 统一提供
-const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag } = useMovieList(store, {
+const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag, onBatchScrape } = useMovieList(store, {
   buildLoadArgs: () => ({ onlyFavorite: true }),
   onRefresh: () => onRefresh()
 })
@@ -83,7 +85,7 @@ onMounted(async () => {
   await store.initIfNeeded()
   // 标签库与收藏列表互不依赖，并行拉取，避免串行等待造成的切换卡顿
   await Promise.all([
-    store.loadAllDbTags(),
+    store.ensureTagsLoaded(),
     store.loadMovies({ onlyFavorite: true })
   ])
 })
