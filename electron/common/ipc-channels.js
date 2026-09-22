@@ -34,6 +34,8 @@ module.exports = {
   ACTRESS_DELETE: 'actress:delete',
   // 2026-09-14 演员头像：按演员名查询其出演影片 + 演员信息（男女通用）
   ACTOR_FILMS: 'actor:films',
+  // 2026-09-22 演员页总览：全库女优（作品数/热度排名/各自身上想看最多的 3 部影片）
+  ACTOR_OVERVIEW: 'actor:overview',
 
   // === 设置 ===
   SETTINGS_GET: 'settings:get',

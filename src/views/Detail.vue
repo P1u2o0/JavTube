@@ -64,13 +64,9 @@
           <div class="info-value star-row">
             <span class="stars">
               <span v-for="i in 5" :key="i" class="star">
-                <svg class="star-base" viewBox="0 0 24 24" aria-hidden="true">
-                  <path :d="STAR_PATH" />
-                </svg>
+                <AppIcon name="star-filled" :size="19" class="star-base" />
                 <span class="star-clip" :style="{ width: starFill(i) + '%' }">
-                  <svg class="star-on" viewBox="0 0 24 24" aria-hidden="true">
-                    <path :d="STAR_PATH" />
-                  </svg>
+                  <AppIcon name="star-filled" :size="19" class="star-on" />
                 </span>
               </span>
             </span>
@@ -422,9 +418,7 @@ function starFill(i) {
   return Math.min(100, Math.max(0, Math.round((score - (i - 1)) * 100)))
 }
 
-// 五角星 SVG 路径（实心五角星）
-// 星形路径（内径比 ~0.48 的偏瘦五角星，比通用实心星更轻盈克制，贴合工具软件的线性气质）
-const STAR_PATH = 'M12 2.6l2.75 5.85 6.45.83-4.75 4.42 1.22 6.3L12 16.9l-5.67 3.1 1.22-6.3-4.75-4.42 6.45-.83z'
+// 五角星不再自带路径：改用 AppIcon 的 star-filled（与演员页指数区同一套几何与配色）
 
 /**
  * 复制番号到剪贴板
@@ -751,15 +745,16 @@ onMounted(async () => {
 /* 评分五角星行 */
 .star-row { display: flex; align-items: center; gap: 10px; }
 .stars { display: inline-flex; gap: 3px; }
-/* 单颗星：灰底 + 按比例填充的叠层（clip 宽度由 starFill 控制） */
+/* 单颗星：浅灰描边空槽 + 按比例裁切的黄星（样式与演员页指数区统一：黄填充 + 细黑描边） */
 .star { position: relative; width: 19px; height: 19px; display: inline-block; }
-.star-base { position: absolute; inset: 0; width: 100%; height: 100%; fill: var(--border-strong); }
+.star svg { stroke-width: 0.9; }
+.star-base { position: absolute; inset: 0; --icon-fill: transparent; --icon-stroke: #d8d4cb; }
 .star-clip {
   position: absolute; left: 0; top: 0; height: 100%;
   overflow: hidden;                 /* 按宽度裁出填充比例 */
   transition: width var(--dur-base) var(--ease-out);
 }
-.star-clip .star-on { width: 19px; height: 19px; display: block; fill: var(--warning); }
+.star-clip .star-on { display: block; --icon-fill: #fbc02d; --icon-stroke: #111111; }
 .score-num {
   color: var(--text); font-weight: 600; font-size: var(--fs-md);
   font-family: var(--font-display);

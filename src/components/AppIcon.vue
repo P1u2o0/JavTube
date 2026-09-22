@@ -4,6 +4,8 @@
   功能描述：全应用统一的 SVG 图标组件。所有图标使用 24×24 viewBox、
            stroke=2、圆角线帽线尾的线性风格；实心变体以 -filled 结尾。
            通过 name 指定图标，size 控制尺寸，颜色继承 currentColor。
+           需要「填充 + 描边」两种颜色时（如黄星配深金边框），在图标外层设
+           --icon-fill / --icon-stroke 覆盖即可。
            用于替换此前混用的内联 SVG / Element 图标 / emoji 三套体系。
 -->
 <template>
@@ -15,11 +17,9 @@
   >
     <template v-for="(el, i) in els" :key="i">
       <circle v-if="el.c" :cx="el.c[0]" :cy="el.c[1]" :r="el.c[2]"
-              :fill="el.fill ? 'currentColor' : 'none'"
-              :stroke="el.fill ? 'none' : 'currentColor'" />
+              :style="paint(el)" />
       <path v-else :d="el.d"
-            :fill="el.fill ? 'currentColor' : 'none'"
-            :stroke="el.fill ? 'none' : 'currentColor'" />
+            :style="paint(el)" />
     </template>
   </svg>
 </template>
@@ -153,6 +153,22 @@ const ICONS = {
   video: [
     { d: 'M4 6h11a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z' },
     { d: 'm16 10 5-2.5v9L16 14' }
+  ],
+  // 评分 / 热度（演员影片页的指数区用）
+  // 造型按用户要求：整体圆润扁平（顶点全部做二次贝塞尔圆角）。
+  // -filled 版带 stroke: true，即「填充 + 描边」两层，配合外层 --icon-fill/--icon-stroke
+  // 做到「黄色填充 + 深金边框」「红色填充 + 深红边框」。
+  star: [
+    { d: 'M1.92 9.70L8.02 8.81L8.87 8.48L12.01 2.44L14.87 8.06L15.23 8.48L15.99 8.81L22.10 9.70L17.49 14.30L17.23 14.81L17.16 15.30L18.24 21.53L12.66 18.62L11.77 18.50L5.79 21.56L6.85 15.37L6.79 14.73L6.52 14.30L1.90 9.73Z' }
+  ],
+  'star-filled': [
+    { d: 'M1.92 9.70L8.02 8.81L8.87 8.48L12.01 2.44L14.87 8.06L15.23 8.48L15.99 8.81L22.10 9.70L17.49 14.30L17.23 14.81L17.16 15.30L18.24 21.53L12.66 18.62L11.77 18.50L5.79 21.56L6.85 15.37L6.79 14.73L6.52 14.30L1.90 9.73Z', fill: true, stroke: true }
+  ],
+  flame: [
+    { d: 'M4.30 13.47L4.55 12.14L4.96 11.13L6.15 9.53L8.05 7.42L8.95 5.96L9.51 4.59L10.20 1.90L11.99 3.59L13.32 5.48L14.52 8.28L15.19 10.68L15.52 11.14L16.22 11.44L16.89 11.26L18.82 9.48L19.44 11.51L19.73 13.23L19.73 15.09L19.38 16.75L18.75 18.19L18.07 19.22L16.92 20.37L15.89 21.06L14.89 21.56L13.50 21.96L12.43 22.10L10.50 21.96L9.04 21.56L7.75 20.91L6.72 20.15L5.58 18.87L4.82 17.48L4.42 16.16L4.27 15.30L4.29 13.53Z' }
+  ],
+  'flame-filled': [
+    { d: 'M4.30 13.47L4.55 12.14L4.96 11.13L6.15 9.53L8.05 7.42L8.95 5.96L9.51 4.59L10.20 1.90L11.99 3.59L13.32 5.48L14.52 8.28L15.19 10.68L15.52 11.14L16.22 11.44L16.89 11.26L18.82 9.48L19.44 11.51L19.73 13.23L19.73 15.09L19.38 16.75L18.75 18.19L18.07 19.22L16.92 20.37L15.89 21.06L14.89 21.56L13.50 21.96L12.43 22.10L10.50 21.96L9.04 21.56L7.75 20.91L6.72 20.15L5.58 18.87L4.82 17.48L4.42 16.16L4.27 15.30L4.29 13.53Z', fill: true, stroke: true }
   ]
 }
 
@@ -161,6 +177,23 @@ const props = defineProps({
   size: { type: [Number, String], default: 18 }, // 尺寸（px）
   sw: { type: [Number, String], default: 2 }     // 线宽
 })
+
+/**
+ * 单个图形元素的涂色规则，支持三种：只描边（线性图标）/ 只填充 / 填充 + 描边。
+ * 需要填充与描边不同色时（例如黄星配深金边框），在外层元素上设
+ * `--icon-fill` / `--icon-stroke` 覆盖；未设则都继承 currentColor。
+ * @param {Object} el - { d } | { d, fill } | { c: [cx,cy,r] } | { d, fill, stroke }
+ * @returns {Object} 供 :style 绑定
+ */
+function paint(el) {
+  const filled = !!el.fill
+  // 线性图标默认描边；实心图标默认不描边；显式 stroke: true 时两者都要
+  const stroked = el.stroke === true || !filled
+  return {
+    fill: filled ? 'var(--icon-fill, currentColor)' : 'none',
+    stroke: stroked ? 'var(--icon-stroke, currentColor)' : 'none'
+  }
+}
 
 // 当前图标的元素列表，未知名称时退化为空（不渲染内容）
 const els = computed(() => ICONS[props.name] || [])

@@ -148,6 +148,13 @@ contextBridge.exposeInMainWorld('api', {
    */
   getActorFilms: (name) => ipcRenderer.invoke(IPC.ACTOR_FILMS, name),
 
+  /**
+   * 演员页总览（2026-09-22）：库内全部女优的聚合信息
+   * @returns {Promise<{ok:boolean,data:Array<{name,avatar,count,heat,rank,total,tier,top:Array}>}>}
+   *          top = 该女优「想看人数最多」的至多 3 部影片（id/ph/pm/cover/want）
+   */
+  getActressOverview: () => ipcRenderer.invoke(IPC.ACTOR_OVERVIEW),
+
   // === 设置相关接口 ===
 
   /**

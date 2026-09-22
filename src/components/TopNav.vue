@@ -34,6 +34,11 @@
           <AppIcon name="history" :size="19" />
           <span>观看记录</span>
         </router-link>
+        <!-- 演员（2026-09-22）：库内女优总览（头像墙 / 热度排行） -->
+        <router-link to="/actresses" class="tab" active-class="active">
+          <AppIcon name="user" :size="19" />
+          <span>演员</span>
+        </router-link>
       </nav>
     </div>
 

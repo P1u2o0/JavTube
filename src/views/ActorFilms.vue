@@ -21,10 +21,36 @@
         <img :src="avatarUrl" :alt="name" />
       </div>
       <div class="ah-main">
-        <div class="ah-name">
-          <span class="ah-sex" :class="gender">{{ gender === 'm' ? '♂' : '♀' }}</span>{{ name }}
-        </div>
+        <div class="ah-name">{{ name }}</div>
         <div class="ah-count">{{ films.length }} 部作品</div>
+      </div>
+      <!-- 指数区（评分指数 + 热度）：跟在大名/作品数右侧，靠右对齐。
+           评分指数 = 所有「有评分」作品的平均分，星星按 平均分/5 从左往右填充；
+           热度 = 在「有想看/看过人数」的作品里取 (想看+看过) 的平均值。 -->
+      <div class="ah-idx">
+        <div class="idx-card" :title="scoreTitle">
+          <div class="idx-star">
+            <AppIcon name="star-filled" :size="42" class="star-bg" />
+            <span class="star-fg" :style="{ width: starPct + '%' }">
+              <AppIcon name="star-filled" :size="42" />
+            </span>
+          </div>
+          <div class="idx-num">
+            <div class="idx-val">{{ scoreIndex === null ? '—' : scoreIndex.toFixed(2) }}</div>
+            <div class="idx-cap">评分指数</div>
+          </div>
+        </div>
+        <!-- 热度卡片可点击：进入全库女优热度排行榜（并定位到当前演员）；
+             title 保留热度算法与排名说明 -->
+        <div class="idx-card idx-clickable" :title="heatTitle + (heatRank ? '\n点击查看全库排行榜' : '')"
+             @click="router.push({ path: '/actresses', query: { view: 'rank', hl: name } })">
+          <AppIcon name="flame-filled" :size="42" class="idx-flame"
+                   :class="heatRank ? 't-' + heatRank.tier : ''" />
+          <div class="idx-num">
+            <div class="idx-val">{{ heatIndex === null ? '—' : heatIndex.toLocaleString('zh-CN') }}</div>
+            <div class="idx-cap">热度</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -86,6 +112,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { resolveCover, safeCall, splitTags } from '@/utils/global'
+import AppIcon from '@/components/AppIcon.vue'
 import MovieCard from '@/components/MovieCard.vue'
 import TagChip from '@/components/TagChip.vue'
 import SortDropdown from '@/components/SortDropdown.vue'
@@ -102,6 +129,8 @@ const gender = ref('f')
 const avatar = ref('')
 const info = ref(null)
 const films = ref([])
+/** 热度排名（后端按全库女优排序后回传）：{ rank, total, tier } 或 null */
+const heatRank = ref(null)
 const loading = ref(true)
 
 // 每行数量：跟随设置（store.colsPerRow；未加载时回退 5）
@@ -125,6 +154,58 @@ const DEFAULT_AVATAR = {
 const avatarUrl = computed(() => avatar.value
   ? resolveCover(avatar.value)
   : (gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f))
+
+/**
+ * 评分指数：该演员**所有有评分的作品**的平均分。
+ * score 为 0 / 空视为「没有评分」（JAVDB 无评分时入库即为 0），不参与平均。
+ * @returns {number|null} 平均分；一部有评分的都没有时返回 null（模板显示 —）
+ */
+const scoreIndex = computed(() => {
+  const scored = films.value
+    .map(f => Number(f.score) || 0)
+    .filter(v => v > 0)
+  if (!scored.length) return null
+  return scored.reduce((a, b) => a + b, 0) / scored.length
+})
+
+/** 星星填充比例 = 平均分 / 5（满分按 5 分计），并夹在 0~100 之间 */
+const starPct = computed(() => {
+  if (scoreIndex.value === null) return 0
+  return Math.max(0, Math.min(100, (scoreIndex.value / 5) * 100))
+})
+
+/**
+ * 热度：在**有想看/看过人数的作品**里，取 (想看 + 看过) 的平均值。
+ * 即：所有有人数字段作品的人数和 ÷ 这些作品的数量。
+ * @returns {number|null} 取整后的热度指数；没有任何人数数据时返回 null
+ */
+const heatIndex = computed(() => {
+  const counts = films.value
+    .map(f => (Number(f.want) || 0) + (Number(f.watched) || 0))
+    .filter(v => v > 0)
+  if (!counts.length) return null
+  return Math.round(counts.reduce((a, b) => a + b, 0) / counts.length)
+})
+
+/** 评分数、人数样本数：用于 tooltip 说明指数是怎么算的 */
+const scoredCount = computed(() => films.value.filter(f => (Number(f.score) || 0) > 0).length)
+const heatCount = computed(() => films.value.filter(f => ((Number(f.want) || 0) + (Number(f.watched) || 0)) > 0).length)
+const scoreTitle = computed(() => scoreIndex.value === null
+  ? '评分指数：该演员暂无有评分的作品'
+  : `评分指数：${scoredCount.value} 部有评分作品的平均分（满分 5）`)
+/** 热度档位的说明文字（与后端 HEAT_TIERS 的「前 X%」口径一致） */
+const TIER_LABEL = {
+  purple: '紫色（前 10%）', darkred: '深红（前 20%）', lightred: '浅红（前 30%）',
+  orange: '橙色（前 40%）', gold: '金色（前 50%）', blue: '蓝色（前 60%）', cyan: '青色（60% 之后）'
+}
+
+const heatTitle = computed(() => {
+  if (heatIndex.value === null) return '热度：该演员的作品暂无想看/看过人数'
+  const base = `热度：${heatCount.value} 部有想看/看过人数作品的平均人数（想看 + 看过）`
+  const h = heatRank.value
+  if (!h) return base
+  return `${base}\n全库女优热度排名：第 ${h.rank} / ${h.total} 名 · ${TIER_LABEL[h.tier] || ''}`
+})
 
 /** 标签统计：该演员影片的标签出现次数降序 */
 const tagList = computed(() => {
@@ -264,7 +345,9 @@ async function load() {
     avatar.value = r.data.avatar || ''
     info.value = r.data.info || null
     films.value = r.data.movies || []
+    heatRank.value = r.data.heatRank || null
   } else {
+    heatRank.value = null
     ElMessage.error(r?.error || '加载失败')
   }
   loading.value = false
@@ -300,12 +383,60 @@ onMounted(async () => {
 .ah-name {
   font-family: var(--font-display);
   font-size: var(--fs-2xl); font-weight: 700; color: var(--text);
-  display: flex; align-items: center; gap: 4px;
 }
-/* 性别符号：♀ 品牌红 / ♂ 柔蓝 */
-.ah-sex { font-size: var(--fs-xl); color: var(--accent); }
-.ah-sex.m { color: #3d7ebf; }
 .ah-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ===== 指数区（评分指数 + 热度）：紧接大名右侧、整体靠右 =====
+   视觉沿用应用既有卡片语言：--surface 底 + 发丝边框 + --r-md 圆角 + --sh-1 微阴影；
+   图标沿用 AppIcon 的内联 SVG 体系，主色用品牌红 --accent（与 logo / exe 图标同色）。 */
+.ah-idx { margin-left: auto; display: flex; align-items: stretch; gap: 12px; flex-shrink: 0; }
+.idx-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-1);
+}
+/* 热度卡片可点击（进全库排行榜）：手型 + 轻微悬停反馈 */
+.idx-clickable { cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out); }
+.idx-clickable:hover { border-color: var(--border-strong); box-shadow: var(--sh-2); }
+.idx-clickable:active { transform: scale(0.97); }
+/* 星星两图层：底层只画描边（深金边框 + 空槽），上层按比例裁切「黄色填充 + 深金边框」。
+   这样既能看到清晰的边框线，也能一眼看出填充了几成（= 平均分/5）。 */
+.idx-star { position: relative; width: 42px; height: 42px; flex-shrink: 0; }
+.idx-star svg { stroke-width: 0.9; }              /* 42px 显示时线宽更细，更扁平 */
+.idx-star .star-bg {
+  --icon-fill: transparent;                        /* 未填充部分：星内留空，只显示描边 */
+  --icon-stroke: #d8d4cb;                          /* 浅灰描边（空槽） */
+}
+.idx-star .star-fg {
+  position: absolute; inset: 0; overflow: hidden;
+  --icon-fill: #fbc02d;                            /* 评分填充：黄 */
+  --icon-stroke: #111111;                          /* 边框线：黑（同参考图标） */
+}
+.idx-flame {
+  --icon-fill: var(--accent);                      /* 热度填充：品牌红（与 logo 同色） */
+  --icon-stroke: #111111;                          /* 边框线：黑（同参考图标） */
+  stroke-width: 0.9;
+  flex-shrink: 0;
+}
+/* 热度排名分档配色：越热越靠上（前 10% 紫 → 前 60% 蓝 → 其余青）。
+   无排名（无人数数据/不在女优榜）时保持上面的品牌红默认值。 */
+.idx-flame.t-purple { --icon-fill: #8b46d6; }      /* 前 10% */
+.idx-flame.t-darkred { --icon-fill: #c0121a; }     /* 前 11%~20% */
+.idx-flame.t-lightred { --icon-fill: #f2564d; }    /* 前 21%~30% */
+.idx-flame.t-orange { --icon-fill: #f0812a; }      /* 前 31%~40% */
+.idx-flame.t-gold { --icon-fill: #e0a80d; }        /* 前 41%~50% */
+.idx-flame.t-blue { --icon-fill: #2f6fdb; }        /* 前 51%~60% */
+.idx-flame.t-cyan { --icon-fill: #17b3c9; }        /* 61% 以后 */
+.idx-num { display: flex; flex-direction: column; gap: 1px; }
+.idx-val {
+  font-family: var(--font-display);
+  font-size: 26px; font-weight: 700; line-height: 1.05;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+.idx-cap { font-size: var(--fs-sm); color: var(--muted); }
 
 /* ===== ② 标签类别栏（样式与片库页 TagFilter 一致；圆角与芯片/筛选按钮统一，见 --r-tag） ===== */
 .tag-filter {
