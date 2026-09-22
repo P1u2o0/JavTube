@@ -232,14 +232,15 @@ onMounted(load)
 .r-flame.t-blue { --icon-fill: #2f6fdb; }
 .r-flame.t-cyan { --icon-fill: #17b3c9; }
 
-/* 中间弹性区：想看最多的 3 部影片 */
+/* 中间弹性区：想看最多的 3 部影片，三等分正好铺满（不足 3 部时其余格留空） */
 .r-movies {
   flex: 1; min-width: 0;
-  display: flex; gap: 10px; align-items: center;
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 .r-mv {
-  position: relative; flex: 1; max-width: 168px; min-width: 0;
+  position: relative; width: 100%; min-width: 0;
   aspect-ratio: 16 / 10.6;             /* JAV 封面横版比例 */
   border: 1px solid var(--border); border-radius: var(--r-sm);
   overflow: hidden; padding: 0; cursor: pointer; background: var(--surface-2);
@@ -277,9 +278,8 @@ onMounted(load)
 
 .empty { padding: 40px 0; text-align: center; color: var(--muted); font-size: var(--fs-base); }
 
-/* 窄窗口：影片格子收紧 */
+/* 窄窗口：信息列收紧（海报随行宽自适应缩放） */
 @media (max-width: 1200px) {
   .r-main { width: 118px; }
-  .r-mv { max-width: 140px; }
 }
 </style>
