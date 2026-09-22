@@ -31,16 +31,17 @@
     </div>
     <!-- 加载中提示 -->
     <div v-if="loading" class="loading-tip">加载中…</div>
-    <!-- 分页器：总数超过每页数量时显示 -->
+    <!-- 分页器：总数超过每页数量时显示；右侧显示总页数（页码右侧不放「共 X 条」） -->
     <div v-if="total > pageSize" class="pager">
       <el-pagination
         background
-        layout="prev, pager, next, total"
+        layout="prev, pager, next"
         :total="total"
         :page-size="pageSize"
         :current-page="page"
         @current-change="onPageChange"
       />
+      <span class="pager-total">共 {{ totalPages }} 页</span>
     </div>
   </div>
 </template>
@@ -67,6 +68,9 @@ const props = defineProps({
 // 每张卡片都线性扫一遍选中数组（每页 200 张 = 4 万次比较，且每次勾选都全量重算）。
 // 用 Set 后单次查找 O(1)，多选模式下的勾选/翻页明显变顺。
 const selSet = computed(() => new Set(props.selectedIds || []))
+
+// 总页数（分页器右侧展示用）
+const totalPages = computed(() => Math.max(1, Math.ceil((props.total || 0) / (props.pageSize || 1))))
 
 // 入场动画只在「本次进入页面」的首屏播一次。
 // 卡片是 v-for keyed 渲染，翻页会整批重建 —— 若每次都重播错峰动画（最迟 15×36ms≈540ms
@@ -105,5 +109,7 @@ function onPageChange(p) {
 /* 加载中提示文字样式 */
 .loading-tip { text-align: center; color: var(--muted); padding: 20px; }
 /* 分页器容器：居中显示 */
-.pager { display: flex; justify-content: center; padding: 20px 0; }
+.pager { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 20px 0; }
+/* 分页器右侧总页数：与页码同一行，弱化色 + 等宽数字 */
+.pager-total { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 </style>

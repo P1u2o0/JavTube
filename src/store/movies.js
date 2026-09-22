@@ -163,6 +163,15 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
         })
         if (r.ok && seq === loadSeq) {
           const newMovies = r.data || []
+          const total = Number(r.total) || 0
+          // 页码越界守卫：page 超过实际总页数时后端返回空列表，界面表现为「列表空白」。
+          // 典型成因：其它视图（喜欢/观看记录）留下的页码、详情页删除影片后总页数变少、
+          // 带筛选的结果页数变少。这里收敛到最后一页重取一次（loadSeq 自增，旧响应自动作废）。
+          if (!append && total > 0 && this.page > Math.ceil(total / this.pageSize)) {
+            this.total = total
+            this.page = Math.ceil(total / this.pageSize)
+            return this.loadMovies({ onlyFavorite, extraFilter, append })
+          }
           if (append) {
             // 追加模式：去重后追加
             const existingIds = new Set(this.movies.map(m => m.id))
@@ -171,7 +180,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
             // 替换模式：直接覆盖
             this.movies = newMovies
           }
-          this.total = Number(r.total) || 0
+          this.total = total
         } else {
           console.warn('[store] loadMovies 失败:', r.error)
         }

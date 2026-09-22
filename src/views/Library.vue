@@ -83,7 +83,11 @@ const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onB
 function routeSig(q) {
   return [q.tag || '', q.actress || '', q.director || '', q.studio || '', q.series || '', q.q || ''].join('|')
 }
-// 上一次已应用的筛选签名（模块级，跨挂载保留）
+// 上一次已应用的筛选签名。
+// 注意：它写在 <script setup> 内 → 每次挂载都会重置为 null，所以 onMounted 里
+// `sig === lastAppliedSig` 恒不成立（该分支是防御性保留）。从详情页返回时页码得以
+// 保留，靠的是下面的 fallback 分支 —— 它同样不重置 page。
+// 本变量的实际作用域是「本次挂载内的 watch」：用来区分「同一套筛选（返回）」与「换了筛选」。
 let lastAppliedSig = null
 
 /**
@@ -175,6 +179,11 @@ async function applyRouteFilter(q) {
   // 同步搜索词到 store（loadMovies 统一并入 filter.q；翻页不丢失）
   store.searchQ = q.q || ''
   if (!q.tag && !q.actress && !q.director && !q.studio && !q.series && !q.q) return false
+  // 先清空标签栏的选中态：路由筛选是「从别处跳进来的这一套条件」的唯一来源。
+  // tagSelected 是跨页面保留的，若不清空，上一次在标签栏里选的标签会与本次条件
+  // 形成 AND（如 运动 AND 女大学生），把结果压成 0 条 —— 界面表现为片库空白
+  // （「共找到 0 个结果」），点「全部」清掉标签后才恢复。
+  store.tagSelected = store.tagSelected.map(() => [])
   if (q.tag) {
     // 优先放入该标签所属的分类槽；未归入任何分类的标签（如首页类别按钮
     // 里未配置分类的 2 字标签）兜底放入第一个槽，保证筛选生效
@@ -186,10 +195,7 @@ async function applyRouteFilter(q) {
         break
       }
     }
-    if (!placed) {
-      store.tagSelected = store.tagSelected.map(() => [])
-      store.tagSelected[0] = [q.tag]
-    }
+    if (!placed) store.tagSelected[0] = [q.tag]
   }
   store.page = 1
   const extra = {}

@@ -83,6 +83,9 @@ async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
  */
 onMounted(async () => {
   await store.initIfNeeded()
+  // 页码复位：page 是三个视图共享的，片库可能停在第 N 页；
+  // 带着大页码进来会请求到超出总页数的一页，收藏列表表现为空白
+  store.page = 1
   // 标签库与收藏列表互不依赖，并行拉取，避免串行等待造成的切换卡顿
   await Promise.all([
     store.ensureTagsLoaded(),
