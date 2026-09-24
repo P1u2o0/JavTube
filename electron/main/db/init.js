@@ -102,7 +102,27 @@ function saveDbToDisk(db, dbPath) {
 async function initDb(dataDir) {
   const Sqlite = await getSQL()
   const dbPath = path.join(dataDir, 'app.db')
+  const bakPath = dbPath + '.bak'
+  const tmpPath = dbPath + '.tmp'
   let db
+
+  // 崩溃恢复（2026-09-24 补）：saveDbToDisk 用「双 rename」落盘（.tmp → db → .bak）。
+  // 若恰好死在两次 rename 之间（断电 / 强杀 / rename 抛错后用户直接关了软件），
+  // 磁盘上就没有 app.db，只有 .bak —— 而下面「文件不存在就建空库」会让用户看到整库消失。
+  // 因此这里先把遗留文件恢复回来：
+  //   优先 .tmp —— 它比 .bak 新，且能进到这个分支说明 dbPath 已被改名，
+  //   即 renameSync(tmp, dbPath) 之前的那步 writeFileSync(tmp) 已完整写完。
+  if (!fs.existsSync(dbPath)) {
+    const rescue = fs.existsSync(tmpPath) ? tmpPath : (fs.existsSync(bakPath) ? bakPath : '')
+    if (rescue) {
+      try {
+        fs.renameSync(rescue, dbPath)
+        console.log(`[db] 检测到上次落盘未完成，已从 ${path.basename(rescue)} 恢复数据库`)
+      } catch (e) {
+        console.error('[db] 恢复遗留数据库失败:', e.message)
+      }
+    }
+  }
 
   // 尝试加载已有数据库文件
   if (fs.existsSync(dbPath)) {

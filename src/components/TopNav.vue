@@ -188,17 +188,15 @@ function onLibraryClick() {
   }
 }
 
-// 影片添加成功后的回调：重新加载标签库和影片列表
+// 影片添加成功后的回调：重新加载标签库，并通知当前列表页刷新
 // 触发时机：AddMovieDialog 组件 emit('created') 事件时
 async function onCreated() {
-  // 重新加载数据库中所有标签
+  // 重新加载数据库中所有标签（新增影片可能带来库里没有过的新标签）
   await store.loadAllDbTags()
-  // 重置分页为第一页
-  store.page = 1
-  // 清空当前影片列表
-  store.movies = []
-  // 重新加载影片数据（非追加模式，覆盖已有列表）
-  await store.loadMovies({ append: false })
+  // 由「当前所在的列表页」按自己的筛选条件重载。
+  // 此前这里直接 `store.movies = []` + `loadMovies({ append: false })`：在观看记录/喜欢页新增影片时
+  // 会把这两页的列表覆盖成全库；在带演员/片商筛选的片库页还会丢掉路由筛选。
+  store.requestDataRefresh()
 }
 
 // 搜索处理函数：跳转到片库并携带搜索关键词

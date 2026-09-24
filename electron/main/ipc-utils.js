@@ -1,22 +1,28 @@
 /**
  * @file ipc-utils.js
  * @module electron/main/ipc-utils
- * @description 工具类 IPC 处理器注册模块：视频播放、目录扫描、文件读取（Base64）、
+ * @description 工具类 IPC 处理器注册模块：视频播放、目录扫描、视频时长解析、
  *              系统对话框封装（目录/视频/图片/可执行文件/数据库备份）、在线刮削。
  *              handler 代码自原 index.js 原样迁出（纯移动，逻辑零变更）。
  *              原先闭包引用的模块级变量（db / mainWindow / dataDirForGlobal）
  *              改为通过 ctx 参数注入；mainWindow 以 getter 注入，
  *              与原「运行时读取当前窗口实例」的语义一致。
- * @dependencies electron (ipcMain, dialog, shell), fs, path, ../constants, ../common/ipc-channels, ./scraper
+ * @dependencies electron (dialog, shell, app), fs, path, ../constants, ../common/ipc-channels, ./scraper
  */
 
-const { ipcMain, dialog, shell, app } = require('electron')
+// ipcMain 由 registerUtilsIpc 的参数注入（index.js 传入的即同一对象），此处不再导入
+const { dialog, shell, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { VIDEO_EXTS, COVER_DIR } = require('./constants')
 const IPC = require('../common/ipc-channels')
 const { scrapeMovie } = require('./scraper')
 const { readMp4DurationMinutes } = require('./video-meta')
+
+// 播放时拒绝的扩展名：shell.openPath 会「用系统默认程序打开」，
+// 其中可执行/脚本类等于直接执行它（见 UTILS_PLAY_VIDEO）
+const EXEC_EXTS = ['.exe', '.bat', '.cmd', '.com', '.scr', '.pif', '.msi', '.lnk', '.reg',
+  '.ps1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.cpl', '.jar']
 
 /**
  * 注册工具类 IPC 处理器。
@@ -45,6 +51,12 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       // 先校验视频文件存在——不存在时明确报错（此前静默失败，用户以为「点击无反应」）
       if (!filePath || !fs.existsSync(filePath)) {
         return { ok: false, error: '视频文件不存在，请检查影片的视频路径设置' }
+      }
+      // 只拦可执行/脚本类：正常调用都来自影片记录的 py 字段（视频文件），
+      // 但这条 IPC 的入参由渲染层给出，不做限制时它就是一个「打开任意文件」的原语
+      const ext = path.extname(filePath).toLowerCase()
+      if (EXEC_EXTS.includes(ext)) {
+        return { ok: false, error: `拒绝打开可执行文件（${ext}）` }
       }
       // 查找自定义播放器路径（从数据库 settings 表读取）
       let custom = ''
@@ -102,9 +114,6 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  // === 读取文件并返回 Base64 ===
-  // 渲染进程 → 主进程：读取文件二进制数据并转为 Base64 字符串（用于图片预览等）
-
   // === 读取视频文件时长（分钟，2026-09-09 新增） ===
   // 渲染进程 → 主进程：解析 MP4/M4V/MOV 容器的 mvhd 得到时长；
   // AVI/MKV 等容器返回 data=0（前端显示为未知）
@@ -135,9 +144,11 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
 
   // === 刮削功能 ===
   // 渲染进程 → 主进程：根据番号从网络刮削影片信息
-  // 参数：ph（番号）、source（刮削来源：auto/javbus/javdb）、coverDir（封面保存目录名）
+  // 参数：ph（番号）、source（刮削来源：auto/javbus/javdb）
+  // 封面目录固定用 constants 里的 COVER_DIR —— 此前允许渲染层传 coverDir，
+  // 而它会与番号一起拼进封面保存路径，等于给了个「往任意位置写文件」的口子
   // 刮削选项（预览图下载开关/数量、统计开关）从 settings 表读取，前端无需逐次传递
-  ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, coverDir, skipPreviews }) => {
+  ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, skipPreviews }) => {
     try {
       // 一次性取出全部刮削相关设置（原实现逐键 6 次 db.exec，合并为单次 IN 查询）
       const settings = {}
@@ -153,7 +164,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       if (!Array.isArray(tagMapping)) tagMapping = []
       const r = await scrapeMovie(ph, {
         source: source || 'auto',
-        coverDir: coverDir || COVER_DIR,
+        // coverDir 不传 → 由 scrapeMovie 取默认值 COVER_DIR（不接受渲染层指定）
         dataDir,
         // skipPreviews：补全字段模式且该影片已有预览图时，不必重复下载（10 张/部，批量补全时差别很大）
         downloadPreviews: settings.scrape_previews === 'y' && !skipPreviews,

@@ -106,27 +106,37 @@ function selectAll(v) {
 // 已存在同番号记录时：库中视频路径为空/失效则自动回填，路径有效则跳过。
 // 触发时机：用户点击"导入已选"按钮
 async function onImport() {
-  let ok = 0, filled = 0, skipped = 0
-  for (let i = 0; i < sel.value.length; i++) {
-    const row = sel.value[i]
-    // 获取当前行对应的提取番号
-    const code = codes.value[list.value.indexOf(row)] || ''
+  let ok = 0, filled = 0, skipped = 0, failed = 0
+  let firstErr = ''
+  // 行 → 番号 预先建成 Map：原实现每行都跑一次 list.indexOf(row)，
+  // 上千个文件时是 O(n²) 的查找
+  const codeOf = new Map(list.value.map((row, i) => [row, codes.value[i] || '']))
+  for (const row of sel.value) {
+    const code = codeOf.get(row) || ''
     // 调用后端 API 创建影片记录
     const r = await window.api.createMovie({
       ph: code,                           // 番号
       pm: row.name.replace(/\.[^.]+$/, ''), // 标题（去除文件扩展名）
       py: row.path                         // 视频路径
     })
-    if (r.ok) {
+    if (r && r.ok) {
       if (r.updated) filled++        // 已有记录但路径失效 → 已回填
       else if (r.skipped) skipped++  // 已有记录且路径有效 → 跳过
       else ok++                      // 新建成功
+    } else {
+      // 此前失败完全静默：界面照旧汇总「已导入 N 条」，用户以为全都成功了
+      failed++
+      if (!firstErr) firstErr = r?.error || ''
     }
   }
   const parts = [`已导入 ${ok} 条`]
   if (filled) parts.push(`回填视频路径 ${filled} 条`)
   if (skipped) parts.push(`跳过已存在 ${skipped} 条`)
-  ElMessage.success(parts.join('，') + '；请到详情页补充元数据')
+  if (failed) parts.push(`失败 ${failed} 条${firstErr ? '（' + firstErr + '）' : ''}`)
+  const tail = '；请到详情页补充元数据'
+  // 有失败时用 warning：绿色成功提示会把失败项盖过去
+  if (failed) ElMessage.warning(parts.join('，') + tail)
+  else ElMessage.success(parts.join('，') + tail)
   emit('selected', {})
 }
 

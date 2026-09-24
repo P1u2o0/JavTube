@@ -24,8 +24,9 @@
 
     <!-- 主行：绿=海报展示区（左） + 蓝=影片信息卡（右） -->
     <div class="main-row">
-      <!-- 绿：海报展示区：框体大小按海报比例计算并强制放大到窗口的 92vh/75vw
-           （小分辨率海报按此系数适度放大）。悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
+      <!-- 绿：海报展示区：框体按海报原始比例等比放大，系数取「视口剩余高度（100vh − 300px）
+           与 56vw 宽度」中的较小值（见 boxW/boxH 的计算），小分辨率海报也能适度放大。
+           悬停变暗 + 播放按钮与片库卡片一致，点击播放 -->
       <div class="main-image" :style="{ width: boxW + 'px', height: boxH + 'px' }">
         <img v-if="cover && !imgErr" :src="cover" @load="onPosterLoad" @error="imgErr = true" />
         <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
@@ -199,8 +200,8 @@ const editShow = ref(false)    // 编辑对话框显示状态
 const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 海报加载失败标志
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
-// 海报框尺寸：按海报原始比例计算并强制放大——目标为窗口的 92vh 高 / 75vw 宽
-// （小分辨率海报按此系数适度放大），窗口 resize 时重算。默认 2:3 兜底。
+// 海报框尺寸：按海报原始比例等比放大——系数取「视口剩余高度 (100vh − 300px)」
+// 与「56vw 宽度」中的较小值（见 load 之后的 scale 计算），窗口 resize 时重算。默认 2:3 兜底。
 const boxW = ref(413)
 const boxH = ref(620)
 const posterNatural = ref(null)  // 海报原始像素尺寸 { w, h }
@@ -486,12 +487,15 @@ async function toggleFav() {
  * 删除影片（带二次确认）
  */
 async function onDel() {
+  // 确认框单独 try：用户点「取消」是正常路径，不能和真正的删除失败混在一个 catch 里
+  // （原实现把两者一起吞掉 → 删除失败时仍提示「已删除」并跳回片库，用户以为删掉了）
   try {
     await ElMessageBox.confirm('确定删除？', '提示', { type: 'warning' })
-    await window.api.deleteMovie(m.value.id)
-    ElMessage.success('已删除')
-    router.replace('/library')
-  } catch {}
+  } catch { return }   // 用户取消
+  const r = await window.api.deleteMovie(m.value.id).catch(() => null)
+  if (!r || !r.ok) return ElMessage.error(r?.error || '删除失败')
+  ElMessage.success('已删除')
+  router.replace('/library')
 }
 
 /**

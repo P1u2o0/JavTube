@@ -42,7 +42,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useMoviesStore } from '@/store/movies'
 import { useMovieList } from '@/composables/useMovieList'
 import StatusBar from '@/components/StatusBar.vue'
@@ -53,7 +53,8 @@ const store = useMoviesStore()
 // 公共列表交互：批量选中切换 / 翻页（历史页固定加载 historyOnly）/ 详情跳转
 // onPlay / onBatchDelete / onBatchFav 由 composable 统一提供
 const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag, onBatchScrape } = useMovieList(store, {
-  buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true } }),
+  // useTags/useSearch 关掉：本页没有标签栏与搜索框，片库留下的筛选条件会静默过滤本页
+  buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true }, useTags: false, useSearch: false }),
   onRefresh: () => loadHistory()
 })
 
@@ -67,7 +68,11 @@ async function loadHistory() {
   store.page = 1
   await store.loadMovies({
     append: false,
-    extraFilter: { historyOnly: true }
+    extraFilter: { historyOnly: true },
+    // 本页无标签筛选栏、无搜索框：不带全局筛选条件，否则片库选中的标签/搜索词
+    // 会把观看记录静默过滤成 0 条（用户看到的是「还没有观看记录」）
+    useTags: false,
+    useSearch: false
   })
 }
 
@@ -96,8 +101,15 @@ async function onFav(m) { await store.toggleFav(m.id) }
  */
 onMounted(async () => {
   await store.initIfNeeded()
+  // 批量模式属于「某一个列表页」的临时状态：从片库带着多选态切进来，会对着本页看不见的
+  // 选中项执行批量删除/收藏（selectedIds 还是片库那批），故进入本页即退出批量模式
+  store.selectMode = false
+  store.selectedIds = []
   // 设置排序：按播放时间倒序
   store.sort = { by: 'play_time', order: 'DESC', random: false }
   await loadHistory()
 })
+
+// 顶栏新增影片后：按本页自己的筛选条件重载（不能由顶栏直接 loadMovies，那会把列表换成全库）
+watch(() => store.dataToken, () => loadHistory())
 </script>

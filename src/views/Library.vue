@@ -212,6 +212,10 @@ async function applyRouteFilter(q) {
  */
 onMounted(async () => {
   await store.initIfNeeded()
+  // 批量模式是「某一个列表页」的临时状态：上次离开片库时若开着多选，回来会带着一批
+  // 早已不可见的选中项（选中项按当前页指令处理，换页后它们不在列表里），故进入即退出
+  store.selectMode = false
+  store.selectedIds = []
   // 标签库与影片列表互不依赖，并行拉取，减少切换页面时的等待
   // 挂载只需拿到标签（有守卫，已加载过就不再拉）；写操作路径仍用 loadAllDbTags() 强制刷新
   const tagsP = store.ensureTagsLoaded()
@@ -254,6 +258,9 @@ watch(() => store.libraryResetToken, async () => {
   lastAppliedSig = routeSig(route.query)
   await onRefresh()
 })
+
+// 顶栏新增影片后：按本页当前的路由筛选重载（不能由顶栏直接 loadMovies，那会丢掉 actress/studio 等筛选）
+watch(() => store.dataToken, () => onRefresh())
 </script>
 
 <style scoped>

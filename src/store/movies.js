@@ -49,7 +49,12 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
 
     // 片库重置信号：顶栏点「片库」时自增，Library 监听它把筛选/页码复位后重新加载。
     // 用信号而不是路由 query —— 路由本来就是 /library（无 query）时 push 不产生任何变化
-    libraryResetToken: 0
+    libraryResetToken: 0,
+
+    // 数据刷新信号：新增影片等「当前列表该重载了」的场景由顶栏自增，
+    // 各列表视图监听后**按自己的筛选参数**重载（Library 带路由筛选、喜欢只拉收藏、历史只拉观看记录）。
+    // 若改成由顶栏直接 loadMovies，会把当前页面的列表覆盖成全库（喜欢/历史页尤其明显）。
+    dataToken: 0
   }),
 
   // ====== 计算属性 ======
@@ -142,9 +147,11 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      * @param {boolean} opts.onlyFavorite - 仅加载收藏影片
      * @param {Object} opts.extraFilter - 额外筛选条件（如 actress、studio、series、historyOnly）
      * @param {boolean} opts.append - 是否追加模式（分页加载更多时为 true）
+     * @param {boolean} opts.useTags - 是否带上标签栏的选中标签（默认 true）
+     * @param {boolean} opts.useSearch - 是否带上顶栏搜索词（默认 true）
      * @returns {Promise<void>}
      */
-    async loadMovies({ onlyFavorite = false, extraFilter = {}, append = false } = {}) {
+    async loadMovies({ onlyFavorite = false, extraFilter = {}, append = false, useTags = true, useSearch = true } = {}) {
       if (!window.api) { this.movies = []; this.total = 0; return }
       // 加载序号：连续点翻页/快速切筛选时会有多个请求同时在飞，只让**最后一次**的结果生效。
       // 否则先发的慢请求后返回，会把新一页的数据覆盖回旧页（表现为「翻页跳来跳去」）。
@@ -152,8 +159,13 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
       this.loading = true
       try {
         // 合并标签筛选与额外筛选条件；搜索词并入 filter.q（主进程按番号/片名/标签 LIKE）
-        const filter = { tagSelected: JSON.parse(JSON.stringify(this.tagSelected)), ...extraFilter }
-        if (this.searchQ) filter.q = this.searchQ
+        //
+        // useTags / useSearch：tagSelected 与 searchQ 是**跨视图共享**的，而「观看记录」没有标签栏
+        // 和搜索框、「喜欢」没有搜索框。这两页必须关掉对应的开关，否则片库留下的筛选会把它们
+        // 静默过滤小（实测：观看记录 14 条 → 0 条，页面还显示「还没有观看记录」，用户无从察觉）。
+        // 这里只是「本次请求不带」，**不清空** store —— 回到片库时筛选照旧生效。
+        const filter = { tagSelected: useTags ? JSON.parse(JSON.stringify(this.tagSelected)) : [], ...extraFilter }
+        if (useSearch && this.searchQ) filter.q = this.searchQ
         const r = await window.api.getMovies({
           filter,
           sort: JSON.parse(JSON.stringify(this.sort)),
@@ -170,7 +182,8 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
           if (!append && total > 0 && this.page > Math.ceil(total / this.pageSize)) {
             this.total = total
             this.page = Math.ceil(total / this.pageSize)
-            return this.loadMovies({ onlyFavorite, extraFilter, append })
+            // 重取时必须原样带上 useTags / useSearch，否则收敛后的这一页会换回全局筛选条件
+            return this.loadMovies({ onlyFavorite, extraFilter, append, useTags, useSearch })
           }
           if (append) {
             // 追加模式：去重后追加
@@ -225,6 +238,14 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
     requestLibraryReset() {
       this.resetAll()
       this.libraryResetToken++
+    },
+
+    /**
+     * 通知各列表视图「数据变了，按自己的筛选条件重载一次」。
+     * 目前由顶栏在新增影片成功后调用（见 TopNav.onCreated）。
+     */
+    requestDataRefresh() {
+      this.dataToken++
     },
 
     /**

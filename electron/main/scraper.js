@@ -7,8 +7,7 @@
  * @keyAPI curlGet()(net-curl.js), twToCn(), inteHandler(), scrapeMovie()
  */
 
-// 引入 Electron 内置的 net 模块用于 HTTP 请求（支持 fetch API）
-// 网络层改用系统 curl（见 net-curl.js 说明：Cloudflare 按 TLS 指纹放行 curl，
+// 网络层：系统 curl（见 net-curl.js 说明：Cloudflare 按 TLS 指纹放行 curl，
 // 而 Electron net.fetch / Node https 的指纹被拦截）
 const { curlGet, curlDownload, curlAvailable } = require('./net-curl')
 const fs = require('fs')
@@ -16,9 +15,6 @@ const path = require('path')
 const { URL } = require('url')
 // 封面目录名等共享常量（集中定义于 constants.js）
 const { COVER_DIR } = require('./constants')
-
-// 模拟浏览器请求的 User-Agent 字符串，避免被网站拦截
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 
 // 支持的刮削网站来源列表
 const WEB_SOURCES = [
@@ -544,6 +540,23 @@ function applyTagMapping(bq, mapping) {
 }
 
 /**
+ * 净化「拼进文件名」的片段。
+ *
+ * 番号、演员名都会参与拼接封面/头像的保存路径（path.join(coversDir, 片段 + ext)），
+ * 而演员名与头像文件名来自**网页数据**：含 `\`（Windows 同样是分隔符）或 `..` 时
+ * 能越出 covers 目录写到任意位置。这里只清路径分隔与 Windows 非法字符，
+ * 保留中文、点、百分号等合法内容，不影响正常番号与演员名。
+ * @param {*} s - 原始片段
+ * @returns {string} 可用于文件名的安全片段
+ */
+function safeName(s) {
+  return String(s ?? '').trim()
+    .replace(/[\\/:*?"<>|]/g, '')   // 路径分隔与 Windows 非法字符
+    .replace(/\.\./g, '')           // 目录回溯
+    .slice(0, 80)                   // 长度上限，避免超长路径
+}
+
+/**
  * 影片刮削主入口函数。
  * 根据番号和指定的来源，从相应网站获取影片信息，并下载封面图片到本地。
  * @param {string} ph - 影片番号
@@ -564,7 +577,8 @@ async function scrapeMovie(ph, {
   downloadPreviews = false, previewCount = 0, fetchStats = true, tagMapping = [],
   javdbCookie = '', proxy = ''
 } = {}) {
-  const cleanPh = ph.trim()
+  // cleanPh 会拼进封面/预览图的保存路径，必须先净化（见 safeName）
+  const cleanPh = safeName(ph)
   if (!cleanPh) return { ok: false, error: '番号不能为空' }
 
   // 判断影片类型
@@ -651,7 +665,8 @@ async function scrapeMovie(ph, {
           for (const c of result.cast) {
             if (!c.avatar || !/^https?:/.test(c.avatar)) { c.avatar = ''; delete c.star; continue }
             const sid = (String(c.star || '').match(/\/star\/([^/?#]+)/) || [])[1]
-            const aBase = sid || `${cleanPh}-${c.name}`
+            // sid 与演员名都来自网页数据，拼文件名前一律净化（防 `..` / `\` 越界写文件）
+            const aBase = safeName(sid) || `${cleanPh}-${safeName(c.name)}`
             const aExt = c.avatar.match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
             const rel = path.join(coverDir || COVER_DIR, 'actress', `${aBase}${aExt}`)
             try {

@@ -52,15 +52,6 @@ function sample(arr, n) {
 }
 
 /**
- * 校验是否为「恰好两个汉字」的标签（首页类别按钮只从这类标签中挑选）。
- * @param {string} t - 标签
- * @returns {boolean}
- */
-function isTwoCharTag(t) {
-  return /^[\u4e00-\u9fa5]{2}$/.test(String(t || ''))
-}
-
-/**
  * 注册首页推荐的 IPC 处理器。
  * @param {Object} ipcMain - Electron ipcMain 对象
  * @param {Object} db - sql.js 数据库实例
