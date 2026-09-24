@@ -36,6 +36,9 @@ module.exports = {
   ACTOR_FILMS: 'actor:films',
   // 2026-09-22 演员页总览：全库女优（作品数/热度排名/各自身上想看最多的 3 部影片）
   ACTOR_OVERVIEW: 'actor:overview',
+  // 2026-09-24 女优头像补全：列出缺头像（无图/占位图）的女优 / 按名字从 JAVDB 补一位
+  ACTRESS_AVATAR_TODO: 'actress:avatarTodo',
+  ACTRESS_AVATAR_FILL: 'actress:avatarFill',
 
   // === 设置 ===
   SETTINGS_GET: 'settings:get',

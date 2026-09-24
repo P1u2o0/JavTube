@@ -155,6 +155,22 @@ contextBridge.exposeInMainWorld('api', {
    */
   getActressOverview: () => ipcRenderer.invoke(IPC.ACTOR_OVERVIEW),
 
+  /**
+   * 列出需要补头像的女优（2026-09-24）：cast_json 里没头像 / 文件缺失 / 是来源站占位图
+   * @returns {Promise<{ok:boolean,data:Array<{name:string,count:number,reason:string}>}>}
+   *          reason ∈ '无头像' | '文件缺失' | '占位图'，按作品数降序
+   */
+  getAvatarTodo: () => ipcRenderer.invoke(IPC.ACTRESS_AVATAR_TODO),
+
+  /**
+   * 从 JAVDB 补一位女优的头像（2026-09-24）。
+   * 渲染层按 getAvatarTodo 的列表逐条调用，便于显示进度与逐条失败原因。
+   * @param {string} name - 女优名
+   * @returns {Promise<{ok:boolean,data?:{name,path,movies,actorId,note},error?:string}>}
+   *          movies = 本次更新的影片条数；失败时 error 说明原因（如「JAVDB 该演员无头像」）
+   */
+  fillAvatar: (name) => ipcRenderer.invoke(IPC.ACTRESS_AVATAR_FILL, name),
+
   // === 设置相关接口 ===
 
   /**

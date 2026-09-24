@@ -258,7 +258,7 @@ app.whenReady().then(async () => {
       dataDir: dataDirForGlobal
     })                                                              // 工具类 IPC
     registerMovieIpc(ipcMain, db)                                   // 影片数据 IPC
-    registerActressIpc(ipcMain, db)                                 // 女优数据 IPC
+    registerActressIpc(ipcMain, db, dataDirForGlobal)                // 女优数据 IPC（含补全头像：要写 covers/actress）
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
     registerHomeIpc(ipcMain, db)                                    // 首页推荐 IPC
     console.log('[main] IPC OK')

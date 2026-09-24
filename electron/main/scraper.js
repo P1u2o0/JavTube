@@ -155,9 +155,10 @@ async function fetchHtml(url, { referer, cookie, proxy } = {}) {
  */
 async function downloadImage(url, savePath, referer, proxy) {
   // 图床与主站的网络路径不同，按域名决定优先级，另一种方式兜底：
-  //   - 刮削主站自家图片（javbus/javdb 的 /pics/...）→ 走代理优先（主站本身需代理）
+  //   - 刮削主站自家图片（javbus/javdb 的 /pics/...，以及 JAVDB 的图床 jdbstatic.com）
+  //     → 走代理优先（主站与图床都需代理；实测 jdbstatic 直连 HTTP 000、代理 200）
   //   - 第三方图床（DMM 等，样本图常用）→ 直连优先（经代理连接失败）
-  const isMainSite = /javbus\.com|javdb\.com/i.test(url)
+  const isMainSite = /javbus\.com|javdb\.com|jdbstatic\.com/i.test(url)
   const tries = isMainSite ? [proxy, ''] : ['', proxy]
   let last = null
   for (const px of tries) {
@@ -169,8 +170,44 @@ async function downloadImage(url, savePath, referer, proxy) {
   throw new Error(last?.error || '图片下载失败')
 }
 
-async function scrapeJavBus(ph, type, opts = {}) {
-  const proxy = opts.proxy || ''
+/**
+ * 按演员名从 JAVDB 取头像，供「补全缺失头像」使用。
+ *
+ * 两步：
+ *   ① `/search?q=<名字>&f=actor` → 结果里 `<a href="/actors/<id>" title="<名字>">`
+ *   ② 演员页 `.column.actor-avatar .avatar { background-image: url(...) }`
+ *
+ * 注意：演员页**存在也未必有头像**（该演员在 JAVDB 确实没照片，页面里没有 avatar 区块），
+ * 此时返回 ok:false —— 调用方应据此跳过，不要写入空图。
+ * @param {string} name - 演员名
+ * @param {Object} [opts] - { proxy, cookie }（JAVDB 需代理 + Cookie，与 scraper:scrape 同源）
+ * @returns {Promise<{ok:boolean, id?:string, url?:string, note?:string, error?:string}>}
+ */
+async function fetchActorAvatar(name, { proxy = '', cookie = '' } = {}) {
+  const base = 'https://javdb.com'
+  const q = String(name || '').trim()
+  if (!q) return { ok: false, error: '演员名为空' }
+  try {
+    const search = await fetchHtml(`${base}/search?q=${encodeURIComponent(q)}&f=actor`,
+      { proxy, cookie, referer: base + '/' })
+    // 优先精确匹配 title="名字"；演员页的 title 可能是别名列表（「别名, 本名」），
+    // 这时退而取第一条，并把实际匹配到的名字回报给调用方
+    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const exact = new RegExp(`href="/actors/([A-Za-z0-9]+)"[^>]*title="${esc}"`).exec(search)
+    const any = /href="\/actors\/([A-Za-z0-9]{3,})"[^>]*title="([^"]*)"/.exec(search)
+    const id = (exact && exact[1]) || (any && any[1])
+    if (!id) return { ok: false, error: 'JAVDB 未找到该演员' }
+    const page = await fetchHtml(`${base}/actors/${id}`, { proxy, cookie, referer: base + '/' })
+    const m = /class="avatar"\s+style="background-image:\s*url\(([^)]+)\)/.exec(page)
+    if (!m) return { ok: false, error: 'JAVDB 该演员无头像', id }
+    const url = m[1].replace(/^['"]|['"]$/g, '').trim()
+    return { ok: true, id, url, note: exact ? '' : (any && any[2] ? `按「${any[2]}」匹配` : '') }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+}
+
+async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || ''
   const baseUrl = 'https://www.javbus.com'
   let targetUrl
 
@@ -714,4 +751,4 @@ async function scrapeMovie(ph, {
   return { ok: false, error: lastError || '未找到该番号的信息' }
 }
 
-module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping }
+module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage }

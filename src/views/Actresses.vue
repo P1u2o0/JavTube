@@ -18,6 +18,10 @@
     <div class="page-head">
       <h3>演员 <span class="cnt" v-if="list.length">{{ list.length }}</span></h3>
       <div class="head-right">
+        <!-- 补全缺失头像：从 JAVDB 取（无头像 / 占位图的那批），逐条驱动并显示进度 -->
+        <button class="fill-btn" :disabled="filling" title="从 JAVDB 补全缺失的女优头像" @click="onFillAvatars">
+          <AppIcon name="import" :size="14" /><span>{{ fillText }}</span>
+        </button>
         <span class="sort-hint">{{ view === 'grid' ? '按作品数量排序' : '按热度指数排序' }}</span>
         <div class="view-toggle">
           <button :class="{ on: view === 'grid' }" @click="switchView('grid')" title="显示所有女优头像">
@@ -84,6 +88,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { resolveCover } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
 
@@ -132,6 +137,42 @@ watch(() => route.query, (q) => {
   if (q.hl || q.view) load()
 })
 
+/**
+ * 补全缺失头像：无头像 / 文件缺失 / 占位图 → 从 JAVDB 取真实头像。
+ * 先取清单再逐条补，逐条更新按钮文案显示进度（与批量刮削同一套「渲染层驱动循环」约定）。
+ */
+const filling = ref(false)
+const fillText = ref('补全头像')
+async function onFillAvatars() {
+  if (filling.value) return
+  const t = await window.api.getAvatarTodo().catch(() => null)
+  if (!t?.ok) return ElMessage.error(t?.error || '读取缺失清单失败')
+  const todo = t.data || []
+  if (!todo.length) return ElMessage.success('所有女优都已有头像')
+  filling.value = true
+  let ok = 0
+  const failed = []
+  try {
+    for (let i = 0; i < todo.length; i++) {
+      fillText.value = `补全中 ${i + 1}/${todo.length}`
+      const r = await window.api.fillAvatar(todo[i].name).catch(() => null)
+      if (r?.ok) ok++
+      else failed.push(`${todo[i].name}：${r?.error || '失败'}`)
+    }
+  } finally {
+    filling.value = false
+    fillText.value = '补全头像'
+  }
+  // 重载列表以显示新头像（主进程已清掉总览缓存）
+  await load()
+  if (failed.length) {
+    const head = failed.slice(0, 4).join('；')
+    ElMessage.warning(`已补全 ${ok} 位，${failed.length} 位未补上（${head}${failed.length > 4 ? ' 等' : ''}）`)
+  } else {
+    ElMessage.success(`已补全 ${ok} 位女优头像`)
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -160,6 +201,19 @@ onMounted(load)
 .view-toggle button:hover { color: var(--text); }
 .view-toggle button.on { background: var(--primary); color: #fff; }
 .view-toggle button:active { transform: scale(0.97); }
+
+/* ===== 补全缺失头像 ===== */
+.fill-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 14px; margin-right: 12px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text-2);
+  font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.fill-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.fill-btn:active:not(:disabled) { transform: scale(0.97); }
+.fill-btn:disabled { opacity: .65; cursor: default; }
 
 /* ===== ① 头像墙 ===== */
 .avatar-wall {

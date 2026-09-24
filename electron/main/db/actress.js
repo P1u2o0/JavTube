@@ -2,10 +2,11 @@
  * @file actress.js
  * @module electron/main/db/actress
  * @description 女优数据的 IPC 处理器注册模块。提供女优的列表查询、
- *              详情查询（含参演影片，通过 movies.yid 演员名匹配）、增删改。
+ *              详情查询（含参演影片，通过 movies.yid 演员名匹配）、增删改，
+ *              以及「补全缺失头像」（无头像/占位图 → 从 JAVDB 取真实头像）。
  *              handler 代码自原 movies.js 原样移入（轮次 3 按领域拆分），
  *              IPC 通道名保持不变：actress:list / get / create / update / delete。
- * @dependencies electron (ipcMain), ./util
+ * @dependencies electron (ipcMain), fs, path, crypto, ./util, ../constants, ../scraper
  * @keyAPI db.exec(), db.run(), persist()
  */
 
@@ -13,6 +14,13 @@
 const { rows, firstRow, firstScalar, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
+const fs = require('fs')
+const path = require('path')
+const crypto = require('crypto')
+// 封面/头像目录名（dataDir 下的子目录，集中定义于 constants.js）
+const { COVER_DIR } = require('../constants')
+// 头像来源（JAVDB 演员页）+ 图片下载（含主站图床走代理的判断）
+const { fetchActorAvatar, downloadImage } = require('../scraper')
 
 /**
  * 热度分档（演员页火焰配色）：按「前 X%」从热到冷。
@@ -177,7 +185,128 @@ function overviewCached(db) {
  * @param {Object} ipcMain - Electron ipcMain 对象
  * @param {Object} db - sql.js 数据库实例
  */
-function registerActressIpc(ipcMain, db) {
+/* ===================== 女优头像补全（2026-09-24） =====================
+ * 背景：头像是在刮削影片时随 cast_json 一起存下来的（covers/actress/<sid>.jpg）。
+ *       两种情况会让界面出现「空白头像」：
+ *         ① cast_json 的 avatar 为空 → 前端显示灰色剪影；
+ *         ② 来源站对该女优没有照片，返回的是同一张「Now Printing」占位图（多个女优共用一张）。
+ *       两者都可以用 JAVDB 的演员页头像补上（JAVBUS 缺图的人 JAVDB 往往有）。
+ */
+
+/**
+ * 全库女优的头像现状：姓名 → { avatar, count }。
+ * 口径与 computeOverview 一致：cast_json 优先，缺 cast_json 时回退拆 yid。
+ */
+function avatarStateOf(db) {
+  const res = db.exec('SELECT yid, cast_json FROM movies')[0]
+  const acc = new Map()
+  if (!res) return acc
+  const col = {}
+  res.columns.forEach((c, i) => { col[c] = i })
+  for (const r of res.values) {
+    let names = []
+    let parsed = false
+    try {
+      const cast = JSON.parse(r[col.cast_json] || '[]')
+      if (Array.isArray(cast) && cast.length) {
+        parsed = true
+        names = cast.filter(c => c && c.name && (c.gender || 'f') !== 'm')
+      }
+    } catch {}
+    if (!parsed) names = String(r[col.yid] || '').split(/[，,]/).map(s => s.trim()).filter(Boolean).map(nm => ({ name: nm, avatar: '' }))
+    for (const c of new Map(names.map(n => [n.name, n])).values()) {
+      const e = acc.get(c.name) || { avatar: '', count: 0 }
+      if (!e.avatar && c.avatar) e.avatar = c.avatar
+      e.count += 1
+      acc.set(c.name, e)
+    }
+  }
+  return acc
+}
+
+/**
+ * 列出「需要补头像」的女优：avatar 为空 / 文件不存在 / 文件是来源站占位图。
+ * 占位图判定：同一个内容 md5 被 ≥3 位女优共用（来源站对无照片者返回同一张图）。
+ * 不用写死哈希，站点换占位图也能识别。
+ * @returns {Array<{name:string, count:number, reason:string}>} 按作品数降序
+ */
+function avatarTodoOf(db, dataDir) {
+  const acc = avatarStateOf(db)
+  const hashCount = new Map()   // 内容 md5 → 出现次数
+  const fileHash = new Map()    // 姓名 → 内容 md5（空串表示文件缺失/读不到）
+  for (const [name, e] of acc) {
+    if (!e.avatar) continue
+    const abs = path.join(dataDir, e.avatar.replace(/\\/g, '/'))
+    try {
+      const h = crypto.createHash('md5').update(fs.readFileSync(abs)).digest('hex')
+      fileHash.set(name, h)
+      hashCount.set(h, (hashCount.get(h) || 0) + 1)
+    } catch { fileHash.set(name, '') }
+  }
+  const shared = new Set([...hashCount].filter(([, n]) => n >= 3).map(([h]) => h))
+  const todo = []
+  for (const [name, e] of acc) {
+    if (!e.avatar) { todo.push({ name, count: e.count, reason: '无头像' }); continue }
+    const h = fileHash.get(name)
+    if (!h) { todo.push({ name, count: e.count, reason: '文件缺失' }); continue }
+    if (shared.has(h)) todo.push({ name, count: e.count, reason: '占位图' })
+  }
+  todo.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh'))
+  return todo
+}
+
+/** 取该演员当前的头像相对路径（cast_json 里第一个非空），没有则空串 */
+function currentAvatarOf(db, name) {
+  const res = db.exec('SELECT cast_json FROM movies WHERE cast_json LIKE ?', [`%"name":"${name}"%`])[0]
+  if (!res) return ''
+  for (const [cj] of res.values) {
+    try {
+      const hit = (JSON.parse(cj || '[]') || []).find(c => c && c.name === name && c.avatar)
+      if (hit) return hit.avatar
+    } catch {}
+  }
+  return ''
+}
+
+/**
+ * 把某演员在所有影片 cast_json 里的 avatar 写成 relPath。
+ * 必须是「所有出现处」——演员页与女优总览都是扫描 cast_json 取第一个非空值，
+ * 只改一处会让不同入口显示不同头像。
+ * @returns {number} 实际更新的影片条数
+ */
+function applyAvatarToCast(db, name, relPath) {
+  const res = db.exec('SELECT id, cast_json FROM movies')[0]
+  if (!res) return 0
+  let touched = 0
+  for (const [id, cj] of res.values) {
+    let cast
+    try { cast = JSON.parse(cj || '[]') } catch { continue }
+    if (!Array.isArray(cast) || !cast.length) continue
+    let changed = false
+    for (const c of cast) {
+      if (c && c.name === name && c.avatar !== relPath) { c.avatar = relPath; changed = true }
+    }
+    if (changed) { db.run('UPDATE movies SET cast_json=? WHERE id=?', [JSON.stringify(cast), id]); touched++ }
+  }
+  return touched
+}
+
+/** 图片内容校验：确认下载到的确实是图片（避免把错误页/占位 GIF 当头像存下） */
+function looksLikeImage(buf) {
+  if (!buf || buf.length < 1200) return false
+  const jpeg = buf[0] === 0xFF && buf[1] === 0xD8
+  const png = buf[0] === 0x89 && buf[1] === 0x50
+  const webp = buf.length > 12 && buf.subarray(8, 12).toString('latin1') === 'WEBP'
+  return jpeg || png || webp
+}
+
+/**
+ * 注册女优相关的 IPC 处理器。
+ * @param {Object} ipcMain - Electron ipcMain 对象
+ * @param {Object} db - sql.js 数据库实例
+ * @param {string} [dataDir] - 数据目录（补全头像时读写 covers/actress）
+ */
+function registerActressIpc(ipcMain, db, dataDir) {
 
   // IPC: actress:list — 渲染进程 → 主进程
   // 获取所有女优列表（按名称排序）
@@ -289,6 +418,57 @@ function registerActressIpc(ipcMain, db) {
   ipcMain.handle(IPC.ACTOR_OVERVIEW, () => {
     try { return { ok: true, data: overviewCached(db) } }
     catch (e) { return { ok: false, error: e.message, data: [] } }
+  })
+
+  // IPC: actress:avatarTodo — 列出缺头像的女优（无头像 / 文件缺失 / 占位图）
+  ipcMain.handle(IPC.ACTRESS_AVATAR_TODO, () => {
+    try {
+      if (!dataDir) return { ok: false, error: '未取到数据目录', data: [] }
+      return { ok: true, data: avatarTodoOf(db, dataDir) }
+    } catch (e) { return { ok: false, error: e.message, data: [] } }
+  })
+
+  // IPC: actress:avatarFill — 从 JAVDB 补一位女优的头像（2026-09-24）
+  // 由渲染层驱动循环调用（与批量刮削同一套约定），便于逐条显示进度与失败原因
+  ipcMain.handle(IPC.ACTRESS_AVATAR_FILL, async (_e, name) => {
+    const nm = String(name || '').trim()
+    if (!nm) return { ok: false, error: '演员名为空' }
+    if (!dataDir) return { ok: false, error: '未取到数据目录' }
+    try {
+      // 代理与 JAVDB Cookie：与 scraper:scrape 读同一套设置（JAVDB 需代理 + Cookie）
+      const st = {}
+      try {
+        const rs = db.exec(`SELECT key, value FROM settings WHERE key IN ('javdb_cookie','proxy_enabled','proxy_url')`)
+        for (const row of (rs[0]?.values || [])) st[row[0]] = row[1]
+      } catch {}
+      const proxy = st.proxy_enabled === 'y' ? (st.proxy_url || '') : ''
+      const cookie = st.javdb_cookie || ''
+
+      const got = await fetchActorAvatar(nm, { proxy, cookie })
+      if (!got.ok) return { ok: false, error: got.error }
+
+      // 已有头像文件且扩展名一致 → 直接覆盖它（不留孤儿文件）；否则用 actorId 命名新建
+      const cur = currentAvatarOf(db, nm).replace(/\\/g, '/')
+      const ext = (got.url.match(/\.(jpg|jpeg|png|webp)$/i) || ['.jpg'])[0]
+      const rel = cur && cur.toLowerCase().endsWith(ext) ? cur : `${COVER_DIR}/actress/${got.id}${ext}`
+      const abs = path.join(dataDir, rel)
+      fs.mkdirSync(path.dirname(abs), { recursive: true })
+      // 先下到 .tmp、校验后再改名：中途失败不会破坏已有头像
+      const tmp = abs + '.tmp'
+      await downloadImage(got.url, tmp, `https://javdb.com/actors/${got.id}`, proxy)
+      const buf = fs.readFileSync(tmp)
+      if (!looksLikeImage(buf)) {
+        try { fs.unlinkSync(tmp) } catch {}
+        return { ok: false, error: '下载到的不是有效图片' }
+      }
+      fs.renameSync(tmp, abs)
+      const touched = applyAvatarToCast(db, nm, rel)
+      persistSoon(db)
+      // 女优总览的缓存指纹只看「影片条数 + 最大 id」，改 cast_json 不会让它失效 → 手动清一次，
+      // 否则补完后界面最长 60 秒仍显示旧头像
+      ovCache.key = ''
+      return { ok: true, data: { name: nm, path: rel, movies: touched, actorId: got.id, note: got.note || '' } }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 }
 
