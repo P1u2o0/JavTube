@@ -18,7 +18,7 @@
     <div class="actor-head">
       <BackButton class="head-back" />
       <div class="ah-avatar">
-        <img :src="avatarUrl" :alt="name" />
+        <img :src="avatarUrl" :alt="name" @error="avatarBroken = true" />
       </div>
       <div class="ah-main">
         <div class="ah-name">{{ name }}</div>
@@ -150,8 +150,11 @@ const DEFAULT_AVATAR = {
   m: import.meta.env.BASE_URL + 'actor-male.svg'
 }
 
+/** 头像文件缺失/损坏时置真 → 回落本地剪影（统一显示：没有可用的真实照片就显示剪影，不留破图） */
+const avatarBroken = ref(false)
+
 /** 演员头像：有本地头像走封面协议，否则按性别用默认剪影 */
-const avatarUrl = computed(() => avatar.value
+const avatarUrl = computed(() => (avatar.value && !avatarBroken.value)
   ? resolveCover(avatar.value)
   : (gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f))
 
@@ -343,6 +346,7 @@ async function load() {
   if (r?.ok) {
     gender.value = r.data.gender || 'f'
     avatar.value = r.data.avatar || ''
+    avatarBroken.value = false      // 换人后重新给新头像一次加载机会
     info.value = r.data.info || null
     films.value = r.data.movies || []
     heatRank.value = r.data.heatRank || null

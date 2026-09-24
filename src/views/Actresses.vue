@@ -38,7 +38,8 @@
     <div v-if="view === 'grid'" class="avatar-wall">
       <button v-for="a in list" :key="a.name" class="a-card" @click="goActor(a.name)" :title="a.name">
         <span class="a-avatar">
-          <img v-if="a.avatar" :src="resolveCover(a.avatar)" :alt="a.name" loading="lazy" />
+          <img v-if="a.avatar && !brokenAvatars[a.name]" :src="resolveCover(a.avatar)" :alt="a.name" loading="lazy"
+               @error="brokenAvatars[a.name] = true" />
           <img v-else :src="DEFAULT_AVATAR.f" :alt="a.name" />
         </span>
         <span class="a-name">{{ a.name }}</span>
@@ -53,7 +54,8 @@
            :class="{ hl: a.name === highlight }" :data-name="a.name">
         <span class="r-no">{{ a.rank ?? '—' }}</span>
         <button class="r-avatar" @click="goActor(a.name)" :title="'查看 ' + a.name + ' 的全部影片'">
-          <img v-if="a.avatar" :src="resolveCover(a.avatar)" :alt="a.name" loading="lazy" />
+          <img v-if="a.avatar && !brokenAvatars[a.name]" :src="resolveCover(a.avatar)" :alt="a.name" loading="lazy"
+               @error="brokenAvatars[a.name] = true" />
           <img v-else :src="DEFAULT_AVATAR.f" :alt="a.name" />
         </button>
         <div class="r-main">
@@ -98,6 +100,12 @@ const router = useRouter()
 /** 默认女优剪影（与演员影片页一致，BASE_URL 相对路径防打包 404） */
 const DEFAULT_AVATAR = { f: import.meta.env.BASE_URL + 'actor-female.svg' }
 
+/**
+ * 头像加载失败的演员（文件缺失/损坏）→ 回落到本地剪影。
+ * 统一显示原则：没有可用的真实照片就显示剪影，绝不留破图。
+ */
+const brokenAvatars = ref({})
+
 /** 视图状态：grid=头像墙（默认）/ rank=热度排行；支持 ?view= 直达 */
 const view = ref(route.query.view === 'rank' ? 'rank' : 'grid')
 const list = ref([])
@@ -118,6 +126,7 @@ function goDetail(id) { router.push('/detail/' + id) }
 async function load() {
   if (!window.api?.getActressOverview) { loading.value = false; return }
   loading.value = true
+  brokenAvatars.value = {}      // 重新给所有头像一次加载机会（补全过 / 文件被修好时能恢复）
   const r = await window.api.getActressOverview().catch(() => null)
   list.value = r?.ok ? (r.data || []) : []
   loading.value = false
@@ -145,32 +154,41 @@ const filling = ref(false)
 const fillText = ref('补全头像')
 async function onFillAvatars() {
   if (filling.value) return
-  const t = await window.api.getAvatarTodo().catch(() => null)
-  if (!t?.ok) return ElMessage.error(t?.error || '读取缺失清单失败')
-  const todo = t.data || []
-  if (!todo.length) return ElMessage.success('所有女优都已有头像')
+  // 先占位再 await：取清单也要花一次 IPC 往返，期间按钮如果还能点就能起第二个循环
   filling.value = true
+  let ran = false
   let ok = 0
+  let cleaned = 0
   const failed = []
   try {
+    const t = await window.api.getAvatarTodo().catch(() => null)
+    if (!t?.ok) { ElMessage.error(t?.error || '读取缺失清单失败'); return }
+    const todo = t.data || []
+    if (!todo.length) { ElMessage.success('所有女优都已有头像'); return }
+    ran = true
     for (let i = 0; i < todo.length; i++) {
       fillText.value = `补全中 ${i + 1}/${todo.length}`
       const r = await window.api.fillAvatar(todo[i].name).catch(() => null)
       if (r?.ok) ok++
+      // 补不到真实头像、但当前存的是来源站占位图 → 主进程已清除它，统一显示剪影
+      else if (r?.cleaned) cleaned++
       else failed.push(`${todo[i].name}：${r?.error || '失败'}`)
     }
   } finally {
     filling.value = false
     fillText.value = '补全头像'
   }
+  if (!ran) return
   // 重载列表以显示新头像（主进程已清掉总览缓存）
   await load()
+  const parts = [`已补全 ${ok} 位`]
+  if (cleaned) parts.push(`${cleaned} 位没有可用照片，已清除并统一显示剪影`)
   if (failed.length) {
     const head = failed.slice(0, 4).join('；')
-    ElMessage.warning(`已补全 ${ok} 位，${failed.length} 位未补上（${head}${failed.length > 4 ? ' 等' : ''}）`)
-  } else {
-    ElMessage.success(`已补全 ${ok} 位女优头像`)
+    parts.push(`${failed.length} 位未补上（${head}${failed.length > 4 ? ' 等' : ''}）`)
   }
+  if (failed.length) ElMessage.warning(parts.join('，'))
+  else ElMessage.success(parts.join('，'))
 }
 
 onMounted(load)

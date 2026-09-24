@@ -19,8 +19,8 @@ const path = require('path')
 const crypto = require('crypto')
 // 封面/头像目录名（dataDir 下的子目录，集中定义于 constants.js）
 const { COVER_DIR } = require('../constants')
-// 头像来源（JAVDB 演员页）+ 图片下载（含主站图床走代理的判断）
-const { fetchActorAvatar, downloadImage } = require('../scraper')
+// 头像来源（JAVDB 演员页）+ 图片下载/内容校验（含主站图床走代理的判断）
+const { fetchActorAvatar, downloadImage, isImageFile } = require('../scraper')
 
 /**
  * 热度分档（演员页火焰配色）：按「前 X%」从热到冷。
@@ -193,6 +193,35 @@ function overviewCached(db) {
  *       两者都可以用 JAVDB 的演员页头像补上（JAVBUS 缺图的人 JAVDB 往往有）。
  */
 
+/** 头像文件的内容指纹（读不到返回空串） */
+function avatarHash(abs) {
+  try { return crypto.createHash('md5').update(fs.readFileSync(abs)).digest('hex') } catch { return '' }
+}
+
+/**
+ * 是否是「GIF 内容 + 非 .gif 文件名」的头像文件。
+ * JAVBUS 对没有照片的女优给的是 nowprinting.gif，而抓取时的扩展名正则不含 gif →
+ * 按 .jpg 存了下来（2026-09-24 实测：文件头是 GIF89a）。真实的女优照片不会是 GIF，
+ * 所以这条判据是**确定的**，而且与「还剩几张」无关。
+ */
+function isGifRenamed(abs) {
+  if (/\.gif$/i.test(abs)) return false
+  try {
+    const fd = fs.openSync(abs, 'r')
+    const buf = Buffer.alloc(3)
+    fs.readSync(fd, buf, 0, 3, 0)
+    fs.closeSync(fd)
+    return buf.toString('latin1') === 'GIF'
+  } catch { return false }
+}
+
+/**
+ * 已知的占位图内容指纹（会话内累积）。
+ * 仅靠「同一内容被 ≥3 位共用」识别有个致命问题：清理掉一张后就不满足阈值，
+ * 剩下的会被当成正常头像。故一旦识别出来就记在这里，之后即使只剩一张也认得。
+ */
+const placeholderHashes = new Set()
+
 /**
  * 全库女优的头像现状：姓名 → { avatar, count }。
  * 口径与 computeOverview 一致：cast_json 优先，缺 cast_json 时回退拆 yid。
@@ -225,9 +254,17 @@ function avatarStateOf(db) {
 }
 
 /**
- * 列出「需要补头像」的女优：avatar 为空 / 文件不存在 / 文件是来源站占位图。
- * 占位图判定：同一个内容 md5 被 ≥3 位女优共用（来源站对无照片者返回同一张图）。
- * 不用写死哈希，站点换占位图也能识别。
+ * 列出「需要补头像」的女优，四种情况：
+ *   ① avatar 为空          → '无头像'（前端显示本地剪影）
+ *   ② 文件不存在            → '文件缺失'
+ *   ③ 文件是来源站占位图    → '占位图'
+ *   ④ 文件在但不是有效图片  → '无效图片'（截断/全零的坏下载、存下来的错误页等）
+ * 后两种都会让界面出现「有图但看不了」的破图或假图，必须清掉改成剪影，才能和其他无照片的
+ * 女优显示一致。
+ * 占位图识别（见 isGifRenamed / placeholderHashes 注释）：
+ *   ① 内容是 GIF 而文件名不是 .gif —— 本站历史占位图的确定特征；
+ *   ② 同一内容被 ≥3 位女优共用 —— 兜底识别站点换过的其它占位图，识别到即记入
+ *      placeholderHashes，避免清理过程中的数量变化让它失效。
  * @returns {Array<{name:string, count:number, reason:string}>} 按作品数降序
  */
 function avatarTodoOf(db, dataDir) {
@@ -237,19 +274,20 @@ function avatarTodoOf(db, dataDir) {
   for (const [name, e] of acc) {
     if (!e.avatar) continue
     const abs = path.join(dataDir, e.avatar.replace(/\\/g, '/'))
-    try {
-      const h = crypto.createHash('md5').update(fs.readFileSync(abs)).digest('hex')
-      fileHash.set(name, h)
-      hashCount.set(h, (hashCount.get(h) || 0) + 1)
-    } catch { fileHash.set(name, '') }
+    const h = avatarHash(abs)
+    fileHash.set(name, h)
+    if (h) hashCount.set(h, (hashCount.get(h) || 0) + 1)
   }
-  const shared = new Set([...hashCount].filter(([, n]) => n >= 3).map(([h]) => h))
+  for (const [h, n] of hashCount) if (n >= 3) placeholderHashes.add(h)
+
   const todo = []
   for (const [name, e] of acc) {
     if (!e.avatar) { todo.push({ name, count: e.count, reason: '无头像' }); continue }
+    const abs = path.join(dataDir, e.avatar.replace(/\\/g, '/'))
     const h = fileHash.get(name)
     if (!h) { todo.push({ name, count: e.count, reason: '文件缺失' }); continue }
-    if (shared.has(h)) todo.push({ name, count: e.count, reason: '占位图' })
+    if (!isImageFile(abs)) { todo.push({ name, count: e.count, reason: '无效图片' }); continue }
+    if (isGifRenamed(abs) || placeholderHashes.has(h)) todo.push({ name, count: e.count, reason: '占位图' })
   }
   todo.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh'))
   return todo
@@ -291,13 +329,25 @@ function applyAvatarToCast(db, name, relPath) {
   return touched
 }
 
-/** 图片内容校验：确认下载到的确实是图片（避免把错误页/占位 GIF 当头像存下） */
-function looksLikeImage(buf) {
-  if (!buf || buf.length < 1200) return false
-  const jpeg = buf[0] === 0xFF && buf[1] === 0xD8
-  const png = buf[0] === 0x89 && buf[1] === 0x50
-  const webp = buf.length > 12 && buf.subarray(8, 12).toString('latin1') === 'WEBP'
-  return jpeg || png || webp
+/**
+ * 补不到真实头像时，把「不可用的那张」清掉，让界面回落到本地剪影。
+ *
+ * 「不可用」= 来源站占位图（粉色假图）或无效图片（坏下载/错误页，前端会显示成破图）。
+ * 为什么需要：同一个语义（该女优没有可用照片）在界面上必须只有一种样子 —— 灰色剪影。
+ * @returns {boolean} 是否清理了
+ */
+function removeUnusableAvatar(db, dataDir, name) {
+  const cur = currentAvatarOf(db, name).replace(/\\/g, '/')
+  if (!cur) return false
+  // 复用全库扫描的判定（同时会把识别到的占位图指纹记入 placeholderHashes，
+  // 因此即使本轮已经删掉了同内容的其它几张，这里依然认得出）
+  const item = avatarTodoOf(db, dataDir).find(t => t.name === name)
+  if (!item || (item.reason !== '占位图' && item.reason !== '无效图片')) return false
+  try { fs.unlinkSync(path.join(dataDir, cur)) } catch {}
+  applyAvatarToCast(db, name, '')
+  persistSoon(db)
+  ovCache.key = ''
+  return true
 }
 
 /**
@@ -445,7 +495,12 @@ function registerActressIpc(ipcMain, db, dataDir) {
       const cookie = st.javdb_cookie || ''
 
       const got = await fetchActorAvatar(nm, { proxy, cookie })
-      if (!got.ok) return { ok: false, error: got.error }
+      if (!got.ok) {
+        // 补不到（两站都没照片）→ 若当前存的正是占位图/无效图片，清掉它并留空，
+        // 让该女优与「本来就没有头像」的那些一样显示本地剪影（统一显示）
+        const cleaned = removeUnusableAvatar(db, dataDir, nm)
+        return { ok: false, error: got.error, cleaned }
+      }
 
       // 已有头像文件且扩展名一致 → 直接覆盖它（不留孤儿文件）；否则用 actorId 命名新建
       const cur = currentAvatarOf(db, nm).replace(/\\/g, '/')
@@ -456,8 +511,7 @@ function registerActressIpc(ipcMain, db, dataDir) {
       // 先下到 .tmp、校验后再改名：中途失败不会破坏已有头像
       const tmp = abs + '.tmp'
       await downloadImage(got.url, tmp, `https://javdb.com/actors/${got.id}`, proxy)
-      const buf = fs.readFileSync(tmp)
-      if (!looksLikeImage(buf)) {
+      if (!isImageFile(tmp)) {
         try { fs.unlinkSync(tmp) } catch {}
         return { ok: false, error: '下载到的不是有效图片' }
       }

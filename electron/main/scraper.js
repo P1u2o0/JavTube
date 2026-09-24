@@ -207,6 +207,33 @@ async function fetchActorAvatar(name, { proxy = '', cookie = '' } = {}) {
   }
 }
 
+/**
+ * 按内容魔数判断图片类型：'jpeg' | 'png' | 'gif' | 'webp' | ''（不是图片）。
+ * 用于识别「文件在但不是可用照片」的坏头像：全零的截断下载（实测见过 7086 字节全 0）、
+ * 存下来的错误页 HTML 等，前端 img 解码会失败 → 显示成破图。
+ * @param {Buffer} buf - 文件内容的开头若干字节（至少 12 字节）
+ * @returns {string}
+ */
+function imageKind(buf) {
+  if (!buf || buf.length < 12) return ''
+  if (buf[0] === 0xFF && buf[1] === 0xD8) return 'jpeg'
+  if (buf[0] === 0x89 && buf[1] === 0x50) return 'png'
+  if (buf.subarray(0, 3).toString('latin1') === 'GIF') return 'gif'
+  if (buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp'
+  return ''
+}
+
+/** 读文件开头判断是不是图片（读不到返回 false） */
+function isImageFile(abs) {
+  try {
+    const fd = fs.openSync(abs, 'r')
+    const buf = Buffer.alloc(16)
+    fs.readSync(fd, buf, 0, 16, 0)
+    fs.closeSync(fd)
+    return !!imageKind(buf)
+  } catch { return false }
+}
+
 async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || ''
   const baseUrl = 'https://www.javbus.com'
   let targetUrl
@@ -701,13 +728,32 @@ async function scrapeMovie(ph, {
           if (!fs.existsSync(actDir)) fs.mkdirSync(actDir, { recursive: true })
           for (const c of result.cast) {
             if (!c.avatar || !/^https?:/.test(c.avatar)) { c.avatar = ''; delete c.star; continue }
+            // 来源站对没有照片的女优给的是**占位图**（JAVBUS 是 nowprinting.gif）：存下来会变成
+            // 「有图但其实是占位」的假头像 —— 既不像剪影也不像照片，与其他无照片女优的显示不一致。
+            // 这里直接留空，让前端回落到本地剪影，**统一显示**。
+            // 顺带拦掉 .gif：本站点历史上就把 nowprinting.gif 按 .jpg 存过（扩展名正则不含 gif），
+            // 而真实的女优照片不会是 GIF。
+            if (/nowprinting|noimage|no_image|placeholder/i.test(c.avatar) || /\.gif(\?|$)/i.test(c.avatar)) {
+              c.avatar = ''
+              delete c.star
+              continue
+            }
             const sid = (String(c.star || '').match(/\/star\/([^/?#]+)/) || [])[1]
             // sid 与演员名都来自网页数据，拼文件名前一律净化（防 `..` / `\` 越界写文件）
             const aBase = safeName(sid) || `${cleanPh}-${safeName(c.name)}`
             const aExt = c.avatar.match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
             const rel = path.join(coverDir || COVER_DIR, 'actress', `${aBase}${aExt}`)
+            const abs = path.join(dataDir, rel)
             try {
-              await downloadImage(c.avatar, path.join(dataDir, rel), imgReferer, proxy)
+              await downloadImage(c.avatar, abs, imgReferer, proxy)
+              // 内容校验：下载到坏文件（截断/全零、错误页）时不留破图，一律当作「无头像」，
+              // 让前端显示本地剪影（统一显示）
+              if (!isImageFile(abs)) {
+                try { fs.unlinkSync(abs) } catch {}
+                c.avatar = ''
+                delete c.star
+                continue
+              }
               c.avatar = rel.replace(/\\/g, '/')
             } catch (e) { c.avatar = '' }
             delete c.star
@@ -751,4 +797,4 @@ async function scrapeMovie(ph, {
   return { ok: false, error: lastError || '未找到该番号的信息' }
 }
 
-module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage }
+module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile }
