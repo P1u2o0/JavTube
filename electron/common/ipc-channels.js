@@ -67,5 +67,10 @@ module.exports = {
   DIALOG_OPEN_DB: 'dialog:openDb',
 
   // === 刮削 ===
-  SCRAPER_SCRAPE: 'scraper:scrape'
+  SCRAPER_SCRAPE: 'scraper:scrape',
+
+  // === 图片完整性（2026-09-27）===
+  // 扫描全库「库里引用但文件缺失/不是有效图片」的封面与预览图 / 按影片重新下载修复
+  IMAGES_SCAN: 'images:scan',
+  IMAGES_REPAIR: 'images:repair'
 }

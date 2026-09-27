@@ -186,6 +186,22 @@
             </div>
             <span class="g-tip" v-if="showTips">清空不可逆，请先备份；恢复会覆盖现有数据，恢复后需要重启软件</span>
           </div>
+
+          <!-- 图片完整性：扫描并修复历史坏图（下载失败留下的假文件） -->
+          <div class="g-label">失效图片</div>
+          <div class="g-control">
+            <el-switch v-model="st.auto_check_images" active-value="y" inactive-value="n"
+                       active-text="启动时自动检查" />
+            <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+              <el-button :loading="imgRepair.busy.value" @click="checkImages">
+                <AppIcon name="reset" :size="14" style="margin-right:5px" />检查并修复失效图片
+              </el-button>
+              <span class="g-tip" v-if="imgRepair.status.value">{{ imgRepair.status.value }}</span>
+            </div>
+            <span class="g-tip" v-if="showTips">
+              扫描全库封面与预览图，发现「下载失败留下的坏文件」（空文件 / 图片打不开 / 站点拦截页）会重新刮削补齐
+            </span>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -235,6 +251,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { splitTags } from '@/utils/global'
+import { useImageRepair } from '@/composables/useImageRepair'
 import AppIcon from '@/components/AppIcon.vue'
 
 // 组件 props / emit：支持 v-model 控制对话框显隐
@@ -262,8 +279,15 @@ const st = reactive({
   player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
   scrape_source: 'auto', scrape_previews: 'n', scrape_stats: 'y',
   proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890', javdb_cookie: '',
-  show_tips: 'y'
+  show_tips: 'y',
+  // 启动时自动检查失效图片：默认开（设置里没有这个键时也按开处理，见 App.vue）
+  auto_check_images: 'y'
 })
+
+// 失效图片检查与修复（与启动自动检查共用同一段逻辑）
+const imgRepair = useImageRepair()
+/** 设置页按钮：手动扫描并修复全库失效图片 */
+function checkImages() { return imgRepair.checkAndRepair() }
 // 注释开关（计算属性）：控制所有选项说明小字的显示（基础设置内可切换）
 const showTips = computed(() => st.show_tips === 'y')
 // 每页显示数量（数字类型，绑定到 input-number）
@@ -431,7 +455,7 @@ async function saveAll() {
   const kvKeys = [
     'player_path', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
-    'proxy_enabled', 'proxy_url', 'javdb_cookie'
+    'proxy_enabled', 'proxy_url', 'javdb_cookie', 'auto_check_images'
   ]
   const batch = {}
   for (const k of kvKeys) batch[k] = String(st[k] ?? '')

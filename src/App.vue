@@ -37,6 +37,8 @@ import { onMounted } from 'vue'
 import { useMoviesStore } from '@/store/movies'
 // 引入全局数据目录引用（用于封面图等资源的路径解析）
 import { dataDirRef } from '@/utils/global'
+// 失效图片检查/修复（启动自动检查用；设置页按钮共用同一段逻辑）
+import { useImageRepair } from '@/composables/useImageRepair'
 
 // 创建影片状态管理实例
 const store = useMoviesStore()
@@ -85,6 +87,16 @@ onMounted(async () => {
   // 因 Windows 的 titleBarOverlay 忽略 alpha、且需处理 overlay 常驻 DOM 的可见性判断，
   // 复杂度高且效果不佳，已改为「遮罩只覆盖顶栏之下的页面区域」（见 global.css），
   // 顶栏与窗口按钮区保持常白，无需任何动态改色。
+
+  // 启动后自动检查失效图片（2026-09-27）：历史版本下载失败会留下打不开的假文件
+  // （空文件 / 全零 / 站点拦截页），表现为海报灰色空块、缩略图空白。
+  // 设置里「启动时自动检查」默认开（键缺失也按开处理）；延迟几秒避开启动高峰，
+  // 静默模式：没坏图就不打扰，修好了才提示一条。
+  if (store.settings?.auto_check_images !== 'n') {
+    window.setTimeout(() => {
+      useImageRepair().checkAndRepair({ silent: true }).catch(() => {})
+    }, 4000)
+  }
 })
 </script>
 

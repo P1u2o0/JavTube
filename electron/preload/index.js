@@ -171,6 +171,23 @@ contextBridge.exposeInMainWorld('api', {
    */
   fillAvatar: (name) => ipcRenderer.invoke(IPC.ACTRESS_AVATAR_FILL, name),
 
+  /**
+   * 扫描全库失效图片（2026-09-27）：数据库里引用了、但文件缺失或内容不是有效图片的
+   * 封面与预览图。只读扫描，不写任何文件。
+   * @returns {Promise<{ok:boolean,data?:{coverCount:number,previewCount:number,
+   *          movies:Array<{id:number,ph:string,cover:boolean,preview:boolean}>},error?:string}>}
+   */
+  scanBrokenImages: () => ipcRenderer.invoke(IPC.IMAGES_SCAN),
+
+  /**
+   * 修复一部影片的失效图片（2026-09-27）：重新刮削并把有效图片写回数据库引用的**原路径**，
+   * 因此不改数据库、软件运行中也能修。渲染层按 scanBrokenImages 返回的影片列表逐条调用。
+   * @param {number} id - 影片 id
+   * @returns {Promise<{ok:boolean,data?:{fixed:number,still:number,ph:string},error?:string}>}
+   *          still = 源站也取不到的张数
+   */
+  repairMovieImages: (id) => ipcRenderer.invoke(IPC.IMAGES_REPAIR, id),
+
   // === 设置相关接口 ===
 
   /**

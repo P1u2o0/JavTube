@@ -19,6 +19,7 @@ const { initDb } = require('./db/init')
 // 影片 / 女优 / 设置 的 IPC 处理器注册函数（各领域独立模块）
 const { registerMovieIpc } = require('./db/movies')
 const { registerActressIpc } = require('./db/actress')
+const { registerImageIpc } = require('./db/images')
 const { registerSettingsIpc, applyProxySettings } = require('./db/settings')
 // 工具类 / 对话框 / 刮削 IPC（自本文件拆出）
 const { registerUtilsIpc } = require('./ipc-utils')
@@ -259,6 +260,7 @@ app.whenReady().then(async () => {
     })                                                              // 工具类 IPC
     registerMovieIpc(ipcMain, db)                                   // 影片数据 IPC
     registerActressIpc(ipcMain, db, dataDirForGlobal)                // 女优数据 IPC（含补全头像：要写 covers/actress）
+    registerImageIpc(ipcMain, db, dataDirForGlobal)                  // 图片完整性 IPC（扫描/修复失效封面与预览图）
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
     registerHomeIpc(ipcMain, db)                                    // 首页推荐 IPC
     console.log('[main] IPC OK')
