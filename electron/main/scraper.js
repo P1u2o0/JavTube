@@ -171,6 +171,39 @@ async function downloadImage(url, savePath, referer, proxy) {
 }
 
 /**
+ * 批量下载预览图到 `covers/previews/<番号>-N.<ext>`。
+ *
+ * 每张都做**内容校验**：全零的截断写入、图床返回的 HTML 错误页都当失败丢弃。
+ * 否则缩略图位置会留下打不开的文件 —— 用户在界面上看到的就是「空白缩略图」
+ * （实测 IPX-247 与 PXH-016 各有十几张是 DMM 返回的 HTML 拦截页）。
+ * @param {string[]} list - 远程图片 URL 数组
+ * @param {Object} o - { cleanPh, dataDir, coverDir, referer, proxy }
+ * @returns {Promise<string[]>} 成功落盘的相对路径数组
+ */
+async function downloadPreviewList(list, { cleanPh, dataDir, coverDir, referer, proxy }) {
+  const prevDirAbs = path.join(dataDir, coverDir || COVER_DIR, 'previews')
+  if (!fs.existsSync(prevDirAbs)) fs.mkdirSync(prevDirAbs, { recursive: true })
+  const out = []
+  for (let i = 0; i < list.length; i++) {
+    const pExt = String(list[i]).match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
+    const relPath = path.join(coverDir || COVER_DIR, 'previews', `${cleanPh}-${i + 1}${pExt}`)
+    const abs = path.join(dataDir, relPath)
+    // 先下到 .tmp、校验通过再改名：下载失败/内容无效时，不会破坏这个位置原有的好图
+    const tmp = abs + '.tmp'
+    try {
+      await downloadImage(list[i], tmp, referer, proxy)
+      if (!isImageFile(tmp)) { try { fs.unlinkSync(tmp) } catch {} ; continue }
+      fs.renameSync(tmp, abs)
+      out.push(relPath.replace(/\\/g, '/'))
+    } catch (e) {
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch {}
+      // 单张失败跳过，不影响其余
+    }
+  }
+  return out
+}
+
+/**
  * 按演员名从 JAVDB 取头像，供「补全缺失头像」使用。
  *
  * 两步：
@@ -503,6 +536,9 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 提取封面图片 URL
   let cover = inteHandler(inteHandler(detail, '<div class="video-meta-panel">', '</div>', [0, 0, 0]), '<img src="', '"', [0, 0, 0])
   if (cover && !cover.startsWith('http')) cover = baseUrl + cover  // 补全相对路径
+  // 该区块在「本片没有封面」时会落到站内资源上（实测 TNB-002 取到 btn-play-*.svg 播放按钮），
+  // 存下来也显示不出封面，直接当没有（2026-09-27）
+  if (cover && (/\.svg(\?|$)/i.test(cover) || /\/packs\/media\//i.test(cover))) cover = ''
 
   // 提取时长（分钟，2026-09-09 新增）：JAVDB「時長:」字段，如 "120 分鐘"
   let duration = 0
@@ -518,11 +554,32 @@ async function scrapeJavDb(ph, type, opts = {}) {
   let previewBlock = inteHandler(data, 'class="tile-images preview-images"', '</div>', [0, 0, 0])
   if (!previewBlock) previewBlock = inteHandler(data, '<div class="preview-images">', '</div>', [0, 0, 0])
   if (previewBlock) {
-    const imgRe = /<img[^>]*src="([^"]+)"/g
-    let im
-    while ((im = imgRe.exec(previewBlock)) !== null) {
-      const url = im[1]
+    // 优先取灯箱链接（`<a class="tile-item" href="…_l_0.jpg">`）—— 那才是原图；
+    // 里面的 `<img src="…_s_0.jpg">` 只有 120x90，取到它画廊放大后很糊（2026-09-27 实测结构）。
+    const hrefRe = /<a[^>]*class="[^"]*tile-item[^"]*"[^>]*href="([^"]+)"/g
+    let hm
+    while ((hm = hrefRe.exec(previewBlock)) !== null) {
+      const url = hm[1]
       if (url && url.startsWith('http') && !previewSet.has(url)) { previewSet.add(url); previews.push(url) }
+    }
+    // 退路：页面结构变化时仍按 <img src> 取（可能拿到缩略图，但至少不是空）
+    if (!previews.length) {
+      const imgRe = /<img[^>]*src="([^"]+)"/g
+      let im
+      while ((im = imgRe.exec(previewBlock)) !== null) {
+        const url = im[1]
+        if (url && url.startsWith('http') && !previewSet.has(url)) { previewSet.add(url); previews.push(url) }
+      }
+    }
+  }
+  // 兜底：万一混进了小图（…_s_0.jpg），同序号存在大图时丢掉小图
+  {
+    const largeIdx = new Set(previews.map(u => (u.match(/_l_(\d+)\./) || [])[1]).filter(Boolean))
+    if (largeIdx.size) {
+      for (let i = previews.length - 1; i >= 0; i--) {
+        const m = previews[i].match(/_s_(\d+)\./)
+        if (m && largeIdx.has(m[1])) previews.splice(i, 1)
+      }
     }
   }
 
@@ -714,9 +771,24 @@ async function scrapeMovie(ph, {
           const ext = result.cover.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg'
           const savePath = path.join(coversDir, cleanPh + ext)
           try {
-            await downloadImage(result.cover, savePath, imgReferer, proxy)
-            // 将封面路径改为相对路径（相对于 dataDir）
-            result.cover = path.join(coverDir || COVER_DIR, cleanPh + ext)
+            // 先下到 .tmp、校验通过再改名（2026-09-27）：
+            // 校验失败时**绝不能删掉这个位置原有的好封面** —— 直接覆盖目标路径再删，
+            // 会把用户库里本来正常的封面弄丢（开发中实测踩过）。
+            const tmpSave = savePath + '.tmp'
+            await downloadImage(result.cover, tmpSave, imgReferer, proxy)
+            // 内容校验：curl 拿到 200 也可能写出坏文件 —— 截断成全零
+            // （实测 SONE-929 是 158KB 全零）、或把图床的错误页当图片存下来。
+            // 这类文件界面打不开，只会显示成灰色空块。这里丢弃并置空，当作「本次没拿到封面」：
+            // 界面回落「暂无封面」，重新刮削会在同一路径上再试一次。
+            if (!isImageFile(tmpSave)) {
+              try { fs.unlinkSync(tmpSave) } catch {}
+              result.cover = ''
+              console.warn(`[scrape] ${cleanPh} 封面下载到无效内容，已丢弃`)
+            } else {
+              fs.renameSync(tmpSave, savePath)
+              // 将封面路径改为相对路径（相对于 dataDir）
+              result.cover = path.join(coverDir || COVER_DIR, cleanPh + ext)
+            }
           } catch (e) {
             // 封面下载失败不影响其他数据
           }
@@ -763,19 +835,25 @@ async function scrapeMovie(ph, {
         // 下载预览图（2026-09-09 新增，按设置开关与数量上限）
         if (downloadPreviews && dataDir && Array.isArray(result.previews) && result.previews.length) {
           const list = previewCount > 0 ? result.previews.slice(0, previewCount) : result.previews
-          const prevDirAbs = path.join(dataDir, coverDir || COVER_DIR, 'previews')
-          if (!fs.existsSync(prevDirAbs)) fs.mkdirSync(prevDirAbs, { recursive: true })
-          const localPreviews = []
-          for (let i = 0; i < list.length; i++) {
-            const pExt = list[i].match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
-            const relPath = path.join(coverDir || COVER_DIR, 'previews', `${cleanPh}-${i + 1}${pExt}`)
+          let localPreviews = await downloadPreviewList(list, { cleanPh, dataDir, coverDir, referer: imgReferer, proxy })
+
+          // 备用图源（2026-09-27）：JAVBUS 的预览图托管在 DMM 图床（pics.dmm.co.jp /
+          // awsimgsrc.dmm.co.jp），该图床按地区/客户端指纹拒绝请求（实测 schannel TLS 握手被拒，
+          // 直连与代理都不通；历史上还能取到，所以老库里的预览图是好的）。
+          // JAVDB 的预览图在自家 CDN（jdbstatic.com）可以正常取，故首选源全军覆没时换它再试一次。
+          if (!localPreviews.length && src.name === 'JAVBUS') {
             try {
-              await downloadImage(list[i], path.join(dataDir, relPath), imgReferer, proxy)
-              localPreviews.push(relPath.replace(/\\/g, '/'))
-            } catch (e2) {
-              // 单张预览图下载失败跳过，不影响其余
+              const jd = await scrapeJavDb(cleanPh, type, { fetchStats: false, cookie: javdbCookie, proxy })
+              const jlist = (jd && Array.isArray(jd.previews)) ? jd.previews : []
+              if (jlist.length) {
+                console.log(`[scrape] ${cleanPh} 预览图首选源下载失败，改用 JAVDB 图源（${jlist.length} 张）`)
+                localPreviews = await downloadPreviewList(jlist, { cleanPh, dataDir, coverDir, referer: 'https://javdb.com/', proxy })
+              }
+            } catch (e) {
+              console.warn(`[scrape] ${cleanPh} 备用图源也不可用: ${e.message}`)
             }
           }
+
           if (localPreviews.length) result.previews = localPreviews
           else delete result.previews  // 全部失败则不入库
           console.log(`[scrape] ${cleanPh} 预览图: 待下载${list.length} 成功${localPreviews.length}`)
