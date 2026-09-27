@@ -175,6 +175,24 @@ async function slimAsar() {
   const after = fs.statSync(asarPath).size
   console.log(`app.asar: ${(before / 1048576).toFixed(1)} MB → ${(after / 1048576).toFixed(1)} MB`)
   remove(STAGE)
+
+  // remove() 在删除被安全策略拦截时会退化为「改名到 .old-<时间戳>」——那个残留是**原来的
+  // 88MB asar**，留在产物目录里会被打进 zip（2026-09-27 实测差点发出一个 190MB 的包）。
+  // 这里把它移出产物树，并在打包前再做一次兜底检查（见 packageZip）。
+  const resDir = path.join(UNPACKED, 'resources')
+  for (const f of (fs.existsSync(resDir) ? fs.readdirSync(resDir) : [])) {
+    if (f.startsWith('app.asar.old-')) {
+      const from = path.join(resDir, f)
+      const to = path.join(require('os').tmpdir(), f)
+      try {
+        fs.renameSync(from, to)
+        console.warn(`[warn] asar 旧文件被占用，已移出产物目录: ${f} → ${to}（可手动删除）`)
+      } catch (e) {
+        throw new Error(`产物目录里有 asar 残留 ${f}（${((fs.statSync(from).size) / 1048576).toFixed(0)} MB），` +
+          `且移出失败：${e.message}。请手动删除后重跑，否则会被打进 zip。`)
+      }
+    }
+  }
 }
 
 /** 写入面向使用者的说明文件（随包分发） */
@@ -324,6 +342,19 @@ function embedIcon() {
 function makeZip() {
   step('打包 zip')
   if (!fs.existsSync(SEVEN_ZIP)) throw new Error('找不到 7za.exe: ' + SEVEN_ZIP)
+  // 打包前兜底：产物目录里不允许出现 .old- 之类的历史残留（曾经把 88MB 的旧 asar 打进去过）
+  const leftovers = []
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      const p = path.join(dir, name)
+      if (fs.statSync(p).isDirectory()) walk(p)
+      else if (/\.old-\d+$/.test(name)) leftovers.push(p)
+    }
+  }
+  walk(UNPACKED)
+  if (leftovers.length) {
+    throw new Error(`产物目录里有历史残留文件，拒绝打包：\n  ${leftovers.join('\n  ')}\n请删除后重跑。`)
+  }
   const zipName = `${APP_NAME}-v${VERSION}-win-x64.zip`
   const zipPath = path.join(OUT_ROOT, zipName)
   remove(zipPath)
