@@ -410,10 +410,18 @@ function registerActressIpc(ipcMain, db, dataDir) {
   ipcMain.handle(IPC.ACTRESS_UPDATE, (_e, { id, data }) => {
     try {
       const d = data || {}
+      // 先读后合并（2026-09-28 审计）：原实现是「未传字段写默认值」的整行覆盖，
+      // 任何只传部分字段的调用方都会把其它资料清成 ''/0（preload 注释承诺的正是「要更新的字段」）。
+      const cur = firstRow(db.exec('SELECT name,img,height,bust,waist,hip,zb,birthday,debut,remark FROM actress WHERE id=?', [Number(id)])[0])
+      const g = (k, def) => (cur && cur[k] !== undefined && cur[k] !== null ? cur[k] : def)
+      const pickStr = (v, def) => (v === undefined || v === null ? def : String(v))
+      const pickNum = (v, def) => (v === undefined || v === null || v === '' ? def : Number(v) || 0)
       db.run(`UPDATE actress SET name=?,img=?,height=?,bust=?,waist=?,hip=?,zb=?,birthday=?,debut=?,remark=? WHERE id=?`, [
-        d.name||'', d.img||'',
-        Number(d.height||0), Number(d.bust||0), Number(d.waist||0), Number(d.hip||0),
-        d.zb||'', d.birthday||'', d.debut||'', d.remark||'', Number(id)
+        pickStr(d.name, g('name', '')), pickStr(d.img, g('img', '')),
+        pickNum(d.height, g('height', 0)), pickNum(d.bust, g('bust', 0)),
+        pickNum(d.waist, g('waist', 0)), pickNum(d.hip, g('hip', 0)),
+        pickStr(d.zb, g('zb', '')), pickStr(d.birthday, g('birthday', '')),
+        pickStr(d.debut, g('debut', '')), pickStr(d.remark, g('remark', '')), Number(id)
       ])
       persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }

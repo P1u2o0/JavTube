@@ -108,13 +108,17 @@ function onFavClick(e) {
 
 // 封面 URL 计算属性：出错时返回空，否则解析封面路径
 // 传 m.id 作为版本键：该影片刮削过（bumpCover）后 URL 会带上新版本号，强制刷新海报
-const coverUrl = computed(() => {
-  if (errd.value) return ''
-  return resolveCover(props.m.cover, props.m.id) || ''
-})
+// 注意：原始 URL 与「错误态下的展示值」要分开算 —— 若让 coverUrl 依赖 errd，
+// 出错后它就恒为 ''，下面基于它的 watch 永远看不到新 URL，错误态再也复位不了。
+const rawCoverUrl = computed(() => resolveCover(props.m.cover, props.m.id) || '')
+const coverUrl = computed(() => (errd.value ? '' : rawCoverUrl.value))
 
-// 侦听封面变化，重置错误状态（切换影片时重新尝试加载封面）
-watch(() => props.m.cover, () => { errd.value = false })
+// 任何一次「封面来源变化」都要给图片一次重新加载的机会：
+//   ① 换影片（cover 字符串变化）
+//   ② 刮削 / 换封面（bumpCover 让 URL 带上新版本号）
+//   ③ 「检查并修复失效图片」—— 它把新图**写回同一路径**，cover 字符串不变，
+//      只有版本号会变；此前只监听 cover 导致修好后卡片仍显示「无封面」（2026-09-28 修复）
+watch(rawCoverUrl, () => { errd.value = false })
 // 侦听数据目录变化，重置错误状态（数据目录变更后重新尝试加载封面）
 watch(dataDirRef, () => { errd.value = false })
 </script>

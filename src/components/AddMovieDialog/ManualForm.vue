@@ -77,7 +77,10 @@ const d = reactive({
 if (props.initial?.fxrq) d._fxrq = props.initial.fxrq
 
 // 侦听日期选择器值变化：同步到实际提交使用的 fxrq 字段
-watch(() => d._fxrq, (v) => { if (v) d.fxrq = v })
+// 侦听日期选择器值变化：同步到实际提交使用的 fxrq 字段。
+// 注意必须把「清空」也同步过去（v 为空时写空串）—— 原实现 `if (v) d.fxrq = v` 会保留旧值，
+// 用户删掉日期后提交仍写入原日期，界面却提示「保存成功」（2026-09-28 审计）
+watch(() => d._fxrq, (v) => { d.fxrq = v || '' })
 
 // 选择视频文件的处理函数
 // 调用后端 API 打开文件选择对话框，将选择的路径填入视频路径字段

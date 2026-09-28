@@ -39,7 +39,17 @@ export const useScrapeStore = defineStore('scrape', {
     },
     /** 列表上限 50 条，防止长期使用膨胀 */
     _cap() {
-      if (this.tasks.length > 50) this.tasks.length = 50
+      // 上限只裁「已结束」的任务（2026-09-28 审计）：原来直接 slice(0,50)，
+      // 批量刮削超过 50 部时会把**先入队、还在 pending 的任务**丢掉，
+      // 而批量循环仍持有它们的 key，之后 begin/done 静默失效（进度面板缺项、成功失败不回填）。
+      if (this.tasks.length > 50) {
+        const done = []
+        const alive = []
+        for (const t of this.tasks) (t.status === 'running' || t.status === 'pending' ? alive : done).push(t)
+        // 先丢最老的已完成任务，pending/running 一个都不动
+        const keepDone = done.slice(Math.max(0, done.length - Math.max(0, 50 - alive.length)))
+        this.tasks = [...keepDone, ...alive]
+      }
     },
 
     /**

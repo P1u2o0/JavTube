@@ -258,13 +258,17 @@ function imageKind(buf) {
 
 /** 读文件开头判断是不是图片（读不到返回 false） */
 function isImageFile(abs) {
+  let fd
   try {
-    const fd = fs.openSync(abs, 'r')
+    fd = fs.openSync(abs, 'r')
     const buf = Buffer.alloc(16)
     fs.readSync(fd, buf, 0, 16, 0)
-    fs.closeSync(fd)
     return !!imageKind(buf)
-  } catch { return false }
+  } catch { return false } finally {
+    // 2026-09-28 审计：readSync 抛错时原来会跳过 closeSync → 批量下载时句柄泄漏。
+    // 每张预览图/头像都会调用本函数，长时间批量刮削可能耗尽句柄，故统一在 finally 关闭。
+    if (fd !== undefined) { try { fs.closeSync(fd) } catch {} }
+  }
 }
 
 async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || ''
@@ -671,10 +675,14 @@ function applyTagMapping(bq, mapping) {
  * @returns {string} 可用于文件名的安全片段
  */
 function safeName(s) {
-  return String(s ?? '').trim()
+  let base = String(s ?? '').trim()
     .replace(/[\\/:*?"<>|]/g, '')   // 路径分隔与 Windows 非法字符
     .replace(/\.\./g, '')           // 目录回溯
     .slice(0, 80)                   // 长度上限，避免超长路径
+    .replace(/[. ]+$/, '')          // Windows 会静默去掉结尾的点与空格，先去掉避免路径与预期不符
+  // Windows 保留设备名（CON/NUL/COM1…）：直接当文件名会创建失败或落到设备上
+  if (/^(con|nul|prn|aux|com[1-9]|lpt[1-9])$/i.test(base)) base = '_' + base
+  return base
 }
 
 /**
@@ -790,7 +798,12 @@ async function scrapeMovie(ph, {
               result.cover = path.join(coverDir || COVER_DIR, cleanPh + ext)
             }
           } catch (e) {
-            // 封面下载失败不影响其他数据
+            // ★ 2026-09-28 审计修复：下载抛异常时必须把封面**置空**。
+            // 否则 result.cover 仍是下载前的远程 https 地址，会被 buildScrapeUpdate 写进
+            // movies.cover —— 之后离线时封面直接空白，且 db/images.js 会把它当相对路径
+            // path.join(dataDir,'https://…')，永远判定「坏封面」、每次启动白修一次。
+            result.cover = ''
+            console.warn(`[scrape] ${cleanPh} 封面下载失败，已丢弃远程地址: ${e.message}`)
           }
         }
         // 下载演员头像（2026-09-14）：有远程头像 URL 的下载到 covers/actress/，
@@ -816,18 +829,27 @@ async function scrapeMovie(ph, {
             const aExt = c.avatar.match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
             const rel = path.join(coverDir || COVER_DIR, 'actress', `${aBase}${aExt}`)
             const abs = path.join(dataDir, rel)
+            // ★ 2026-09-28 审计修复：先下 .tmp、校验通过再改名。
+            // 原实现直接写 abs —— 而该路径通常已有上次下载的好头像，且头像在 cast_json 里
+            // 是**跨影片共享**的：本次下载失败/中断会把好头像写坏或 unlink 掉，导致该女优
+            // 所有影片的头像一起变破图。（封面/预览图此前已改成 .tmp，只有头像漏了。）
+            const tmpAvatar = abs + '.tmp'
             try {
-              await downloadImage(c.avatar, abs, imgReferer, proxy)
+              await downloadImage(c.avatar, tmpAvatar, imgReferer, proxy)
               // 内容校验：下载到坏文件（截断/全零、错误页）时不留破图，一律当作「无头像」，
               // 让前端显示本地剪影（统一显示）
-              if (!isImageFile(abs)) {
-                try { fs.unlinkSync(abs) } catch {}
+              if (!isImageFile(tmpAvatar)) {
+                try { fs.unlinkSync(tmpAvatar) } catch {}
                 c.avatar = ''
                 delete c.star
                 continue
               }
+              fs.renameSync(tmpAvatar, abs)
               c.avatar = rel.replace(/\\/g, '/')
-            } catch (e) { c.avatar = '' }
+            } catch (e) {
+              try { if (fs.existsSync(tmpAvatar)) fs.unlinkSync(tmpAvatar) } catch {}
+              c.avatar = ''
+            }
             delete c.star
           }
           console.log(`[scrape] ${cleanPh} 演员: ${result.cast.map(c => c.name + '(' + c.gender + (c.avatar ? '+头像' : '') + ')').join(' ')}`)

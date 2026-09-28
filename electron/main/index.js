@@ -10,7 +10,7 @@
  */
 
 // 引入 Electron 核心模块
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -44,6 +44,24 @@ if (process.env.JAVTUBE_DISABLE_GPU === '1') {
 
 // 必须在 app ready 之前注册 privileged scheme（Electron 硬性要求）
 registerCoverScheme()
+
+// ====== 单实例锁（2026-09-28 审计补）======
+// 没有它时双击两次图标会起两个进程各自持有同一份 app.db：内存各一份、退出时互相覆盖，
+// .tmp/.bak 轮转也会打架（两个进程写同一个 app.db.tmp），表现为「最近的操作莫名丢失」
+// 或「库里出现另一个窗口的数据」。拿不到锁就直接退出，并把已有窗口拉到前台。
+const gotSingleLock = app.requestSingleInstanceLock()
+if (!gotSingleLock) {
+  console.warn('[main] 已有实例在运行，本次启动退出')
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
 
 // 全局变量：主窗口实例
 let mainWindow = null
@@ -233,21 +251,51 @@ function createWindow() {
 // app.whenReady() 在 Electron 完成初始化后触发，是应用启动的正式入口
 app.whenReady().then(async () => {
   console.log('[main] ====== APP READY ======')
+  let dataDir = ''
   try {
     // 获取数据目录路径
-    const dataDir = getDataDir()
+    dataDir = getDataDir()
     dataDirForGlobal = dataDir
     console.log('[main] calling initDb async...')
     const t0 = Date.now()
     // 初始化数据库（异步加载 sql.js WASM）
     db = await initDb(dataDir)
     console.log(`[main] initDb DONE in ${Date.now()-t0}ms path=${db?._dbPath}`)
-    // 注册 javtube-cover 协议处理器（scheme 已在文件顶部注册为 privileged）
-    setupCoverProtocol(dataDir)
     // 启动时按数据库设置应用本机代理（JAVDB 等站点需科学上网时使用）
     await applyProxySettings(db)
   } catch (e) {
+    // ★ 2026-09-28 审计修复：原来这里只 console.error 就继续往下跑，结果是
+    // 「所有 handler 里的 db 都是 null → 界面片库全空、封面全破」，而用户侧**没有任何提示**，
+    // 极易被误判成「数据丢了」，进而去点「清空所有数据」把可恢复状态变成真丢数据。
+    // 现在：明确弹窗告知原因与处置建议，然后退出（不带着未知状态继续跑）。
     console.error('[main] DB init FAILED:', e?.stack || e)
+    try {
+      dialog.showErrorBox('数据库初始化失败',
+        `软件无法加载数据目录中的数据库，已停止启动以避免破坏数据。\n\n数据目录：${dataDir || '(未取到)'}\n原因：${e?.message || e}\n\n` +
+        '建议：① 检查该目录是否可读写；② 用「data/app.db.bak」或你手工备份的 app.db 覆盖 app.db 后重试。')
+    } catch {}
+    app.exit(1)
+    return
+  }
+
+  // 封面协议不依赖数据库成功：只要拿到了数据目录就注册
+  // （原来它被放在上面的 try 里，DB 一失败连封面协议都没注册 → 所有 <img> 报 ERR_UNKNOWN_URL_SCHEME）
+  try {
+    setupCoverProtocol(dataDirForGlobal)
+  } catch (e) {
+    console.error('[main] setupCoverProtocol FAILED:', e?.message || e)
+  }
+
+  // 数据库降级恢复告知（2026-09-28 审计）：从 .bak/.tmp 恢复或最终建了空库时必须让用户知道
+  if (db && db._recoveredFrom) {
+    const map = {
+      bak: ['已从备份恢复数据库', 'app.db 无法读取（可能被写坏），已自动改用上一份备份 app.db.bak。\n\n损坏的文件已保留为 app.db.corrupt-*，确认数据无误后可自行删除。'],
+      tmp: ['已从临时文件恢复数据库', 'app.db 缺失，已用上次未完成写入的 app.db.tmp 恢复。\n\n请核对数据是否完整。'],
+      empty: ['数据库无法读取，已新建空库', 'app.db 及其备份都无法加载。\n\n原始损坏文件已保留为 app.db.corrupt-*，请勿继续录入数据，先尝试用备份文件修复。']
+    }
+    const [title, body] = map[db._recoveredFrom] || map.bak
+    console.warn('[main] DB recovered from:', db._recoveredFrom)
+    try { dialog.showMessageBox({ type: 'warning', title, message: title, detail: body }) } catch {}
   }
 
   console.log('[main] registering IPC...')

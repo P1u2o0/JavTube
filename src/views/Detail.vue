@@ -446,7 +446,19 @@ function fmt(n) { return Number(n || 0).toLocaleString() }
  */
 async function load(id) {
   if (!window.api) return
-  const r = await window.api.getMovie(id)
+  // 包 try/catch（2026-09-28 审计）：模板根节点是 v-if="m"，getMovie 的 promise 一旦 reject
+  // （handler 异常 / 通道异常），m 永远为 null → 整页空白，连返回按钮都没有，也没有任何提示。
+  let r = null
+  try {
+    r = await window.api.getMovie(id)
+  } catch (e) {
+    console.error('[detail] getMovie failed:', e)
+  }
+  if (!r) {
+    ElMessage.error('加载影片失败，已返回片库')
+    router.replace('/library')
+    return
+  }
   if (r.ok) m.value = r.data
   else { ElMessage.error(r.error); router.replace('/library') }
   // 时长兜底：无刮削时长且有本地视频文件时，解析 MP4 文件时长（分钟）并入库
@@ -479,8 +491,13 @@ async function toggleFav() {
   const v = isFav.value ? 'n' : 'y'
   const prev = m.value.cl
   m.value.cl = v
-  const r = await window.api.updateMovie(m.value.id, { cl: v })
-  if (!r.ok) m.value.cl = prev
+  // 乐观更新必须捕获失败并回滚（2026-09-28 审计）：原来没有 .catch，
+  // 写库 reject 时按钮停在「已喜欢」而库里没写，重启后才复原，且没有任何提示
+  const r = await window.api.updateMovie(m.value.id, { cl: v }).catch(() => null)
+  if (!r || !r.ok) {
+    m.value.cl = prev
+    ElMessage.error(r?.error || '操作失败')
+  }
 }
 
 /**
@@ -723,7 +740,8 @@ onMounted(async () => {
   display: flex; flex-direction: column;
   justify-content: space-evenly;   /* 行间距均匀（含首尾），标签两行时自动压缩仍相等 */
   min-height: 0;
-  overflow: hidden;                /* 内容过多时裁剪，不挤压底部按钮区 */
+  overflow-y: auto;                /* 内容过多时可滚动（原来 overflow:hidden 会把下方的信息行直接裁掉，
+                                      演员多/窗口矮时用户看不到类别与演员，且无从察觉）2026-09-28 审计 */
 }
 /* 番号行：番号文字 + 复制按钮 */
 .code-line { display: inline-flex; align-items: center; gap: 8px; }

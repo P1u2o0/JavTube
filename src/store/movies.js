@@ -92,23 +92,30 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      */
     async initIfNeeded() {
       if (this.inited) return
-      try {
-        // 加载设置
-        if (window.api) {
-          const r = await window.api.getSettings()
-          if (r.ok) {
-            this.settings = r.data || {}
-            if (r.data?.page_size) this.pageSize = Number(r.data.page_size) || 20
-            if (r.data?.cols_per_row) this.colsPerRow = Number(r.data.cols_per_row) || 5
+      // 启动时 App.vue 与某个视图的 onMounted 都会调到这里（子组件 onMounted 早于父组件），
+      // 两边都通过 inited 检查时会重复拉一遍设置/标签（2026-09-28 审计）。
+      // 用 in-flight promise 去重：后到的调用直接等同一个初始化过程。
+      if (this._initP) return this._initP
+      this._initP = (async () => {
+        try {
+          // 加载设置
+          if (window.api) {
+            const r = await window.api.getSettings()
+            if (r.ok) {
+              this.settings = r.data || {}
+              if (r.data?.page_size) this.pageSize = Number(r.data.page_size) || 20
+              if (r.data?.cols_per_row) this.colsPerRow = Number(r.data.cols_per_row) || 5
+            }
+            // 加载标签分类配置（必须为 9 类）
+            const cr = await window.api.getTagCategories()
+            if (cr.ok && Array.isArray(cr.data) && cr.data.length === 9) {
+              this.categories = cr.data
+            }
           }
-          // 加载标签分类配置（必须为 9 类）
-          const cr = await window.api.getTagCategories()
-          if (cr.ok && Array.isArray(cr.data) && cr.data.length === 9) {
-            this.categories = cr.data
-          }
-        }
-        this.inited = true
-      } catch (e) { console.warn('init err', e) }
+          this.inited = true
+        } catch (e) { console.warn('init err', e) }
+      })()
+      return this._initP
     },
 
     /**

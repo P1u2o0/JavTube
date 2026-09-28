@@ -51,9 +51,14 @@ const props = defineProps({
 const emit = defineEmits(['change'])
 
 // 排序按钮文案：随机模式显示「随机排序」，否则显示当前字段名
+// 表里必须覆盖后端 SORTABLE_COLUMNS 的每个字段，否则会 fallback 成「添加日期」——
+// 排序实际生效但按钮说错（观看记录页用的就是 play_time，2026-09-28 审计）
 const label = computed(() => {
   if (props.random) return '随机排序'
-  return { tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数', score: '评分' }[props.by] || '添加日期'
+  return {
+    tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数',
+    score: '评分', play_time: '观看时间'
+  }[props.by] || '添加日期'
 })
 // 方向箭头（随机模式无方向）
 const arrow = computed(() => (props.random ? '' : (props.order === 'ASC' ? '↑' : '↓')))

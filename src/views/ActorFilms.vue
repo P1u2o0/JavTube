@@ -123,7 +123,10 @@ const router = useRouter()
 const store = useMoviesStore()
 
 // 演员名（路由参数解码）
-const name = computed(() => decodeURIComponent(String(route.params.name || '')))
+// 演员名（路由参数）：vue-router 4 在 resolve 时**已经解码过一次**，
+// 这里再 decodeURIComponent 会二次解码 —— 名字含 % 时抛 URIError（computed 在渲染期抛错 → 页面空白），
+// 含 %XX 形式则被错误解码成别的名字（2026-09-28 审计）
+const name = computed(() => String(route.params.name || ''))
 // 演员数据
 const gender = ref('f')
 const avatar = ref('')
@@ -342,19 +345,27 @@ async function onFav(m) {
 async function load() {
   if (!window.api?.getActorFilms) { loading.value = false; return }
   loading.value = true
-  const r = await window.api.getActorFilms(name.value)
-  if (r?.ok) {
-    gender.value = r.data.gender || 'f'
-    avatar.value = r.data.avatar || ''
-    avatarBroken.value = false      // 换人后重新给新头像一次加载机会
-    info.value = r.data.info || null
-    films.value = r.data.movies || []
-    heatRank.value = r.data.heatRank || null
-  } else {
+  // try/finally（2026-09-28 审计）：原实现若 getActorFilms reject，下面的 loading=false
+  // 不会执行 → 页面永久卡在「加载中…」，同时产生一条 unhandled rejection
+  try {
+    const r = await window.api.getActorFilms(name.value)
+    if (r?.ok) {
+      gender.value = r.data.gender || 'f'
+      avatar.value = r.data.avatar || ''
+      avatarBroken.value = false      // 换人后重新给新头像一次加载机会
+      info.value = r.data.info || null
+      films.value = r.data.movies || []
+      heatRank.value = r.data.heatRank || null
+    } else {
+      heatRank.value = null
+      ElMessage.error(r?.error || '加载失败')
+    }
+  } catch (e) {
     heatRank.value = null
-    ElMessage.error(r?.error || '加载失败')
+    ElMessage.error('加载失败：' + (e?.message || e))
+  } finally {
+    loading.value = false
   }
-  loading.value = false
 }
 
 onMounted(async () => {

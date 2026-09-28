@@ -42,7 +42,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useMoviesStore } from '@/store/movies'
 import { useMovieList } from '@/composables/useMovieList'
 import StatusBar from '@/components/StatusBar.vue'
@@ -99,16 +99,25 @@ async function onFav(m) { await store.toggleFav(m.id) }
 /**
  * 组件挂载时：初始化 store、设置按播放时间倒序、加载历史
  */
+// store.sort 是全局共享的（StatusBar 的排序下拉直接写它）。本页要按「播放时间倒序」，
+// 但若直接把全局排序改掉，离开本页后片库/喜欢的排序会一起变成播放时间，而排序下拉的
+// 文案表里没有 play_time，按钮会显示成「添加日期」——界面与真实顺序不符（2026-09-28 审计）。
+// 故进入时保存、离开时还原。
+let sortBackup = null
 onMounted(async () => {
   await store.initIfNeeded()
   // 批量模式属于「某一个列表页」的临时状态：从片库带着多选态切进来，会对着本页看不见的
   // 选中项执行批量删除/收藏（selectedIds 还是片库那批），故进入本页即退出批量模式
   store.selectMode = false
   store.selectedIds = []
-  // 设置排序：按播放时间倒序
+  // 设置排序：按播放时间倒序（离开本页时还原，不影响其它页面）
+  sortBackup = { ...store.sort }
   store.sort = { by: 'play_time', order: 'DESC', random: false }
   await loadHistory()
 })
+
+// 离开本页：还原进入前的全局排序，避免把「播放时间」带给片库/喜欢
+onBeforeUnmount(() => { if (sortBackup) store.sort = sortBackup })
 
 // 顶栏新增影片后：按本页自己的筛选条件重载（不能由顶栏直接 loadMovies，那会把列表换成全库）
 watch(() => store.dataToken, () => loadHistory())

@@ -140,8 +140,11 @@ function registerMovieIpc(ipcMain, db) {
       }
       // 关键词搜索（在番号、片名、标签中模糊匹配）
       if (filter.q && filter.q.trim()) {
-        const q = `%${filter.q.trim()}%`
-        where.push('(ph LIKE ? OR pm LIKE ? OR bq LIKE ?)')
+        // 转义 LIKE 通配符（2026-09-28 审计）：用户输入 `_` 或 `%` 时不转义会被当通配符 ——
+        // 输入单个 `_` 会匹配到几乎所有影片（`_` 匹配任意单字符），搜索行为完全失真
+        const esc = filter.q.trim().replace(/[\\%_]/g, (m) => '\\' + m)
+        const q = `%${esc}%`
+        where.push("(ph LIKE ? ESCAPE '\\' OR pm LIKE ? ESCAPE '\\' OR bq LIKE ? ESCAPE '\\')")
         args.push(q, q, q)
       }
 

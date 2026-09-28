@@ -30,6 +30,7 @@
     <MovieGrid v-else
       :movies="store.movies"
       :total="store.total"
+      :loading="store.loading"
       :page="store.page"
       :pageSize="store.pageSize"
       :cols="store.colsPerRow"

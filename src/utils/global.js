@@ -216,12 +216,23 @@ export function buildScrapeUpdate(d, current = null, { fillOnly = false } = {}) 
   if (d.cover && keep('cover')) update.cover = d.cover // 封面
   // 2026-09-09 刮削增强新增（预览图本地路径数组序列化入库；统计仅在有值时写入）
   if (Array.isArray(d.previews) && d.previews.length && keep('previews')) {
-    update.previews = JSON.stringify(d.previews)
+    // 合并而非整体替换（2026-09-28 审计）：本次若只下到部分预览图（源站失败/数量变少），
+    // 直接覆盖会把上次完整的列表连同文件引用一起丢掉（文件变孤儿、画廊少图）。
+    // 以本次顺序为主，补上本次没有、但库里仍在引用的其余路径。
+    let merged = d.previews.slice()
+    try {
+      const cur = current ? JSON.parse(current.previews || '[]') : []
+      if (Array.isArray(cur)) for (const p of cur) if (p && !merged.includes(p)) merged.push(p)
+    } catch {}
+    update.previews = JSON.stringify(merged)
   }
   // 想看/看过/评分：0 表示无数据，补全模式下只填当前为 0 的
-  if (d.want && keep('want')) update.want = Number(d.want) || 0
-  if (d.watched && keep('watched')) update.watched = Number(d.watched) || 0
-  if (d.score && keep('score')) update.score = Number(d.score) || 0
+  // 注意用「数值 > 0」判断而不是 `if (d.want)`（2026-09-28 审计）：源站返回字符串 "0" 时
+  // 它是真值，会把库里已有的统计覆盖成 0（数据看起来被清空）。
+  const posNum = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0 }
+  if (posNum(d.want) && keep('want')) update.want = posNum(d.want)
+  if (posNum(d.watched) && keep('watched')) update.watched = posNum(d.watched)
+  if (posNum(d.score) && keep('score')) update.score = posNum(d.score)
   // 2026-09-14 演员头像：演员列表 [{name,gender,avatar}] 序列化入库
   if (Array.isArray(d.cast) && d.cast.length && keep('cast_json')) {
     update.cast_json = JSON.stringify(d.cast)

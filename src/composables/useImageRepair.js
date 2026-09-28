@@ -11,9 +11,14 @@ import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { bumpCover } from '@/utils/global'
 
+// 这两个状态放在**模块作用域**（而不是函数内）：App.vue 的启动自动检查与设置页按钮
+// 各自调用一次 useImageRepair()，若 busy 是每实例的 ref，两者互不可见 → 同一时间可能跑起
+// 两条修复循环（重复刮削同一批影片、并发写同名图片文件）。做成模块级单例即天然互斥。
+// （2026-09-28 审计）
+const busy = ref(false)
+const status = ref('')
+
 export function useImageRepair() {
-  const busy = ref(false)
-  const status = ref('')
 
   /**
    * 扫描并修复全库失效图片。

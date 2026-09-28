@@ -83,29 +83,37 @@ function setupCoverProtocol(dataDir) {
       if (!ok) return new Response('forbidden', { status: 403 })
       // 必须是图片扩展名
       if (!isImg(resolved)) return new Response('not an image', { status: 415 })
-      // 文件必须存在且是文件
-      // 原实现 existsSync + statSync 是两次同步磁盘调用（一屏 20 张封面即 40 次），
-      // 合并为一次异步 stat。
+      // 文件必须存在且是文件（一次异步 stat，同时拿 mtime/size 给 ETag 用）
+      let stat
       try {
-        if (!(await fs.promises.stat(resolved)).isFile()) {
-          return new Response('not found', { status: 404 })
-        }
+        stat = await fs.promises.stat(resolved)
+        if (!stat.isFile()) return new Response('not found', { status: 404 })
       } catch {
         return new Response('not found', { status: 404 })
+      }
+
+      // 缓存策略（2026-09-28 审计修正）：
+      // 原来是「无条件 max-age=1年 + immutable」+ 前端内存里的 ?v= 版本号。
+      // 问题：版本号只存在于渲染进程内存，**重启后 URL 就退回不带 ?v= 的旧地址**，
+      // Chromium 直接从磁盘缓存取图 —— 于是「重新刮削换封面」「检查并修复失效图片
+      // （写回同一路径）」在重启后看到的还是修之前那张。
+      // 改成 ETag 条件请求：文件没动 → 304（只 stat 一次，不读文件、不解码）；
+      // 文件变了 → 200 新内容。既保留翻页命中缓存的收益，又不会再返旧图。
+      const etag = `"${stat.size}-${Math.floor(stat.mtimeMs)}"`
+      const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' }
+      const contentType = MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream'
+      const inm = request.headers.get('if-none-match')
+      if (inm && inm === etag) {
+        return new Response(null, { status: 304, headers: { etag, 'cache-control': 'no-cache' } })
       }
       // 用 net.fetch 走本地文件协议交给 Electron 处理，返回标准 Response
       // URL 用 pathToFileURL 来正确编码（处理中文、空格、# 等字符）
       const fileUrl = require('url').pathToFileURL(resolved).href
       const res = await net.fetch(fileUrl)
-      // 缓存头（2026-09-21 新增，翻页性能）：
-      // 封面文件名是按番号固定的（覆盖写入），内容变化时前端会给 URL 换 ?v= 版本号，
-      // 所以这里可以放心长期缓存 —— 翻页/来回切页时 Chromium 直接命中缓存，
-      // 不再逐个文件走协议读盘 + 重新解码（一页 20~200 张，差别很明显）。
-      // 同时补上 Content-Type：net.fetch(file://) 不一定带，缺了会让解码路径退化。
-      const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' }
       const headers = new Headers(res.headers)
-      if (!headers.get('content-type')) headers.set('content-type', MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream')
-      headers.set('cache-control', 'public, max-age=31536000, immutable')
+      headers.set('content-type', contentType)
+      headers.set('etag', etag)
+      headers.set('cache-control', 'no-cache')   // 可缓存，但每次使用前必须回源校验
       return new Response(res.body, { status: res.status, headers })
     } catch (e) {
       console.warn('[cover-protocol] err:', e.message)

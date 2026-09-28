@@ -81,6 +81,14 @@ function saveDbToDisk(db, dbPath) {
     const tmp = dbPath + '.tmp'       // 临时文件路径
     const bak = dbPath + '.bak'       // 旧库备份路径
     fs.writeFileSync(tmp, buf)        // 先写入临时文件
+    // fsync（2026-09-28 审计补）：writeFileSync 返回只代表进了 OS 页缓存，
+    // 若此时掉电，rename 后可能得到一个 0 长度/截断的 app.db。这里强制刷盘后再改名。
+    try {
+      const fd = fs.openSync(tmp, 'r+')
+      try { fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
+    } catch (e) {
+      console.warn('[db] fsync 失败（继续，但掉电安全性降低）:', e.message)
+    }
     if (fs.existsSync(dbPath)) {
       if (fs.existsSync(bak)) fs.unlinkSync(bak)
       fs.renameSync(dbPath, bak)      // 旧库改名保留（原子，不经过"无文件"状态）
@@ -124,14 +132,56 @@ async function initDb(dataDir) {
     }
   }
 
-  // 尝试加载已有数据库文件
+  // 尝试加载已有数据库文件。
+  //
+  // 加载顺序：app.db → app.db.bak → app.db.tmp → 空库（最后手段）。
+  // ★ 这是 2026-09-28 审计发现的 P0 的修复：原实现「加载失败就静默建空库」，
+  //   而随后任何一次落盘都会 `unlink` 掉唯一的 .bak 并把空库顶替成 .bak
+  //   —— 一旦 app.db 内容损坏（断电半写/杀软截断/外部污染），用户就是整库不可恢复。
+  //   现在：① 损坏文件先改名保留（.corrupt-<时间戳>，可送修）；
+  //        ② 依次尝试 .bak / .tmp；
+  //        ③ 全都不行才建空库，并通过 _recoveredFrom = 'empty' 让上层弹窗告知用户。
+  let recoveredFrom = ''
+  /** 加载并做完整性校验；不合格直接抛错（调用方决定回退到哪一份） */
+  const tryLoadDb = (p) => {
+    const d = new Sqlite.Database(fs.readFileSync(p))
+    const q = d.exec('PRAGMA integrity_check')
+    const verdict = q && q[0] && q[0].values[0] ? String(q[0].values[0][0]) : ''
+    if (verdict && verdict.toLowerCase() !== 'ok') {
+      try { d.close() } catch {}
+      throw new Error('integrity_check = ' + verdict)
+    }
+    return d
+  }
+
   if (fs.existsSync(dbPath)) {
     try {
-      const buf = fs.readFileSync(dbPath)
-      db = new Sqlite.Database(buf)  // 从文件数据创建数据库实例
+      db = tryLoadDb(dbPath)
     } catch (e) {
-      console.warn('[db] load failed, creating new DB:', e.message)
-      db = new Sqlite.Database()  // 加载失败则创建空数据库
+      console.error('[db] app.db 加载失败:', e.message)
+      // 保留损坏文件供排查/送修，绝不直接丢弃
+      const corruptPath = dbPath + '.corrupt-' + Date.now()
+      try {
+        fs.renameSync(dbPath, corruptPath)
+        console.warn('[db] 损坏文件已另存:', path.basename(corruptPath))
+      } catch (e2) {
+        console.error('[db] 另存损坏文件失败:', e2.message)
+      }
+      for (const [p, tag] of [[bakPath, 'bak'], [tmpPath, 'tmp']]) {
+        if (db || !fs.existsSync(p)) continue
+        try {
+          db = tryLoadDb(p)
+          recoveredFrom = tag
+          console.warn(`[db] 已从 ${path.basename(p)} 恢复数据库（${tag}）`)
+        } catch (e3) {
+          console.error(`[db] ${path.basename(p)} 也不可用:`, e3.message)
+        }
+      }
+      if (!db) {
+        db = new Sqlite.Database()
+        recoveredFrom = 'empty'
+        console.error('[db] 没有任何可用备份，已创建空库（损坏文件已保留，建议立即停止操作并排查）')
+      }
     }
   } else {
     db = new Sqlite.Database()  // 文件不存在则创建新的空数据库
@@ -296,8 +346,10 @@ async function initDb(dataDir) {
   db._dataDir = dataDir     // 数据目录路径
   db._forceSave = force     // 强制保存方法
   db._blockPersist = false  // 恢复备份后置 true：重启前禁止落盘（见 saveDbToDisk 说明）
+  // 本次加载是否发生了降级恢复（''=正常 / 'bak' / 'tmp' / 'empty'），供上层弹窗告知用户
+  db._recoveredFrom = recoveredFrom
 
   return db
 }
 
-module.exports = { initDb }
+module.exports = { initDb, getSQL }

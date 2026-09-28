@@ -128,7 +128,20 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // === 系统对话框封装 ===
   const mainWindow = getMainWindow  // getter：与原「运行时读取当前窗口」语义一致
   // 通用打开对话框函数：封装 dialog.showOpenDialog，返回选中路径
-  const doOpen = (props, multi = false) => dialog.showOpenDialog(mainWindow(), props).then(r => r.canceled ? null : (multi ? r.filePaths : r.filePaths[0]))
+  // 2026-09-28 审计：原实现直接把 dialog 的 promise 返回给渲染层，一旦抛错（如窗口已销毁时
+  // mainWindow() 为 null）就变成 invoke reject，调用处没 .catch 就是 unhandled rejection、
+  // 用户侧表现为「点了没反应」。这里统一兜底为 null（等价于「用户取消」），语义不变。
+  const doOpen = (props, multi = false) => {
+    try {
+      const win = mainWindow()
+      const p = win ? dialog.showOpenDialog(win, props) : dialog.showOpenDialog(props)
+      return p.then(r => r.canceled ? null : (multi ? r.filePaths : r.filePaths[0]))
+        .catch(e => { console.error('[dialog] showOpenDialog failed:', e?.message || e); return null })
+    } catch (e) {
+      console.error('[dialog] showOpenDialog threw:', e?.message || e)
+      return Promise.resolve(null)
+    }
+  }
   // 打开目录选择对话框
   ipcMain.handle(IPC.DIALOG_OPEN_DIR, () => doOpen({ properties: ['openDirectory'] }))
   // 打开视频文件选择对话框
@@ -138,7 +151,19 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 打开可执行文件选择对话框
   ipcMain.handle(IPC.DIALOG_OPEN_FILE, () => doOpen({ properties: ['openFile'], filters: [{ name: '可执行文件', extensions: ['exe','bat','cmd'] }, { name: '所有文件', extensions: ['*'] }] }))
   // 保存数据库备份文件对话框
-  ipcMain.handle(IPC.DIALOG_SAVE_DB, () => dialog.showSaveDialog(mainWindow(), { defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }).then(r => r.canceled ? null : r.filePath))
+  ipcMain.handle(IPC.DIALOG_SAVE_DB, () => {
+    try {
+      const win = mainWindow()
+      const p = win
+        ? dialog.showSaveDialog(win, { defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] })
+        : dialog.showSaveDialog({ defaultPath: `library-backup-${Date.now()}.db`, filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] })
+      return p.then(r => r.canceled ? null : r.filePath)
+        .catch(e => { console.error('[dialog] showSaveDialog failed:', e?.message || e); return null })
+    } catch (e) {
+      console.error('[dialog] showSaveDialog threw:', e?.message || e)
+      return null
+    }
+  })
   // 打开数据库文件选择对话框
   ipcMain.handle(IPC.DIALOG_OPEN_DB, () => doOpen({ properties: ['openFile'], filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }))
 

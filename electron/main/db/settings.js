@@ -13,6 +13,8 @@ const path = require('path')
 const { session } = require('electron')
 // db 层通用工具（落盘收口）
 const { persistSoon, persist } = require('./util')
+// 恢复数据库前用它试开来源文件（校验是不是可用的 SQLite）
+const { getSQL } = require('./init')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -40,8 +42,11 @@ function loadCats(dataDir) {
  */
 function saveCats(dataDir, cats) {
   const p = path.join(dataDir, 'tag-categories.json')
-  // 将分类数组包装为 { categories: [...] } 格式并格式化输出
-  fs.writeFileSync(p, JSON.stringify({ categories: cats }, null, 2), 'utf-8')
+  // 写 .tmp 再改名（2026-09-28 审计）：原实现直接覆盖写，写一半崩溃/磁盘满会留下坏 JSON，
+  // 而 loadCats 解析失败是静默返回 []，用户的自定义分类会「无声消失」。
+  const tmp = p + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify({ categories: cats }, null, 2), 'utf-8')
+  fs.renameSync(tmp, p)
 }
 
 /**
@@ -154,10 +159,44 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:restore — 渲染进程 → 主进程
   // 从备份文件恢复数据库
-  ipcMain.handle(IPC.SETTINGS_RESTORE, (_e, sourcePath) => {
+  ipcMain.handle(IPC.SETTINGS_RESTORE, async (_e, sourcePath) => {
     try {
       if (!sourcePath || !db._dbPath) return { ok: false, error: 'invalid path' }
       if (!fs.existsSync(sourcePath)) return { ok: false, error: 'source not found' }
+
+      // ★ 2026-09-28 审计修复：覆盖前必须确认「这确实是一份能打开的 SQLite 数据库」。
+      // 原实现只判断文件存在就 copyFileSync 覆盖 app.db —— 用户随手选个 jpg/zip（对话框
+      // 只按扩展名过滤显示，文件名框可以绕开）就会把整库覆盖，重启后加载失败 → 界面全空，
+      // 而 .bak 也会随后被顶替，等于一键把数据变成不可恢复状态。
+      let head = ''
+      try {
+        head = fs.readFileSync(sourcePath).subarray(0, 16).toString('latin1')
+      } catch (e) {
+        return { ok: false, error: '读取来源文件失败：' + e.message }
+      }
+      if (!head.startsWith('SQLite format 3')) {
+        return { ok: false, error: '选中的文件不是 SQLite 数据库（文件头不匹配），已取消恢复' }
+      }
+      try {
+        const Sqlite = await getSQL()
+        const probe = new Sqlite.Database(fs.readFileSync(sourcePath))
+        const q = probe.exec('PRAGMA integrity_check')
+        const verdict = q && q[0] && q[0].values[0] ? String(q[0].values[0][0]) : ''
+        try { probe.close() } catch {}
+        if (verdict && verdict.toLowerCase() !== 'ok') {
+          return { ok: false, error: '数据库完整性校验未通过（' + verdict + '），已取消恢复' }
+        }
+      } catch (e) {
+        return { ok: false, error: '该文件无法作为数据库打开（' + e.message + '），已取消恢复' }
+      }
+
+      // 覆盖前把当前库另存一份快照（不复用 .bak：那是正常落盘轮转用的槽位）
+      try {
+        fs.copyFileSync(db._dbPath, db._dbPath + '.pre-restore-' + Date.now())
+      } catch (e) {
+        console.warn('[db] 恢复前快照失败（继续）：', e.message)
+      }
+
       // 将备份文件复制到当前数据库路径
       // ⚠️ 这里不能调用 db._forceSave()：那会把内存中的旧数据库导出并覆盖刚恢复的备份文件。
       // 同样地，**恢复之后必须禁止一切落盘**——关窗时的 _forceSave、10 秒定时落盘、
