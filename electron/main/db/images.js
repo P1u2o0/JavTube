@@ -15,11 +15,23 @@
 const fs = require('fs')
 const path = require('path')
 const IPC = require('../../common/ipc-channels')
-const { scrapeMovie, isImageFile } = require('../scraper')
+const { scrapeMovie, isImageFile, isGifRenamed } = require('../scraper')
+const { COVER_DIR } = require('../constants')
 
-/** 文件存在且内容是有效图片（jpeg/png/gif/webp）才算可用 */
+/**
+ * 文件存在且内容是**可用图片**才算可用。
+ * 注意「GIF 内容 + 非 .gif 文件名」要判为不可用（2026-09-28 审计合并判据）：
+ * 那是来源站占位图（JAVBUS 的 nowprinting.gif）被按 .jpg 存下来的形态 —— 魔数校验会放行、
+ * 界面也能渲染，但它不是真实内容；女优头像那边一直按「占位图」清理，封面/预览图
+ * 之前漏了这条，会显示成一张假的「Now Printing」海报。
+ */
 function usable(abs) {
-  try { return fs.existsSync(abs) && isImageFile(abs) } catch { return false }
+  try {
+    if (!fs.existsSync(abs)) return false
+    if (!isImageFile(abs)) return false
+    if (isGifRenamed(abs)) return false
+    return true
+  } catch { return false }
 }
 
 /**
@@ -123,6 +135,20 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
 
   // 以「坏图张数的变化」上报，见 movieImages 注释
   const after = movieImages(db, dataDir, id)
+
+  // 清理该片不再被引用的预览图（2026-09-28 审计）：重新刮削后预览数量变少时，
+  // 旧序号的文件会留在 covers/previews 里成为孤儿（磁盘缓慢增长）。
+  // 只删「同一前缀 + 序号后缀」且不在数据库引用列表里的文件 —— 前缀带了 '-'，
+  // 不会误伤番号前缀相同的其它影片（如 ABF-2 不会碰 ABF-20-*.jpg）。
+  try {
+    const keep = new Set(dbPrevs.map(rel => path.basename(rel)))
+    const prevDir = path.join(dataDir, COVER_DIR, 'previews')
+    if (fs.existsSync(prevDir)) {
+      for (const f of fs.readdirSync(prevDir)) {
+        if (f.startsWith(ph + '-') && !keep.has(f)) { try { fs.unlinkSync(path.join(prevDir, f)) } catch {} }
+      }
+    }
+  } catch {}
 
   // 仍然不可用的：把垃圾文件删掉（空文件 / 全零 / 覆盖为站内资源的 SVG 等）。
   // 留着只会是一张打不开的图；删掉不损失任何数据，源站恢复后下次检查会自动补上。

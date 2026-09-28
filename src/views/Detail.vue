@@ -141,7 +141,7 @@
     <div class="preview-strip" v-if="galleryImages.length > 1" @wheel="onStripWheel">
       <div class="strip-track" ref="stripRef">
         <div v-for="(g, i) in galleryImages" :key="i" class="strip-item" @click="openLightbox(i)">
-          <img :src="g" loading="lazy" />
+          <CoverImg :src="g" :alt="'预览图 ' + (i + 1)" />
           <span v-if="i === 0" class="strip-badge">海报</span>
         </div>
       </div>
@@ -158,7 +158,8 @@
             <AppIcon name="back" :size="22" />
           </button>
           <!-- 当前图片 -->
-          <img class="lb-img" :src="galleryImages[lightboxIdx]" :style="{ transform: `scale(${zoom})` }" @click.stop />
+          <CoverImg class="lb-img" :src="galleryImages[lightboxIdx]" :lazy="false"
+                    :style="{ transform: `scale(${zoom})` }" @click.stop />
           <button class="lb-arrow lb-next" aria-label="下一张" @click.stop="stepLightbox(1)">
             <AppIcon name="back" :size="22" class="flip-x" />
           </button>
@@ -183,6 +184,7 @@ import { useMoviesStore } from '@/store/movies'
 import { useScrapeStore } from '@/store/scrape'
 import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import CoverImg from '@/components/CoverImg.vue'
 import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
 import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint } from '@/utils/global'

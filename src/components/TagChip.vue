@@ -6,10 +6,14 @@
            作为 TagFilter 等组件的子单元使用。
 -->
 <template>
-  <!-- 标签芯片主体，点击时触发 click 事件 -->
-  <span class="tag-pill" :class="{ selected }" @click="$emit('click')">
+  <!-- 标签芯片主体：用 button 而非 span（2026-09-28 审计）——
+       span 不可聚焦，纯键盘用户无法操作标签筛选，也没有 aria 状态可读。
+       样式由 .tag-pill 完全接管（已设 background / border:none），外观不变。 -->
+  <button type="button" class="tag-pill" :class="{ selected }"
+          :aria-pressed="selected ? 'true' : 'false'"
+          @click="$emit('click')">
     {{ label }}
-  </span>
+  </button>
 </template>
 
 <script setup>
@@ -34,6 +38,7 @@ defineEmits(['click'])
   border-radius: var(--r-tag);
   background: var(--surface-2);
   color: var(--text-2);
+  font: inherit;              /* button 默认用系统 UI 字体，需继承页面字体（2026-09-28） */
   font-size: var(--fs-base);
   line-height: 1.6;
   margin: 3px 6px 3px 0;

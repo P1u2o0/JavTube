@@ -110,7 +110,10 @@ function curlDownload(url, savePath, opts = {}) {
       if (err) return resolve({ ok: false, error: err.message })
       const status = Number(String(stdout).trim()) || 0
       const size = fs.existsSync(savePath) ? fs.statSync(savePath).size : 0
-      if (status < 200 || status >= 400 || size === 0) {
+      // 3xx 也当失败（2026-09-28 审计）：图片请求不带 -L（跟随后可能被引到验证页），
+      // 重定向响应体不是图片；若把 3xx 当成功，scraper 的两路网络兜底（直连/代理）
+      // 就会在第一次「假成功」时停止，图片被静默丢弃。
+      if (status < 200 || status >= 300 || size === 0) {
         try { fs.unlinkSync(savePath) } catch {}
         return resolve({ ok: false, status, size, error: `HTTP ${status} / ${size} 字节` })
       }

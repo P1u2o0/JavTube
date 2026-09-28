@@ -45,7 +45,8 @@
         <span class="a-name">{{ a.name }}</span>
         <span class="a-count">{{ a.count }} 部作品</span>
       </button>
-      <div v-if="!list.length && !loading" class="empty">库内还没有女优数据</div>
+      <div v-if="!list.length && !loading" class="empty" :class="{ 'empty-err': loadError }"
+           @click="loadError && load()">{{ loadError ? loadError + '（点此重试）' : '库内还没有女优数据' }}</div>
     </div>
 
     <!-- ② 排行：热度降序，一行一女优 -->
@@ -70,7 +71,7 @@
         <div class="r-movies">
           <button v-for="mv in a.top" :key="mv.id" class="r-mv"
                   @click="goDetail(mv.id)" :title="(mv.pm || mv.ph) + '（想看 ' + mv.want.toLocaleString('zh-CN') + '）'">
-            <img v-if="mv.cover" :src="resolveCover(mv.cover)" :alt="mv.ph" loading="lazy" />
+            <CoverImg v-if="mv.cover" :src="resolveCover(mv.cover)" :alt="mv.ph" />
             <span v-else class="r-mv-ph">{{ mv.ph }}</span>
             <span class="r-mv-cap">
               <span class="r-mv-ph2">{{ mv.ph }}</span>
@@ -93,6 +94,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { resolveCover } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
+import CoverImg from '@/components/CoverImg.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -110,6 +112,8 @@ const brokenAvatars = ref({})
 const view = ref(route.query.view === 'rank' ? 'rank' : 'grid')
 const list = ref([])
 const loading = ref(true)
+/** 加载失败原因（非空时空状态显示它并提供点此重试，避免把失败当成「库里没数据」） */
+const loadError = ref('')
 /** 高亮的演员名（?hl=，从演员影片页的热度区跳过来时定位用） */
 const highlight = ref(String(route.query.hl || ''))
 
@@ -129,6 +133,9 @@ async function load() {
   brokenAvatars.value = {}      // 重新给所有头像一次加载机会（补全过 / 文件被修好时能恢复）
   const r = await window.api.getActressOverview().catch(() => null)
   list.value = r?.ok ? (r.data || []) : []
+  // 区分「加载失败」与「库里确实没有女优」（2026-09-28 审计）：
+  // 两者都表现为空列表，但把失败显示成「还没有女优数据」会让人误以为数据丢了
+  loadError.value = r?.ok ? '' : (r?.error || '加载失败')
   loading.value = false
   // 带 hl 进入排行视图时，滚动定位到该女优并高亮
   if (view.value === 'rank' && highlight.value) {
@@ -349,6 +356,8 @@ onMounted(load)
 .r-more:active { transform: scale(0.96); }
 
 .empty { padding: 40px 0; text-align: center; color: var(--muted); font-size: var(--fs-base); }
+/* 加载失败态：可点击重试，颜色用警示色与「暂无数据」区分开（2026-09-28） */
+.empty-err { color: var(--danger, #c45656); cursor: pointer; }
 
 /* 窄窗口：信息列收紧（海报随行宽自适应缩放） */
 @media (max-width: 1200px) {

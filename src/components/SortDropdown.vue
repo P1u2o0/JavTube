@@ -73,7 +73,9 @@ const arrow = computed(() => (props.random ? '' : (props.order === 'ASC' ? '↑'
 function onCommand(cmd) {
   let next
   if (cmd === 'random') {
-    next = { by: props.by, order: props.order, random: true }
+    // seed 决定「随机排序」的具体顺序：后端用 (id*seed) % 大质数 做置换，
+    // 同一 seed 分页顺序稳定（否则每翻一页重新随机，会出现重复/漏片）；重新点随机即换 seed
+    next = { by: props.by, order: props.order, random: true, seed: Math.floor(Math.random() * 999983) + 1 }
   } else if (props.by === cmd && !props.random) {
     next = { by: cmd, order: props.order === 'DESC' ? 'ASC' : 'DESC', random: false }
   } else {

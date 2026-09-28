@@ -126,9 +126,16 @@ const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 
 async function throttleByHost(url) {
   let host = ''
   try { host = new URL(url).host } catch { return }
-  const wait = MIN_REQ_INTERVAL - (Date.now() - (lastReqAt.get(host) || 0))
+  // 「同步占位」而非「读-等-写」（2026-09-28 审计）：
+  // 原实现先读 lastReqAt、await 等待、再写入 —— 同一 host 的并发请求会读到同一个旧值，
+  // 算出相同等待时间后几乎同时发出，限速形同虚设（批量刮削并发的正是这种情况）。
+  // 现在把「本次请求该在什么时刻发出」在同步段里算好并**立刻写回**，
+  // 并发调用会各自拿到递增 400ms 的槽位，真正拉开间隔。
+  const now = Date.now()
+  const slot = Math.max(now, (lastReqAt.get(host) || 0) + MIN_REQ_INTERVAL)
+  lastReqAt.set(host, slot)
+  const wait = slot - now
   if (wait > 0) await new Promise(r => setTimeout(r, wait))
-  lastReqAt.set(host, Date.now())
 }
 
 async function fetchHtml(url, { referer, cookie, proxy } = {}) {
@@ -201,6 +208,29 @@ async function downloadPreviewList(list, { cleanPh, dataDir, coverDir, referer, 
     }
   }
   return out
+}
+
+/**
+ * 是否是「GIF 内容 + 非 .gif 文件名」的伪图片。
+ *
+ * JAVBUS 对没有照片的女优给的是 nowprinting.gif，而抓取时的扩展名正则不含 gif，
+ * 于是历史上被按 .jpg 存了下来（2026-09-24 实测：文件头是 GIF89a）。
+ * 这类文件既是「有效图片」（魔数校验会放行、界面能渲染）又**不是真实内容**，
+ * 所以女优头像与封面/预览图两处都要按「不可用」处理 —— 判定逻辑只此一份（2026-09-28 审计合并）。
+ * @param {string} abs - 绝对路径
+ * @returns {boolean}
+ */
+function isGifRenamed(abs) {
+  if (/\.gif$/i.test(abs)) return false
+  let fd
+  try {
+    fd = fs.openSync(abs, 'r')
+    const buf = Buffer.alloc(3)
+    fs.readSync(fd, buf, 0, 3, 0)
+    return buf.toString('latin1') === 'GIF'
+  } catch { return false } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd) } catch {} }
+  }
 }
 
 /**
@@ -301,7 +331,10 @@ async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || 
   let cover = inteHandler(data, '<div class="col-md-9 screencap">', '</div>', [0, 0, 0])
   cover = inteHandler(cover, 'src="', '"', [0, 0, 0])
   if (cover && !cover.startsWith('http')) cover = baseUrl + cover  // 补全相对路径
-  if (!cover) return null
+  // 注意：**不要**因为缺封面就 return null（2026-09-28 审计）。
+  // 原实现 `if (!cover) return null` 会让「封面区块结构变化/该页无封面」把整条结果判为未匹配，
+  // 连带丢掉已解析出的片名/日期/演员/预览图；而 scrapeMovie 的跨源兜底本来就会用 JAVDB 的
+  // cover 填补这里的空值（见其 `if (!result[k] && jd[k])` 循环），所以只丢封面字段即可。
 
   // 提取分类（有码/无码/欧美）
   let fl = inteHandler(data, '<li class="active">', '</li>', [1, 1, 1])
@@ -897,4 +930,4 @@ async function scrapeMovie(ph, {
   return { ok: false, error: lastError || '未找到该番号的信息' }
 }
 
-module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile }
+module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile, isGifRenamed }

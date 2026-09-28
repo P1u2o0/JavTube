@@ -57,7 +57,11 @@ function nowLocal() {
  * @param {Object} db - sql.js 数据库实例（带 init.js 附加的 _forceSave 方法）
  */
 function persist(db) {
-  if (db._forceSave) db._forceSave()
+  // 把落盘结果透传出去（2026-09-28 审计）：原来丢弃返回值，调用方无法判断是否真的写下去了 ——
+  // 例如 settings:backup 紧接着拷贝磁盘文件，落盘失败时拷到的是上一次成功落盘的旧库，
+  // 却仍然提示备份成功。
+  if (db._forceSave) return !!db._forceSave()
+  return true
 }
 
 /**

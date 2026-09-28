@@ -34,8 +34,8 @@
             <div v-for="s in heroSlots" :key="s.key" class="slot"
                  :ref="el => setSlotEl(s.pos, el)" :style="slotStyle(s.pos, !s.movie)">
               <template v-if="s.movie">
-                <img :src="coverOf(s.movie)" :alt="s.movie.pm || ''" :title="s.movie.pm || ''"
-                     decoding="async" @click="onSlotClick(s.pos)" />
+                <CoverImg :src="coverOf(s.movie)" :alt="s.movie.pm || ''" :title="s.movie.pm || ''"
+                          :lazy="false" @click="onSlotClick(s.pos)" />
                 <div class="shade"></div>
               </template>
               <!-- 影片数不足 5 部时，首尾槽位显示淡红色空位占位图 -->
@@ -77,7 +77,7 @@
       <div class="arrival-grid">
         <div v-for="m in arrivals" :key="m.id" class="arrival-card" @click="goDetail(m)">
           <div class="ac-cover">
-            <img v-if="coverOf(m)" :src="coverOf(m)" :alt="m.pm || ''" />
+            <CoverImg v-if="coverOf(m)" :src="coverOf(m)" :alt="m.pm || ''" />
             <div v-else class="ac-no-cover"><AppIcon name="image" :size="22" /></div>
           </div>
           <div class="ac-code">{{ m.ph || '—' }}</div>
@@ -102,6 +102,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { resolveCover } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
+import CoverImg from '@/components/CoverImg.vue'
 
 const router = useRouter()
 

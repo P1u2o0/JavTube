@@ -22,6 +22,8 @@ const IPC = require('../../common/ipc-channels')
 // 标签映射函数：直接复用刮削时用的那一个（单一事实来源，避免两处实现随时间漂移）
 // scraper.js 只依赖 net-curl / fs / path / url / constants，不反向依赖 db 层，无循环引用
 const { applyTagMapping } = require('../scraper')
+// 影片的 cast_json/yid 被改写后需要让演员侧缓存失效（见本文件 MOVIES_UPDATE 里的调用）
+const { invalidateActorCaches } = require('./actress')
 
 // === 影片表字段元数据 ===
 /**
@@ -132,9 +134,12 @@ function registerMovieIpc(ipcMain, db) {
       for (let ci = 0; ci < sel.length; ci++) {
         const tags = sel[ci]
         if (Array.isArray(tags) && tags.length) {
-          // 同组内、不同组间的标签都使用 AND 连接（必须全部同时匹配）
-          const ors = tags.map(() => 'bq LIKE ?')
-          for (const t of tags) args.push(`%${t}%`)
+          // 整标签精确匹配（2026-09-28 审计）：原实现 `bq LIKE '%标签%'` 是子串匹配，
+          // 选「素人」会把打了「素人娘」「超素人」的影片也带出来，与标签栏的精确计数对不上。
+          // 做法：把分隔符统一成英文逗号再前后补逗号，按 `,标签,` 匹配。
+          // （REPLACE 兼容历史数据里可能存在的英文逗号分隔）
+          const ors = tags.map(() => "(','||REPLACE(bq,'，',',')||',') LIKE ? ESCAPE '\\'")
+          for (const t of tags) args.push(`%,${String(t).replace(/[\\%_]/g, (m) => '\\' + m)},%`)
           where.push('(' + ors.join(' AND ') + ')')
         }
       }
@@ -157,8 +162,18 @@ function registerMovieIpc(ipcMain, db) {
       // 构建排序子句
       let orderSql = ''
       if (sort.random) {
-        // 随机排序
-        orderSql = 'ORDER BY RANDOM()'
+        // 随机排序（2026-09-28 审计修正）：原实现 `ORDER BY RANDOM()`，每翻一页都重新随机，
+        // 第 1 页的影片可能在第 2 页重复出现、另一些永远刷不到。
+        // 改用「确定性置换」：key = (id²·K + id·B) mod P，K/B 都由渲染层传入的 seed 派生，
+        // P 取大质数。同一 seed 下顺序完全确定 → 分页稳定；换 seed（重新点随机）→ 重新洗牌。
+        // ★ 用二次型而不是线性 (id·K)%P：后者对连续的 id 会产出「等差」顺序
+        //   （实测 33,66,99,132…），一眼就能看出不随机。
+        // 万一出现 key 相同（极少数），次级键 id DESC 保证顺序仍然确定，不会跨页跳动。
+        const P = 999983
+        const seed = Math.abs(Math.floor(Number(sort.seed) || 1))
+        const K = (seed % 99991) + 2
+        const B = ((seed * 7919) % 99989) + 3
+        orderSql = `ORDER BY (id * id * ${K} + id * ${B}) % ${P} ASC, id DESC`
       } else {
         // 白名单列名排序，防止 SQL 注入（白名单定义于 constants.js）
         const col = SORTABLE_COLUMNS.includes(sort.by) ? sort.by : 'tjrq'
@@ -241,6 +256,12 @@ function registerMovieIpc(ipcMain, db) {
       // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
       db.run(UPDATE_MOVIE_SQL, buildMovieUpdateParams(d, id))
       persistSoon(db)
+      // 演员/性别等字段变了要让演员侧缓存立即失效（2026-09-28 审计）：
+      // 演员总览与热度排名的缓存键只含 COUNT/MAX(id)，改 cast_json 不会让它失效 ——
+      // 结果是演员页最长 60 秒仍显示旧名单（新增/删除演员看不到）。
+      if (data && ('cast_json' in data || 'yy' in data || 'yid' in data)) {
+        try { invalidateActorCaches() } catch {}
+      }
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })

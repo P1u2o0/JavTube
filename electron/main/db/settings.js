@@ -150,7 +150,13 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       // 必须先「同步」落盘再拷贝：
       // persistSoon 只是把落盘推迟到本轮事件循环之后（setImmediate），
       // 紧接着 copyFileSync 拷到的仍是磁盘上的旧库 → 备份会丢最近操作。
-      persist(db)
+      const saved = persist(db)
+      // 落盘失败时不能再拷（2026-09-28 审计）：拷到的会是上一次成功落盘的旧库，
+      // 而界面会提示「备份成功」——用户以为拿到的是最新数据。
+      // 例外：恢复备份后的 _blockPersist 期间落盘是被有意拦住的，此时磁盘文件正是刚恢复的那份，可以拷。
+      if (!saved && !db._blockPersist) {
+        return { ok: false, error: '数据库落盘失败，未执行备份（请检查磁盘空间与 data 目录权限后重试）' }
+      }
       // 复制数据库文件到目标路径
       fs.copyFileSync(db._dbPath, targetPath)
       return { ok: true }

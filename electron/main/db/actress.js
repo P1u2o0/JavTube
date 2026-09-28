@@ -20,7 +20,9 @@ const crypto = require('crypto')
 // 封面/头像目录名（dataDir 下的子目录，集中定义于 constants.js）
 const { COVER_DIR } = require('../constants')
 // 头像来源（JAVDB 演员页）+ 图片下载/内容校验（含主站图床走代理的判断）
-const { fetchActorAvatar, downloadImage, isImageFile } = require('../scraper')
+// isGifRenamed 统一放在 scraper.js（与 isImageFile 同处，图片判定只此一份）：
+// 女优头像与封面/预览图共用同一条「GIF 伪装成 .jpg」判据，避免两处口径漂移。
+const { fetchActorAvatar, downloadImage, isImageFile, isGifRenamed } = require('../scraper')
 
 /**
  * 热度分档（演员页火焰配色）：按「前 X%」从热到冷。
@@ -204,17 +206,6 @@ function avatarHash(abs) {
  * 按 .jpg 存了下来（2026-09-24 实测：文件头是 GIF89a）。真实的女优照片不会是 GIF，
  * 所以这条判据是**确定的**，而且与「还剩几张」无关。
  */
-function isGifRenamed(abs) {
-  if (/\.gif$/i.test(abs)) return false
-  try {
-    const fd = fs.openSync(abs, 'r')
-    const buf = Buffer.alloc(3)
-    fs.readSync(fd, buf, 0, 3, 0)
-    fs.closeSync(fd)
-    return buf.toString('latin1') === 'GIF'
-  } catch { return false }
-}
-
 /**
  * 已知的占位图内容指纹（会话内累积）。
  * 仅靠「同一内容被 ≥3 位共用」识别有个致命问题：清理掉一张后就不满足阈值，
@@ -295,9 +286,13 @@ function avatarTodoOf(db, dataDir) {
 
 /** 取该演员当前的头像相对路径（cast_json 里第一个非空），没有则空串 */
 function currentAvatarOf(db, name) {
-  const res = db.exec('SELECT cast_json FROM movies WHERE cast_json LIKE ?', [`%"name":"${name}"%`])[0]
-  if (!res) return ''
-  for (const [cj] of res.values) {
+  // 全表扫描 + 精确比对（2026-09-28 审计）：原实现用 `cast_json LIKE '%"name":"X"%'`，
+  // 演员名含 `"` 或 `\`（JSON 转义后模式对不上）或 `%`/`_`（被当通配符）时会失效或误匹配，
+  // 表现为「补头像时找不到当前头像路径」→ 新建文件而不是覆盖，留下孤儿图。
+  // 影片量级只有几百条，全扫 + JSON.parse 完全可接受。
+  const all = db.exec('SELECT cast_json FROM movies')[0]
+  if (!all) return ''
+  for (const [cj] of all.values) {
     try {
       const hit = (JSON.parse(cj || '[]') || []).find(c => c && c.name === name && c.avatar)
       if (hit) return hit.avatar
@@ -442,12 +437,20 @@ function registerActressIpc(ipcMain, db, dataDir) {
     const empty = { name: nm, gender: 'f', avatar: '', info: null, movies: [] }
     if (!nm) return { ok: true, data: empty }
     try {
-      // 匹配：cast_json 精确名字（含男女演员）+ yid 四种位置（兼容未写 cast_json 的旧数据）
-      const like = `%"name":"${nm}"%`
-      const q = `SELECT * FROM movies
-        WHERE cast_json LIKE ? OR yid LIKE ? OR yid LIKE ? OR yid LIKE ? OR yid=?
-        ORDER BY fxrq DESC`
-      const movies = rows(db.exec(q, [like, `${nm}，%`, `%，${nm}，%`, `%，${nm}`, nm])[0])
+      // 匹配该演员出演的影片：yid 逗号分隔位置匹配（兼容未写 cast_json 的旧数据）
+      // + cast_json 精确名字匹配。
+      // 2026-09-28 审计：原实现用 `cast_json LIKE '%"name":"X"%'` 预筛，演员名含 `"`/`\`
+      // （JSON 转义后模式对不上）或 `%`/`_`（被当通配符）时会漏片。改为全表取回后在 JS 里
+      // 逐条精确判断 —— 影片量级只有几百条（本 handler 本来也 SELECT * 这批数据），成本相近。
+      const all = rows(db.exec('SELECT * FROM movies ORDER BY fxrq DESC')[0])
+      const hitYid = (y) => {
+        const s = String(y || '')
+        return s === nm || s.startsWith(nm + '，') || s.endsWith('，' + nm) || s.includes('，' + nm + '，')
+      }
+      const movies = all.filter(mv => {
+        if (hitYid(mv.yid)) return true
+        try { return (JSON.parse(mv.cast_json || '[]') || []).some(c => c && c.name === nm) } catch { return false }
+      })
       // 从命中影片的 cast_json 取该演员的性别/头像（取第一条）
       let gender = 'f', avatar = ''
       for (const mv of movies) {
@@ -534,4 +537,16 @@ function registerActressIpc(ipcMain, db, dataDir) {
   })
 }
 
-module.exports = { registerActressIpc }
+/**
+ * 让演员侧的两个会话缓存立即失效。
+ * 影片的 cast_json/yid 被改写（详情页编辑演员、批量改演员等）时由 movies.js 调用 ——
+ * 缓存键只含 COUNT/MAX(id)，改字段不会自然失效，否则演员页最多 60 秒还显示旧名单。
+ */
+function invalidateActorCaches() {
+  heatCache.key = ''
+  heatCache.at = 0
+  ovCache.key = ''
+  ovCache.at = 0
+}
+
+module.exports = { registerActressIpc, invalidateActorCaches }

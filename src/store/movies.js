@@ -8,6 +8,7 @@
  * ============================================================
  */
 import { defineStore } from 'pinia'
+import { ElMessage } from 'element-plus'
 
 // 默认显示名 - 程序启动后从 settings:saveTagCats / tag-categories.json 读取，用户可自定义
 // 9 个标签大类，初始为空，后续从配置文件或数据库加载
@@ -270,13 +271,25 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      * 切换影片收藏状态
      * @param {number} id - 影片 ID
      */
+    /**
+     * 切换喜欢状态（片库/喜欢/观看记录三页共用）。
+     * 乐观更新 + 失败回滚 + 明确提示（2026-09-28 审计）：原实现是悲观的且失败完全静默 ——
+     * 与详情页（乐观+回滚）、演员页（乐观+回滚+提示）三套行为不一致，用户体感是「点了没反应」。
+     * 统一到这里后，三个列表页与详情页的行为一致。
+     * @param {number} id - 影片 id
+     */
     async toggleFav(id) {
       if (!window.api) return
       const m = this.movies.find(x => x.id === id)
       if (!m) return
-      const val = m.cl === 'y' ? 'n' : 'y'
-      const r = await window.api.updateMovie(id, { cl: val })
-      if (r.ok) m.cl = val
+      const prev = m.cl
+      const val = prev === 'y' ? 'n' : 'y'
+      m.cl = val                                   // 乐观更新：心形立刻变色
+      const r = await window.api.updateMovie(id, { cl: val }).catch(() => null)
+      if (!r || !r.ok) {
+        m.cl = prev                                // 写库失败：回滚并告知，避免界面与数据不一致
+        ElMessage.error(r?.error || '操作失败')
+      }
     }
   }
 })
