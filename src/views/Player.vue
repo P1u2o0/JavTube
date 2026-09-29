@@ -77,7 +77,7 @@
     </div>
 
     <!-- ============ 右列：相关推荐 ============ -->
-    <aside class="rec-col">
+    <aside ref="recColRef" class="rec-col">
       <div class="rec-head">相关推荐</div>
       <!-- recVersion：每次推荐结果更新自增 → 列表整体淡入（切换影片时丝滑过渡） -->
       <div class="rec-list swap-in" :key="'recs-' + recVersion">
@@ -116,6 +116,7 @@ const store = useMoviesStore()
 
 // ====== 状态 ======
 const boxRef = ref(null)
+const recColRef = ref(null)    // 右列容器：按可用高度反算推荐列表整条数
 const m = ref(null)            // 当前影片行（movies 表）
 const recs = ref([])           // 相关推荐列表
 const recLoading = ref(false)
@@ -327,6 +328,25 @@ function fitVideoObject() {
   v.style.objectFit = off <= 0.08 ? 'cover' : 'contain'
 }
 
+// ====== 推荐列表整条数自适应（消除底部半截条 + 空白带）======
+// 视口不够高时 rec-col 被 max-height 钳制，固定 6 条会在底部截出「半条海报 + 一条空白」。
+// 直接按视口反算能完整放下几条（与 .rec-col 的 max-height 同一公式，不依赖列表内容时序），
+// 上限 6、下限 3，写成 --rec-rows 交给 CSS。
+function fitRecRows() {
+  const col = recColRef.value
+  if (!col) return
+  const cs = getComputedStyle(col)
+  const navH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-h')) || 56
+  const cap = window.innerHeight - navH - 48            // = .rec-col 的 max-height
+  const itemH = parseFloat(cs.getPropertyValue('--rec-item-h')) || 149.5
+  const pad = parseFloat(cs.getPropertyValue('--rec-pad')) || 6
+  const headH = parseFloat(cs.getPropertyValue('--head-h')) || 46
+  const rows = Math.max(3, Math.min(6, Math.floor((cap - headH + pad) / itemH)))
+  if (col.style.getPropertyValue('--rec-rows') !== String(rows)) {
+    col.style.setProperty('--rec-rows', String(rows))
+  }
+}
+
 // ====== 进度记忆 ======
 function saveProgress(force = false) {
   if (!art || !m.value) return
@@ -470,6 +490,8 @@ onMounted(async () => {
   await loadHotkeys()
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
+  window.addEventListener('resize', fitRecRows)
+  fitRecRows()
   if (dataDirRef.value) window.__dataDir = dataDirRef.value
   loadMovie(Number(route.params.id))
 })
@@ -478,6 +500,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown, true)
   window.removeEventListener('keyup', onKeyUp, true)
   window.removeEventListener('resize', fitVideoObject)
+  window.removeEventListener('resize', fitRecRows)
   endHold()
   // 兜底保存进度（route 切走/关页都会走这里）
   if (art && m.value && art.currentTime > 0) {
