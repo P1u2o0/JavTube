@@ -45,19 +45,23 @@
           <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
         </div>
         <div class="row-actions">
+          <!-- 评分移到喜欢按钮左侧（原先在女优行最右） -->
+          <span v-if="m.score > 0" class="info-stats">
+            <span class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
+          </span>
           <button type="button" class="pill-btn fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
                   :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
-            <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="15" />
+            <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="16" />
             <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
           </button>
           <button type="button" class="pill-btn detail-btn" @click="goDetail" title="查看影片详情">
-            <AppIcon name="more" :size="15" />
+            <AppIcon name="more" :size="16" />
             <span>详情</span>
           </button>
         </div>
       </div>
 
-      <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页）… 最右：评分/时长 -->
+      <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页） -->
       <div class="actress-row swap-in" v-if="m" :key="'act-' + m.id">
         <button v-if="leadActress" type="button" class="actress"
                 :title="`查看 ${leadActress.name} 的全部影片`"
@@ -69,10 +73,6 @@
           <span class="ac-name">{{ leadActress.name }}</span>
           <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
         </button>
-
-        <span class="info-stats">
-          <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
-        </span>
       </div>
     </div>
 
@@ -380,7 +380,9 @@ function initOrSwitchPlayer() {
     pip: true,
     setting: true,
     mutex: false,
-    backdrop: true,
+    // backdrop: false —— 控制条毛玻璃（backdrop-filter: blur(20px)）压在视频上时每帧都要
+    // 重算模糊，是播放卡顿的主要来源之一，这里关掉（控制条仍有半透明黑底，观感不变）。
+    backdrop: false,
     hotkey: false,          // 内置键盘关闭：方向键长按/单击语义由本页面接管
     moreVideoAttr: { playsInline: true }
   })
@@ -518,11 +520,14 @@ onBeforeUnmount(() => {
 }
 
 .player-box {
+  /* 宽高比铁律：盒子必须永远是严格 16:9。高度被视口钳制时同步收窄宽度
+     （max-width 按 100vh 反算），绝不让宽高比跑偏 —— 一旦跑偏，视频按 contain
+     就铺不满盒子，四边露黑边且在四角圆弧处收成黑楔（「四角黑边」的根源）。
+     代价：矮宽窗口下播放器左右留一点页底色空隙（居中），比黑边好看得多。 */
   width: 100%;
+  max-width: calc((100vh - var(--nav-h, 56px) - var(--head-h) - 130px) * 16 / 9);
   aspect-ratio: 16 / 9;
-  /* 高度上限＝视口 − 顶栏 − 标题行 − 播放器下方内容（标签行 12+34、女优行 8+46、页底 12）。
-     播放器由宽度决定大小（16:9 撑满左列），这里只是防止在超宽窗口下顶出页面。 */
-  max-height: calc(100vh - var(--nav-h, 56px) - var(--head-h) - 130px);
+  margin-inline: auto;
   border-radius: var(--r-md);
   overflow: hidden;
   background: #000;
@@ -539,6 +544,17 @@ onBeforeUnmount(() => {
 .player-box :deep(.art-video-player.art-fullscreen-web),
 .player-box :deep(.art-video-player.art-fullscreen-web video) {
   border-radius: 0;
+}
+/* ArtPlayer 内部 UI 统一圆角：倍速提示（左上角 notice）、设置面板、影片信息、右键菜单、
+   音量面板、进度缩略图、清晰度选择列表等全部由 --art-border-radius 这一个变量驱动，
+   改这里一处即可，不会再出现「某个面板是方框」的违和。 */
+.player-box :deep(.art-video-player) {
+  --art-border-radius: var(--r-sm);
+}
+/* 切换片源防白闪：换 src 的瞬间视频层可能还没有新帧可画，个别机器上合成器会把
+   未初始化的缓冲画成白色。给 <video> 自身垫黑底后，空帧期间显示的是黑色而不是白闪。 */
+.player-box :deep(.art-video-player video) {
+  background: #000;
 }
 
 /* 长按倍速 / 快退角标（挂在 ArtPlayer 根节点上，非 scoped —— 用 :global 穿透） */
@@ -600,7 +616,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
-/* 播放器下方第一行：标签 … 最右喜欢按钮 */
+/* 播放器下方第一行：标签 … 最右 评分 + 喜欢 + 详情 */
 .tag-row {
   display: flex;
   align-items: center;
@@ -614,9 +630,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 8px;
+  gap: 7px 9px;
 }
-/* 第二行：女优（头像+名字）… 最右评分/时长 */
+/* 第二行：女优（头像 + 名字） */
 .actress-row {
   display: flex;
   align-items: center;
@@ -629,14 +645,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 4px 12px 4px 4px;
+  gap: 10px;
+  padding: 4px 14px 4px 4px;
   border: none;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
@@ -644,8 +660,8 @@ onBeforeUnmount(() => {
 .actress:hover { background: var(--surface-2); }
 .actress:active { transform: scale(0.97); }
 .ac-avatar {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   border-radius: 50%;
   overflow: hidden;
@@ -656,37 +672,37 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 .ac-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ac-fallback { font-size: 16px; font-weight: 600; color: var(--text-2); }
+.ac-fallback { font-size: 19px; font-weight: 600; color: var(--text-2); }
 .ac-name { white-space: nowrap; }
-.ac-more { color: var(--muted); font-size: 13px; font-weight: 500; }
+.ac-more { color: var(--muted); font-size: 14px; font-weight: 500; }
 
 /* 标签（展示影片全部 bq；三类排在前，纯展示不可点 → 不用 TagChip 的 pointer 语义） */
 .cat-tag {
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: var(--r-tag);
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   white-space: nowrap;
   user-select: none;
 }
 
+/* 评分：位于标签行最右、喜欢按钮左侧 */
 .info-stats {
-  margin-left: auto;             /* 评分/时长贴着女优行最右 */
   display: inline-flex;
   align-items: center;
   gap: 14px;
   white-space: nowrap;
 }
-.info-stats .rating { color: var(--star-fill); }
+.info-stats .rating { color: var(--star-fill); font-size: 15px; font-variant-numeric: tabular-nums; }
 
-/* 标签行右侧的操作按钮组（喜欢 / 详情，同一套胶囊样式） */
+/* 标签行右侧的操作按钮组（评分 / 喜欢 / 详情，同一行） */
 .row-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* 胶囊按钮基础样式（图标 + 文字，与详情页操作按钮同一视觉语言） */
@@ -729,7 +745,7 @@ onBeforeUnmount(() => {
   --rec-thumb-h: calc(var(--rec-thumb-w) * 10 / 16);   /* 海报 16:10 */
   --rec-pad: 6px;                                      /* .rec-item 上下内边距 */
   --rec-item-h: calc(var(--rec-thumb-h) + var(--rec-pad) * 2);
-  --rec-rows: 5;                                       /* 一屏正好完整显示 5 项 */
+  --rec-rows: 6;                                       /* 一屏正好完整显示 6 项 */
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
   max-height: calc(100vh - var(--nav-h, 56px) - 48px);

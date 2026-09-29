@@ -41,6 +41,10 @@ const MIME = {
   '.mts': 'video/mp2t', '.m2ts': 'video/mp2t', '.3gp': 'video/3gpp', '.ogv': 'video/ogg'
 }
 
+// 读块大小：默认 64KB 对本地盘足够，但影片库常在 NAS/SMB 共享上 —— 小块高频读
+// 会被网络往返拖慢，表现为高码率影片「一卡一卡」。放大到 1MB 明显减少往返次数。
+const READ_CHUNK = 1024 * 1024
+
 /** 把 javtube-media 注册为 privileged scheme（app ready 之前调用）。 */
 function registerMediaScheme() {
   protocol.registerSchemesAsPrivileged([
@@ -92,7 +96,7 @@ function setupMediaProtocol() {
 
       const rangeHeader = request.headers.get('range')
       if (!rangeHeader) {
-        const stream = fs.createReadStream(resolved)
+        const stream = fs.createReadStream(resolved, { highWaterMark: READ_CHUNK })
         return new Response(Readable.toWeb(stream), {
           status: 200,
           headers: { ...common, 'content-length': String(stat.size) }
@@ -114,7 +118,7 @@ function setupMediaProtocol() {
         return new Response(null, { status: 416, headers: { 'content-range': `bytes */${stat.size}` } })
       }
       end = Math.min(end, stat.size - 1)
-      const stream = fs.createReadStream(resolved, { start, end })
+      const stream = fs.createReadStream(resolved, { start, end, highWaterMark: READ_CHUNK })
       return new Response(Readable.toWeb(stream), {
         status: 206,
         headers: {
