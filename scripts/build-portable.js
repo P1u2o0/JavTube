@@ -296,6 +296,35 @@ function resolveRcedit() {
 }
 
 /**
+ * 执行外部命令并取回 stdout —— **stdout 走文件描述符，不用管道**。
+ *
+ * 为什么不用 `execFileSync` 默认的管道：本机会注入
+ * `NODE_OPTIONS=--require .../node-language-shim.cjs`（沙箱的语言 shim），
+ * 它会让**管道式 stdio 的 spawn 直接失败**并报 `EBUSY`。实测同一个 rcedit：
+ *   `execFileSync(exe, args, {})`                      → EBUSY（必失败）
+ *   `execFileSync(exe, args, { stdio: 'inherit' })`     → 成功，但拿不到输出
+ *   `execFileSync(exe, args, { stdio:['ignore',fd,…] })`→ 成功且能取回输出 ✅
+ * 也就是说这不是 rcedit 的问题、不是权限问题、更不是「进程句柄没释放」（等 1.5s 再试照样失败）。
+ * → 凡是需要**捕获输出**的外部命令一律走这个函数；只需透传输出时用 `{ stdio: 'inherit' }`。
+ * @param {string} file - 可执行文件
+ * @param {string[]} args - 参数
+ * @param {object} [opts] - 其余 spawn 选项
+ * @returns {string} stdout（已 trim）
+ */
+function execFileCapture(file, args, opts = {}) {
+  const tmp = path.join(OUT_ROOT, '.exec-out.txt')
+  const fd = fs.openSync(tmp, 'w')
+  try {
+    execFileSync(file, args, { ...opts, stdio: ['ignore', fd, 'inherit'] })
+  } finally {
+    fs.closeSync(fd)
+  }
+  const out = fs.existsSync(tmp) ? fs.readFileSync(tmp, 'utf8') : ''
+  try { fs.unlinkSync(tmp) } catch { /* 删不掉无所谓，位于输出根、不进 zip */ }
+  return out.trim()
+}
+
+/**
  * 把 build/icon.ico 与版本信息写进 JavTube.exe。
  * electron-builder 的 exe 编辑被 signAndEditExecutable=false 关掉了（原因见文件头），
  * 所以这一步必须由本脚本补上，否则打出来的就是 Electron 默认图标。
@@ -327,6 +356,7 @@ function embedIcon() {
     '--set-product-version', v
   ]
   const before = fs.statSync(exe).size
+  // 只需透传输出 → 用 inherit（管道式 stdio 在本机会被 shim 打断，见 execFileCapture 注释）
   execFileSync(rcedit, args, { stdio: 'inherit' })
   const after = fs.statSync(exe).size
   if (before === after) {
@@ -342,7 +372,11 @@ function embedIcon() {
 function makeZip() {
   step('打包 zip')
   if (!fs.existsSync(SEVEN_ZIP)) throw new Error('找不到 7za.exe: ' + SEVEN_ZIP)
-  // 打包前兜底：产物目录里不允许出现 .old- 之类的历史残留（曾经把 88MB 的旧 asar 打进去过）
+  // 打包前兜底：**产物目录**（要封进 zip 的那个）里不允许出现 .old- 之类的历史残留
+  // （曾经把 88MB 的旧 asar 打进去过）。
+  // ⚠️ 必须扫 OUT_DIR，不能扫 UNPACKED：UNPACKED 是第 4 步的临时目录，win-unpacked 已被
+  // moveDir 搬走/或随后被清理，扫它必 ENOENT。历史上前几次侥幸能发版，是因为本机 rename
+  // 恰好总失败、退化成复制且临时目录没删掉 —— 换到干净环境（rename 成功）必挂在第 6 步。
   const leftovers = []
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
@@ -351,7 +385,7 @@ function makeZip() {
       else if (/\.old-\d+$/.test(name)) leftovers.push(p)
     }
   }
-  walk(UNPACKED)
+  walk(OUT_DIR)
   if (leftovers.length) {
     throw new Error(`产物目录里有历史残留文件，拒绝打包：\n  ${leftovers.join('\n  ')}\n请删除后重跑。`)
   }
@@ -470,7 +504,7 @@ async function main() {
   } else {
     // 复核：从 exe 里读回版本信息，确认 rcedit 真的写进去了
     const rcedit = resolveRcedit()
-    const got = execFileSync(rcedit, [path.join(OUT_DIR, 'JavTube.exe'), '--get-version-string', 'ProductName']).toString().trim()
+    const got = execFileCapture(rcedit, [path.join(OUT_DIR, 'JavTube.exe'), '--get-version-string', 'ProductName'])
     if (got !== APP_NAME) throw new Error(`图标/版本信息写入失败：exe 内 ProductName = "${got}"，期望 "${APP_NAME}"`)
     console.log(`自检通过：exe 图标 + 版本信息已写入（ProductName = ${got}）`)
   }
