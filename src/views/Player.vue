@@ -13,8 +13,28 @@
 
 <template>
   <div class="player-page" tabindex="-1">
-    <!-- ============ 左列：播放器 + 信息栏 ============ -->
+    <!-- ============ 左列：标题 + 播放器 + 女优信息 ============ -->
     <div class="main-col">
+      <!-- 标题行（播放器上方）：番号 + 片名 + 操作按钮。
+           行高固定 --head-h，与右列「相关推荐」标题同高 → 播放器与第一张海报顶边对齐 -->
+      <div class="info-head">
+        <div class="info-title" v-if="m" :title="[m.ph, m.pm || m.ph].filter(Boolean).join(' ')">
+          <span class="info-ph">{{ m.ph }}</span>
+          <span class="info-name">{{ m.pm || m.ph }}</span>
+        </div>
+        <div class="info-actions" v-if="m">
+          <button class="act-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav" :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
+            <AppIcon name="heart" :size="16" />
+          </button>
+          <button class="act-btn" @click="goDetail" title="查看详情">
+            <AppIcon name="more" :size="16" />
+          </button>
+          <button class="act-btn" @click="playExternal" title="用外部播放器打开">
+            <AppIcon name="globe" :size="16" />
+          </button>
+        </div>
+      </div>
+
       <div class="player-box" ref="boxRef"></div>
 
       <!-- 视频无法播放（容器/编码不支持，如 avi/wmv）-->
@@ -30,68 +50,50 @@
         </div>
       </div>
 
-      <!-- 信息栏：番号 + 标题 → 女优（头像+名字）+ 类别标签 → 统计 + 操作 -->
-      <div class="info-bar" v-if="m">
-        <div class="info-main">
-          <div class="info-title" :title="[m.ph, m.pm || m.ph].filter(Boolean).join(' ')">
-            <span class="info-ph">{{ m.ph }}</span>
-            <span class="info-name">{{ m.pm || m.ph }}</span>
-          </div>
+      <!-- 播放器下方：女优（头像+名字）+ 类别标签 →（右）评分/时长/分类 -->
+      <div class="info-sub" v-if="m">
+        <!-- 女优：圆形头像 + 名字，点击进入该女优的影片页（多女优时显示首位 + 余数） -->
+        <button v-if="leadActress" type="button" class="actress"
+                :title="`查看 ${leadActress.name} 的全部影片`"
+                @click="goActor(leadActress.name)">
+          <span class="ac-avatar">
+            <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
+            <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
+          </span>
+          <span class="ac-name">{{ leadActress.name }}</span>
+          <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
+        </button>
 
-          <div class="info-sub">
-            <!-- 女优：圆形头像 + 名字，点击进入该女优的影片页（多女优时显示首位 + 余数） -->
-            <button v-if="leadActress" type="button" class="actress"
-                    :title="`查看 ${leadActress.name} 的全部影片`"
-                    @click="goActor(leadActress.name)">
-              <span class="ac-avatar">
-                <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
-                <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
-              </span>
-              <span class="ac-name">{{ leadActress.name }}</span>
-              <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
-            </button>
+        <!-- 类别标签：只取「体型 / 行为 / 玩法」三类里命中的 -->
+        <span v-for="t in catTags" :key="t" class="cat-tag">{{ t }}</span>
 
-            <!-- 类别标签：只取「体型 / 行为 / 玩法」三类里命中的 -->
-            <span v-for="t in catTags" :key="t" class="cat-tag">{{ t }}</span>
-
-            <span class="info-stats">
-              <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
-              <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
-              <span v-if="m.fl && m.fl !== '全部'">{{ m.fl }}</span>
-            </span>
-          </div>
-        </div>
-        <div class="info-actions">
-          <button class="act-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav" :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
-            <AppIcon name="heart" :size="16" />
-          </button>
-          <button class="act-btn" @click="goDetail" title="查看详情">
-            <AppIcon name="more" :size="16" />
-          </button>
-          <button class="act-btn" @click="playExternal" title="用外部播放器打开">
-            <AppIcon name="globe" :size="16" />
-          </button>
-        </div>
+        <span class="info-stats">
+          <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
+          <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
+          <span v-if="m.fl && m.fl !== '全部'">{{ m.fl }}</span>
+        </span>
       </div>
     </div>
 
     <!-- ============ 右列：相关推荐 ============ -->
     <aside class="rec-col">
       <div class="rec-head">相关推荐</div>
-      <div v-if="!recs.length && !recLoading" class="rec-empty">暂无推荐</div>
-      <div v-for="r in recs" :key="r.id" class="rec-item" @click="goMovie(r.id)">
-        <div class="thumb">
-          <img v-if="coverUrl(r)" :src="coverUrl(r)" loading="lazy" decoding="async" @error="r._err = true" v-show="!r._err" />
-          <div v-if="!coverUrl(r) || r._err" class="no-cover">无封面</div>
-          <span v-if="r.duration > 0" class="dur">{{ fmtDur(r.duration) }}</span>
-        </div>
-        <div class="rec-info">
-          <div class="rec-title" :title="r.pm || r.ph">{{ r.pm || r.ph }}</div>
-          <div class="rec-meta">
-            <span class="rec-ph">{{ r.ph }}</span>
-            <span v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</span>
+      <div class="rec-list">
+        <div v-if="!recs.length && !recLoading" class="rec-empty">暂无推荐</div>
+        <div v-for="r in recs" :key="r.id" class="rec-item" @click="goMovie(r.id)">
+          <div class="thumb">
+            <img v-if="coverUrl(r)" :src="coverUrl(r)" loading="lazy" decoding="async" @error="r._err = true" v-show="!r._err" />
+            <div v-if="!coverUrl(r) || r._err" class="no-cover">无封面</div>
+            <span v-if="r.duration > 0" class="dur">{{ fmtDur(r.duration) }}</span>
           </div>
-          <div class="rec-why">{{ r.why }}</div>
+          <div class="rec-info">
+            <div class="rec-title" :title="r.pm || r.ph">{{ r.pm || r.ph }}</div>
+            <div class="rec-meta">
+              <span class="rec-ph">{{ r.ph }}</span>
+              <span v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</span>
+            </div>
+            <div class="rec-why">{{ r.why }}</div>
+          </div>
         </div>
       </div>
     </aside>
@@ -443,6 +445,9 @@ onBeforeUnmount(() => {
 /* 播放页沿用全局底色（--bg 暖纸白），与片库/详情/演员页同一套表层令牌，
    本地 scope 不污染其它页面；只有播放器画布本身是黑的。 */
 .player-page {
+  /* 左列标题行 / 右列「相关推荐」标题的统一行高：
+     两列头部等高，下面的播放器与第一张海报的顶边才能严格对齐（改这一处即可） */
+  --head-h: 46px;
   display: flex;
   gap: 18px;
   align-items: flex-start;
@@ -456,10 +461,21 @@ onBeforeUnmount(() => {
 
 /* ====== 左列 ====== */
 .main-col { flex: 1; min-width: 0; }
+
+/* 标题行：位于播放器上方；高度锁死 --head-h（内部标题单行截断，不会被长片名撑高） */
+.info-head {
+  height: var(--head-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  overflow: hidden;
+}
+
 .player-box {
   width: 100%;
   aspect-ratio: 16 / 9;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - var(--head-h) - 220px);
   border-radius: var(--r-md);
   overflow: hidden;
   background: #000;
@@ -495,16 +511,10 @@ onBeforeUnmount(() => {
 .me-title { font-size: 16px; font-weight: 600; color: var(--text); }
 .me-desc { margin: 8px 0 14px; color: var(--text-2); font-size: 13px; }
 
-/* 信息栏 */
-.info-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-top: 14px;
-}
-/* 标题行：番号在前 + 片名（番号不参与换行截断） */
+/* 标题行：番号在前 + 片名（番号不参与截断） */
 .info-title {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 10px;
@@ -521,20 +531,21 @@ onBeforeUnmount(() => {
   font-size: 16px;
   letter-spacing: -0.01em;
 }
+/* 单行截断：标题行高恒定，播放器顶边位置不受片名长短影响 */
 .info-name {
+  min-width: 0;
   color: var(--text);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 次行：女优（头像+名字）→ 类别标签 →（右）评分/时长/分类 */
+/* 播放器下方：女优（头像+名字）→ 类别标签 →（右）评分/时长/分类 */
 .info-sub {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 12px;
   flex-wrap: wrap;
   font-size: 13px;
   color: var(--muted);
@@ -609,11 +620,20 @@ onBeforeUnmount(() => {
 .rec-col {
   width: 360px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;        /* 标题固定、列表独立滚动 */
   max-height: calc(100vh - var(--nav-h, 56px) - 48px);
-  overflow-y: auto;
-  padding-right: 4px;
 }
-.rec-head { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.rec-head {
+  height: var(--head-h);         /* 与左列标题行等高 → 海报顶边对齐播放器顶边 */
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.rec-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
 .rec-item {
   display: flex;
@@ -623,6 +643,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out);
 }
+/* 首项去掉上内边距：缩略图顶边正好落在列表顶边（= 播放器顶边） */
+.rec-item:first-child { padding-top: 0; }
 .rec-item:hover { background: var(--surface-2); }
 .rec-item .thumb {
   position: relative;
