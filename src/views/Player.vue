@@ -12,7 +12,7 @@
 -->
 
 <template>
-  <div class="player-page" tabindex="-1">
+  <div class="player-page" :class="{ maximized: isMaximized }" tabindex="-1">
     <!-- ============ 左列：标题 + 播放器 + 女优信息 ============ -->
     <div class="main-col">
       <!-- 标题行（播放器上方）：番号 + 片名。
@@ -79,7 +79,7 @@
     </div>
 
     <!-- ============ 右列：相关推荐 ============ -->
-    <aside class="rec-col">
+    <aside ref="recColRef" class="rec-col">
       <div class="rec-head">相关推荐</div>
       <!-- recVersion：每次推荐结果更新自增 → 列表整体淡入（切换影片时丝滑过渡） -->
       <div class="rec-list swap-in" :key="'recs-' + recVersion">
@@ -118,7 +118,10 @@ const store = useMoviesStore()
 
 // ====== 状态 ======
 const boxRef = ref(null)
+const recColRef = ref(null)    // 右列容器：最大化模式下按可用高度反算单条尺寸
 const m = ref(null)            // 当前影片行（movies 表）
+const isMaximized = ref(false) // 窗口是否最大化（决定右列布局：6 条无滚动条 vs 滚动列表）
+let offMaximized = null        // 取消订阅窗口最大化状态变化
 const recs = ref([])           // 相关推荐列表
 const recLoading = ref(false)
 const recVersion = ref(0)      // 推荐结果版本号：自增即触发右侧列表淡入过渡
@@ -331,6 +334,24 @@ function fitVideoObject() {
   v.style.objectFit = off <= 0.08 ? 'cover' : 'contain'
 }
 
+// ====== 最大化下的右列布局：正好 6 条铺满 + 无滚动条 ======
+// 1080p 最大化时右列列表可用高 ~870px，6 条标称尺寸（149.5px/条）需 897px 放不下，
+// 等比缩小单条（海报高度约 -3%，肉眼无感）让 6 条正好占满；滚动条隐藏（CSS），
+// 滚轮仍可滚动查看第 7 条以后的推荐。还原窗口后清除覆盖，恢复标称尺寸 + 正常滚动条。
+function fitRecRows() {
+  const col = recColRef.value
+  if (!col) return
+  if (!isMaximized.value) { col.style.removeProperty('--rec-thumb-h'); return }
+  const list = col.querySelector('.rec-list')
+  if (!list) return
+  const cs = getComputedStyle(col)
+  const pad = parseFloat(cs.getPropertyValue('--rec-pad')) || 6
+  const nominal = parseFloat(cs.getPropertyValue('--rec-thumb-h')) || 137.5
+  const h = Math.min(nominal, list.clientHeight / 6 - pad * 2)
+  if (h > 40) col.style.setProperty('--rec-thumb-h', h.toFixed(2) + 'px')
+}
+watch(isMaximized, () => nextTick(fitRecRows))
+
 // ====== 进度记忆 ======
 function saveProgress(force = false) {
   if (!art || !m.value) return
@@ -474,6 +495,12 @@ onMounted(async () => {
   await loadHotkeys()
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
+  window.addEventListener('resize', fitRecRows)
+  // 窗口最大化状态：先查一次初值，再订阅后续变化（maximize/unmaximize 推送）
+  window.api?.isWindowMaximized?.()
+    .then(v => { isMaximized.value = !!v })
+    .catch(() => {})
+  offMaximized = window.api?.onWindowMaximized?.(v => { isMaximized.value = !!v }) || null
   if (dataDirRef.value) window.__dataDir = dataDirRef.value
   loadMovie(Number(route.params.id))
 })
@@ -482,6 +509,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown, true)
   window.removeEventListener('keyup', onKeyUp, true)
   window.removeEventListener('resize', fitVideoObject)
+  window.removeEventListener('resize', fitRecRows)
+  offMaximized?.(); offMaximized = null
   endHold()
   // 兜底保存进度（route 切走/关页都会走这里）
   if (art && m.value && art.currentTime > 0) {
@@ -769,7 +798,9 @@ onBeforeUnmount(() => {
      列越窄 → 左列越宽 → 播放器越大。440 → 400 让播放器加宽 44px（+4.3%）。 */
   width: 400px;
   flex-shrink: 0;
-  /* 推荐项尺寸令牌：海报 220×137.5（16:10）固定，条目高度随之固定 */
+  /* 推荐项尺寸令牌：海报 220×137.5（16:10）。
+     --rec-thumb-h 是单一事实来源（宽度由高度按 16:10 推导）；
+     最大化时 fitRecRows() 会写内联值把它等比缩小到「正好 6 条铺满」。 */
   --rec-thumb-w: 220px;
   --rec-thumb-h: calc(var(--rec-thumb-w) * 10 / 16);   /* 海报 16:10 */
   --rec-pad: 6px;                                      /* .rec-item 上下内边距 */
@@ -808,10 +839,17 @@ onBeforeUnmount(() => {
   padding-right: 8px;
 }
 .rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+/* 最大化：右列不显示滚动条（布局为正好 6 条铺满；滚轮仍可滚动查看更多推荐）。
+   窗口化（非 .maximized）保持系统滚动条——显示不全时提示还有内容可滚。 */
+.player-page.maximized .rec-list { scrollbar-width: none; }
+.player-page.maximized .rec-list::-webkit-scrollbar { width: 0; height: 0; }
 .rec-item {
   display: flex;
   gap: 10px;
   padding: var(--rec-pad);
+  /* 条目高度钉死为「海报高 + 上下内边距」：最大化下 --rec-thumb-h 被缩小后，
+     单条高跟着变小，6 条正好铺满列表可用高度（不留半条、不留空白）。 */
+  height: calc(var(--rec-thumb-h) + var(--rec-pad) * 2);
   /* 列表是 flex 列：条目必须禁止收缩，否则条目多于一屏时会被压扁（而不是出现滚动条） */
   flex: 0 0 auto;
   border-radius: var(--r-sm);
@@ -824,8 +862,9 @@ onBeforeUnmount(() => {
 .rec-item:active { transform: scale(0.99); }
 .rec-item .thumb {
   position: relative;
-  width: var(--rec-thumb-w);
-  aspect-ratio: 16 / 10;
+  /* 高度是单一事实来源（--rec-thumb-h），宽度按 16:10 由高度推导 */
+  height: var(--rec-thumb-h);
+  width: calc(var(--rec-thumb-h) * 16 / 10);
   border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--surface-3);

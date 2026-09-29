@@ -44,6 +44,13 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
     catch (e) { return { ok: false, error: e.message } }
   })
 
+  // === 窗口 ===
+  // 渲染进程 → 主进程：查询主窗口是否处于最大化（播放页右列布局随最大化/还原切换）
+  ipcMain.handle(IPC.WIN_IS_MAXIMIZED, () => {
+    const win = getMainWindow()
+    return !!win && win.isMaximized()
+  })
+
   // === 播放视频 ===
   // 渲染进程 → 主进程：根据设置中的自定义播放器路径播放视频，否则用系统默认程序打开
   ipcMain.handle(IPC.UTILS_PLAY_VIDEO, async (_e, filePath) => {
