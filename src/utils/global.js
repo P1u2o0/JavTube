@@ -93,6 +93,36 @@ export function resolveCover(cover, key) {
 }
 
 /**
+ * 同一影片「喜欢」操作的 in-flight 去重锁（2026-09-29 审计）。
+ *
+ * 问题：片库 store.toggleFav、详情页 toggleFav、演员页 onFav 三处都能改同一部影片的收藏，
+ *       对同一 id 连点会打出两个在飞请求 —— 后到的决定库里的值，界面可能出现「点了两次又变回去」
+ *       或界面与库不一致。用一个共享的 id 集合做去重：第一次点击拿锁，完成后释放；
+ *       在飞期间的重复点击直接忽略（界面已是乐观更新的目标态，无需再发）。
+ */
+const favInFlight = new Set()
+
+/**
+ * 尝试获取某影片的喜欢操作锁。
+ * @param {number|string} id
+ * @returns {boolean} true=拿到锁可继续；false=已有相同 id 的操作在飞，调用方应直接返回
+ */
+export function favLock(id) {
+  const k = String(id)
+  if (favInFlight.has(k)) return false
+  favInFlight.add(k)
+  return true
+}
+
+/**
+ * 释放某影片的喜欢操作锁（务必放在 finally 里）。
+ * @param {number|string} id
+ */
+export function favUnlock(id) {
+  favInFlight.delete(String(id))
+}
+
+/**
  * 从文件名尝试提取番号
  * 功能：通过正则匹配常见番号格式（字母-数字），如 ABC-123
  * @param {string} name - 文件名
@@ -219,10 +249,20 @@ export function buildScrapeUpdate(d, current = null, { fillOnly = false } = {}) 
     // 合并而非整体替换（2026-09-28 审计）：本次若只下到部分预览图（源站失败/数量变少），
     // 直接覆盖会把上次完整的列表连同文件引用一起丢掉（文件变孤儿、画廊少图）。
     // 以本次顺序为主，补上本次没有、但库里仍在引用的其余路径。
-    let merged = d.previews.slice()
+    //
+    // 去重键改为「去掉扩展名的 basename」（2026-09-29 审计）：原实现按完整路径去重，
+    // 同一张图不同扩展名（ABF-2-1.jpg 与 ABF-2-1.png）会被当成两张同时入库 →
+    // 画廊出现重复缩略图。同名冲突时保留**本次新下载**的那条（d.previews 在前）。
+    const baseNoExt = (p) => String(p).replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '')
+    const merged = d.previews.slice()
+    const seen = new Set(merged.map(baseNoExt))
     try {
       const cur = current ? JSON.parse(current.previews || '[]') : []
-      if (Array.isArray(cur)) for (const p of cur) if (p && !merged.includes(p)) merged.push(p)
+      if (Array.isArray(cur)) for (const p of cur) {
+        if (!p) continue
+        const k = baseNoExt(p)
+        if (!seen.has(k)) { seen.add(k); merged.push(p) }
+      }
     } catch {}
     update.previews = JSON.stringify(merged)
   }

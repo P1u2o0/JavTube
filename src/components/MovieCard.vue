@@ -261,7 +261,7 @@ watch(dataDirRef, () => { errd.value = false })
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 600; font-size: var(--fs-base);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-caps);   /* 卡片小号番号：与 --ls-caps（0.02em）同值，收进令牌体系 */
   margin-bottom: 3px;
 }
 /* 标题：两行省略 */

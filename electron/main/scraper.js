@@ -110,43 +110,37 @@ function assertJavdbNotBlocked(html, url, hasCookie) {
   }
 }
 
-// 请求限速（2026-09-13，思路参考 amane 的 RateLimiters）：
-// 同一 host 的连续请求保持最小间隔——突发请求极易触发站点反爬
-// （JAVDB 的 Cloudflare 会直接 403）。批量刮削会连续命中同一站点，
-// 因此按 host 维护「上次请求时间」，不足最小间隔则等待补足。
-// 注：本块曾因脚本批量替换区间时被误删，导致运行时 throttleByHost is not defined——
-//     改动本文件后建议执行 scripts/check-undefined.js 做未定义引用检查。
-const lastReqAt = new Map()   // host → 上次请求时间戳
-const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 req/s）
-
-/**
- * 按 host 限速：距上次请求不足 MIN_REQ_INTERVAL 则等待补足。
- * @param {string} url - 即将请求的地址
- */
-async function throttleByHost(url) {
-  let host = ''
-  try { host = new URL(url).host } catch { return }
-  // 「同步占位」而非「读-等-写」（2026-09-28 审计）：
-  // 原实现先读 lastReqAt、await 等待、再写入 —— 同一 host 的并发请求会读到同一个旧值，
-  // 算出相同等待时间后几乎同时发出，限速形同虚设（批量刮削并发的正是这种情况）。
-  // 现在把「本次请求该在什么时刻发出」在同步段里算好并**立刻写回**，
-  // 并发调用会各自拿到递增 400ms 的槽位，真正拉开间隔。
-  const now = Date.now()
-  const slot = Math.max(now, (lastReqAt.get(host) || 0) + MIN_REQ_INTERVAL)
-  lastReqAt.set(host, slot)
-  const wait = slot - now
-  if (wait > 0) await new Promise(r => setTimeout(r, wait))
-}
-
+// 请求限速（2026-09-13 引入；2026-09-29 审计下沉到 net-curl.js）：
+// 原实现在本文件用 throttleByHost 只包住 fetchHtml（页面请求），图片下载完全没限速。
+// 现已移到 net-curl.js 的 curlGet/curlDownload 内（按 URL host），页面与图片统一限速，
+// 本文件不再需要它。注：本文件曾因脚本批量替换区间时被误删过限速块，
+//     改动后建议执行 scripts/check-undefined.js 做未定义引用检查。
 async function fetchHtml(url, { referer, cookie, proxy } = {}) {
-  await throttleByHost(url)  // 同 host 限速（防突发触发反爬）
   // 系统 curl 不可用时给出明确错误（刮削依赖 curl 的 TLS 指纹，见 net-curl.js）
   if (!(await curlAvailable())) {
     throw new Error('未找到系统 curl（Windows 10 1803+ 自带），无法请求刮削站点')
   }
+  // 限速已下沉到 curlGet（按 host），此处直接请求即可
   const r = await curlGet(url, { proxy, cookie, referer, timeout: 30000 })
   if (!r.ok) throw new Error(r.error || `HTTP ${r.status}`)
   return r.html
+}
+
+/**
+ * 按图片 URL 的 host 决定 Referer（2026-09-29 审计）。
+ *
+ * 背景：auto 模式下 JAVBUS 命中后会静默补抓一次 JAVDB 来填补空字段（含 cover/previews），
+ * 但这些字段的 URL 属于 JAVDB/jdbstatic，却仍用 JAVBUS 的 Referer 下载 —— 部分图床校验
+ * 来源页，可能被判盗链。这里改为「谁家的图用谁家的 Referer」，与来源源名解耦。
+ * @param {string} url - 图片地址
+ * @param {string} [fallback=''] - 无法从 host 判断时的兜底 Referer
+ * @returns {string}
+ */
+function imageReferer(url, fallback = '') {
+  const u = String(url || '')
+  if (/javdb\.com|jdbstatic\.com/i.test(u)) return 'https://javdb.com/'
+  if (/javbus\.com/i.test(u)) return 'https://www.javbus.com/'
+  return fallback
 }
 
 /**
@@ -166,7 +160,10 @@ async function downloadImage(url, savePath, referer, proxy) {
   //     → 走代理优先（主站与图床都需代理；实测 jdbstatic 直连 HTTP 000、代理 200）
   //   - 第三方图床（DMM 等，样本图常用）→ 直连优先（经代理连接失败）
   const isMainSite = /javbus\.com|javdb\.com|jdbstatic\.com/i.test(url)
-  const tries = isMainSite ? [proxy, ''] : ['', proxy]
+  // 去重（2026-09-29 审计）：未配置代理时 proxy 为空串，两路参数完全相同 →
+  // 原先会白白重试一遍（每遍最长 30s）。这里归一化后去重，为空时只试一次。
+  const order = isMainSite ? [proxy, ''] : ['', proxy]
+  const tries = [...new Set(order.map(p => p || ''))]
   let last = null
   for (const px of tries) {
     const r = await curlDownload(url, savePath, { referer, proxy: px || undefined, timeout: 30000 })
@@ -198,7 +195,8 @@ async function downloadPreviewList(list, { cleanPh, dataDir, coverDir, referer, 
     // 先下到 .tmp、校验通过再改名：下载失败/内容无效时，不会破坏这个位置原有的好图
     const tmp = abs + '.tmp'
     try {
-      await downloadImage(list[i], tmp, referer, proxy)
+      // Referer 按本条 URL 的 host 决定（JAVBUS→JAVDB 补全来的图要带 JAVDB 的 Referer）
+      await downloadImage(list[i], tmp, imageReferer(list[i], referer), proxy)
       if (!isImageFile(tmp)) { try { fs.unlinkSync(tmp) } catch {} ; continue }
       fs.renameSync(tmp, abs)
       out.push(relPath.replace(/\\/g, '/'))
@@ -825,7 +823,9 @@ async function scrapeMovie(ph, {
           } catch (e) { console.warn(`[scrape] ${cleanPh} ← JAVDB补全失败: ${e.message}`) }
         }
         // 如果有封面图且指定了数据目录，下载封面到本地
-        // 按源指定图片 Referer（部分图床校验来源页；参考 mdcx 的按源 Referer 策略）
+        // 按「图片 URL 的 host」指定 Referer（2026-09-29 审计）：JAVBUS 命中后由 JAVDB
+        // 补全来的 cover 属于 jdbstatic，若沿用 JAVBUS 的 Referer 可能被判盗链。
+        // 下方 imgReferer 只作兜底（无法从 host 判断时使用）。
       const imgReferer = src.name === 'JAVBUS' ? 'https://www.javbus.com/'
         : src.name === 'JAVDB' ? 'https://javdb.com/' : ''
       if (result.cover && dataDir) {
@@ -839,7 +839,7 @@ async function scrapeMovie(ph, {
             // 校验失败时**绝不能删掉这个位置原有的好封面** —— 直接覆盖目标路径再删，
             // 会把用户库里本来正常的封面弄丢（开发中实测踩过）。
             const tmpSave = savePath + '.tmp'
-            await downloadImage(result.cover, tmpSave, imgReferer, proxy)
+            await downloadImage(result.cover, tmpSave, imageReferer(result.cover, imgReferer), proxy)
             // 内容校验：curl 拿到 200 也可能写出坏文件 —— 截断成全零
             // （实测 SONE-929 是 158KB 全零）、或把图床的错误页当图片存下来。
             // 这类文件界面打不开，只会显示成灰色空块。这里丢弃并置空，当作「本次没拿到封面」：
@@ -891,7 +891,7 @@ async function scrapeMovie(ph, {
             // 所有影片的头像一起变破图。（封面/预览图此前已改成 .tmp，只有头像漏了。）
             const tmpAvatar = abs + '.tmp'
             try {
-              await downloadImage(c.avatar, tmpAvatar, imgReferer, proxy)
+              await downloadImage(c.avatar, tmpAvatar, imageReferer(c.avatar, imgReferer), proxy)
               // 内容校验：下载到坏文件（截断/全零、错误页）时不留破图，一律当作「无头像」，
               // 让前端显示本地剪影（统一显示）
               if (!isImageFile(tmpAvatar)) {

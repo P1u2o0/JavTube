@@ -314,7 +314,7 @@ app.whenReady().then(async () => {
       getMainWindow: () => mainWindow,   // 运行时读取当前窗口，与原闭包语义一致
       dataDir: dataDirForGlobal
     })                                                              // 工具类 IPC
-    registerMovieIpc(ipcMain, db)                                   // 影片数据 IPC
+    registerMovieIpc(ipcMain, db, dataDirForGlobal)                  // 影片数据 IPC（删除时要清理 covers/ 内的孤儿图片）
     registerActressIpc(ipcMain, db, dataDirForGlobal)                // 女优数据 IPC（含补全头像：要写 covers/actress）
     registerImageIpc(ipcMain, db, dataDirForGlobal)                  // 图片完整性 IPC（扫描/修复失效封面与预览图）
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC

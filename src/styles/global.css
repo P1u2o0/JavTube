@@ -5,8 +5,10 @@
  *
  * 设计定调：极致极简的工具型桌面应用
  *  - 暖调纸白底 + 墨黑主色 + 单一品牌红强调色（收藏/喜欢语义）
- *  - 圆角收敛为四级：8（小件）/ 12（卡片面板）/ 16（弹层）/ pill（按钮输入）
- *  - 阴影三级，带暖色环境色，不用纯黑
+ *  - 圆角收敛为五级：10（小件）/ 12（标签与筛选芯片）/ 16（卡片面板）/ 20（弹层）/ pill（按钮输入）
+ *  - 阴影三级 + 一级灯箱提亮（--sh-lift），带暖色环境色，不用纯黑
+ *  - 字距按字号分级（--ls-display / --ls-body / --ls-caps）、动效按幅度分级（--dur-*）、
+ *    叠层按用途分级（--z-base / --z-nav / --z-lightbox）—— 三套阶梯各自只有一处定义
  *  - 字体：Inter（拉丁，本地托管，最接近 Apple SF Pro）+ 系统中文（苹方/微软雅黑）
  * ============================================================
  */
@@ -66,12 +68,22 @@
   --primary-active: #000000;
   --accent: #e21a20;        /* 品牌红：收藏/喜欢/关键强调。与顶栏 logo、exe 图标同色
                                （2026-09-17 由原朱柿红 #d2401e 统一为此值，三处红不再各说各话） */
-  --accent-hover: #c71117;  /* 悬停态：同色相，亮度 ×0.858（沿用原朱柿红三兄弟的配比关系） */
   --accent-soft: #fce4e5;   /* 强调色浅底：同色相提亮到 L94% */
   --success: #3d8f5f;
   --danger: #c93a26;
   --danger-soft: #fbeeeb;
-  --warning: #c98a1b;
+
+  /* 星标 / 热度色板（评分星 + 热度火焰分档；Detail / ActorFilms / Actresses 三处共用，
+     此前是逐字重复的裸十六进制 → 收进令牌，改色只改一处） */
+  --star-fill: #fbc02d;     /* 评分星填充：金 */
+  --star-stroke: #111111;   /* 星标 / 火焰的描边墨色 */
+  --heat-purple: #8b46d6;   /* 热度前 10% */
+  --heat-darkred: #c0121a;  /* 前 11%~20% */
+  --heat-lightred: #f2564d; /* 前 21%~30% */
+  --heat-orange: #f0812a;   /* 前 31%~40% */
+  --heat-gold: #e0a80d;     /* 前 41%~50% */
+  --heat-blue: #2f6fdb;     /* 前 51%~60% */
+  --heat-cyan: #17b3c9;     /* 61% 以后 */
 
   /* 圆角体系（Apple 风格：整体更圆润，连续圆角观感） */
   --r-sm: 10px;             /* 小件：封面、缩略图、菜单 */
@@ -84,22 +96,25 @@
   --sh-1: 0 1px 2px rgba(50, 46, 38, .05), 0 1px 1px rgba(50, 46, 38, .04);
   --sh-2: 0 2px 4px rgba(50, 46, 38, .05), 0 8px 24px rgba(50, 46, 38, .09);
   --sh-3: 0 4px 12px rgba(50, 46, 38, .07), 0 24px 56px rgba(50, 46, 38, .16);
-  /* 表面内高光（Apple 质感：顶部细微受光，用于卡片/按钮） */
-  --highlight: inset 0 1px 0 rgba(255, 255, 255, .65);
+  /* 灯箱提亮（第 4 级）：灯箱图片浮在 70% 暖黑遮罩上，需要明显重于 --sh-3 的投影 */
+  --sh-lift: 0 12px 48px rgba(50, 46, 38, .5);
 
   /* 字体（Apple 风格：Inter 承担拉丁，中文回退系统苹方/微软雅黑；全部本地/系统，无网络依赖） */
   --font-display: "Inter", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --font-body: "Inter", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
 
-  /* 动效（Emil Kowalski 设计工程规范：强自定义曲线 + 分级时长，UI 动画一律 < 300ms） */
+  /* 动效（Emil Kowalski 设计工程规范：强自定义曲线 + 分级时长）
+     常规 UI 动画 ≤300ms；只有「整幅海报/整卡的大位移」才用 --dur-lg / --dur-xl，避免小交互拖沓 */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);       /* 进入 / 反馈：起步快、响应感强 */
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);   /* 屏内移动 / 形变：自然加减速 */
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);    /* 抽屉 / 面板（iOS 曲线） */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);    /* 抽屉 / 面板 / 大幅平移（iOS 曲线） */
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);  /* 轻微回弹（Apple 弹性感） */
   --dur-press: 120ms;   /* 按压反馈（100-160ms） */
   --dur-fast: 160ms;    /* 小交互：hover / 颜色 */
-  --dur-base: 220ms;    /* 中等：下拉 / 弹层（150-250ms） */
+  --dur-base: 220ms;    /* 中等：下拉 / 弹层 / 路由入场（150-250ms） */
   --dur-slow: 300ms;    /* 较大：对话框 / 面板 */
+  --dur-lg: 340ms;      /* 大件：整卡上浮 + 背景图缩放（同类卡片共用，避免"一个硬一个软"） */
+  --dur-xl: 420ms;      /* 最大：首页封面流整幅海报的横向位移；位移接近一屏宽，需要更长插值才不像"弹射"。
+                           这是全项目唯一超过 300ms 的档位，上限锁定 420ms，不要再加 */
 
   /* ====== 字号阶梯（收拢散落字号，统一引用，不改视觉） ====== */
   --fs-xs: 11px;             /* 角标 / 辅助小字 */
@@ -111,13 +126,17 @@
   --fs-2xl: 18px;            /* 页面标题 */
   --fs-3xl: 20px;            /* 详情番号 */
 
-  /* ====== 间距阶梯 ====== */
-  --sp-1: 4px;
-  --sp-2: 8px;
-  --sp-3: 12px;
-  --sp-4: 16px;
-  --sp-5: 20px;
-  --sp-6: 24px;
+  /* ====== 字距阶梯（Apple §15：按字号分级 —— 大字收紧、正文归零、小字放开）======
+     此前 body 0.01em / h1~h4 0 / .page-head h3 -0.01em 三套并存，
+     还有几处 18-20px 大字号误用了正字距（+0.02em，与 Apple 相反）→ 收成三档。 */
+  --ls-display: -0.01em;     /* ≥18px 标题 / 大号番号 */
+  --ls-body: 0;              /* 13-16px 正文与控件 */
+  --ls-caps: 0.02em;         /* ≤12px 的分组标题 / 角标 / 卡片小号番号（保留原有的小正字距） */
+
+  /* ====== 间距 ======
+     全项目直接书写 4px 基网格的数值（4/8/12/16/20/24…），未引入变量层：
+     原先定义的 --sp-1~--sp-6 全项目 0 引用（2026-09-29 审计），属于"定了不用"，
+     已删除；如未来要统一改为变量，请一次性替换全部裸 px，不要只留定义不落地。 */
 
   /* ====== 圆形图标按钮尺寸阶梯 ====== */
   --icon-btn-sm: 24px;       /* 行内 / 角标小钮 */
@@ -130,13 +149,17 @@
   --overlay-strong: rgba(29, 28, 26, 0.7);        /* 深角标底 */
   --overlay-glass: rgba(255, 255, 255, 0.14);     /* 灯箱玻璃钮底 */
   --overlay-glass-hover: rgba(255, 255, 255, 0.26);/* 灯箱玻璃钮 hover */
-  --shade-strong: rgba(22, 21, 19, 0.72);         /* 卡片底部遮罩（深） */
-  --shade-mid: rgba(22, 21, 19, 0.28);            /* 卡片中部遮罩 */
-  --shade-weak: rgba(22, 21, 19, 0.05);           /* 卡片顶部遮罩（浅） */
+  /* 注：卡片渐变遮罩（原 --shade-strong/mid/weak）全项目 0 引用，已删除；
+     卡片遮罩现由组件内部的暖黑 linear-gradient 直接表达（首页类别卡、演员页影片条）。 */
 
   /* ====== 磨砂玻璃钮（浅色海报上的圆钮统一材质） ====== */
   --glass: rgba(255, 255, 255, 0.22);             /* 磨砂底 */
   --glass-hover: rgba(255, 255, 255, 0.42);       /* 磨砂 hover */
+
+  /* ====== 叠层阶梯（此前只有 20/100/3000 三个裸值，无注释、扩展时容易打架） ====== */
+  --z-base: 20;        /* 页内局部浮层（首页轮播左右按钮等） */
+  --z-nav: 100;        /* 顶栏下拉面板（刮削进度面板） */
+  --z-lightbox: 3000;  /* 全屏灯箱：高于 EP 遮罩（2000 段），保证盖住一切页面内容 */
 }
 
 /* ====== Element Plus 主题令牌对接 ====== */
@@ -183,8 +206,13 @@
   --el-fill-color-lighter: #f9f8f6;
   --el-bg-color: #ffffff;
   --el-bg-color-page: #f6f5f2;
-  --el-border-radius-base: 8px;
-  --el-border-radius-small: 6px;
+  /* EP 内部圆角口径与自绘令牌对齐（base 10px ↔ --r-sm、small 8px）。
+     说明（2026-09-29 实测修正）：项目里所有用户可见的 EP 组件圆角都已被自绘令牌显式覆盖
+     （.el-button/.el-input__wrapper → --r-pill、.el-dialog → --r-lg 20px、.el-card/.el-table → --r-md），
+     因此这两行**不会改变任何可见圆角**；它的意义是消除 EP 内部 8/6 与自绘 10/16/20 的取值漂移，
+     避免下一位维护者按错的口径去改 EP 内部样式。 */
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
   --el-border-radius-round: 999px;
   --el-font-family: "Inter", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --el-box-shadow: 0 2px 4px rgba(50, 46, 38, .05), 0 8px 24px rgba(50, 46, 38, .09);
@@ -210,13 +238,13 @@ html, body, #app {
   font-family: var(--font-body);
   font-size: var(--fs-md);
   line-height: 1.6;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--ls-body);   /* 正文归零（Apple：13-16px 不再额外放开字距） */
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; text-decoration: none; }
-h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
+h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: var(--ls-display); }
 
 /* 键盘可达性：统一焦点描边（不加 border-radius，避免圆形控件聚焦时被改成方角） */
 :focus-visible {
@@ -465,19 +493,70 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
   justify-content: space-between;
   margin: 4px 0 16px;
 }
-.page-head h3 {
+
+/* ====== 页面标题体系 ======
+   页面级标题只在这一处定义：18px / 700 / --ls-display。
+   `.page-head h3` 用于已有页头的页面（演员页）；`.page-title` 供"没有 .page-head 结构、
+   但同样承担页面标题角色"的元素复用（如演员影片页的姓名）。
+   没有标题区的页面（片库 / 喜欢 / 观看记录）不强行加标题，避免为了"统一"反而改动版式。 */
+.page-head h3,
+.page-title {
   margin: 0;
+  font-family: var(--font-display);
   font-size: var(--fs-2xl);
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-display);
 }
 
-/* ====== 降级动效 ====== */
+/* ====== 降级动效（Apple §14：给「更温和的等价反馈」，而不是取消反馈）======
+   此前用 `* { animation-duration:0.01ms !important; transition-duration:0.01ms !important }`
+   一刀切，把颜色 / 透明度这类「有助理解状态变化」的低强度反馈也一起压掉了
+   —— 本机 prefers-reduced-motion 为 true，实际效果是「整个应用零动效」（2026-09-29 实测）。
+   现在分两档：
+     ① 大范围运动（位移 / 缩放 / 形变）→ 动画瞬时结束，过渡里不再包含这些属性；
+     ② 低强度反馈（颜色 / 背景 / 边框 / 透明度 / 阴影）→ 保留，统一 120ms。
+   另注：prefers-reduced-transparency 是 Safari 专有，Chromium 不支持，
+   写了等于空操作，故不覆盖（本项目只跑 Electron/Chromium）。
+   组件内的 WAAPI / JS 动画不受媒体查询约束，需在组件里自行判断 matchMedia。 */
 @media (prefers-reduced-motion: reduce) {
+  /* ① 大范围运动：动画瞬时结束（入场 / 脉冲不再播放，元素直接落在终态） */
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  }
+  /* ② 低强度反馈：只保留这些属性并统一短时长；
+       transform / width / height / top / left 等运动属性不在列 → 过渡瞬时完成 */
+  *, *::before, *::after {
+    transition-property: color, background-color, border-color, outline-color, opacity, box-shadow, fill, stroke !important;
+    transition-duration: 120ms !important;
+    transition-timing-function: var(--ease-out) !important;
   }
 }
+
+/* ====== 无障碍降级：高对比度（prefers-contrast: more）======
+   Chromium 支持；把发丝边框与弱化文字加深，保证 1px 边框与辅助文字在强光 / 低视力下仍可辨 */
+@media (prefers-contrast: more) {
+  :root {
+    --border: #c9c5bb;         /* 由 #e7e4dd 加深 */
+    --border-strong: #a8a499;  /* 由 #d8d4cb 加深 */
+    --muted: #4a473f;          /* 由 #8a847a 提到接近 --text-2，弱化文字不再"糊" */
+  }
+}
+
+/* ====== 无障碍降级：强制颜色（forced-colors: active，Windows 高对比主题）======
+   强制色下浏览器会用系统色覆盖 background / color，自绘控件（没有系统边框的按钮 / 芯片）
+   可能因背景与底色同色而"消失"。这里给他们补一条 outline 兜底 ——
+   用 outline 而非 border，避免改变盒模型尺寸造成布局跳动。 */
+@media (forced-colors: active) {
+  .flow-nav, .search-btn, .copy-btn, .check, .fav-btn,
+  .view-toggle button, .add-btn, .dot, .bp-clear {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  .slot-ph { outline: 1px solid CanvasText; outline-offset: -1px; }
+  .tab.active, .view-toggle button.on, .dot.on { color: Highlight; }
+  .tab.active::after { background: Highlight; }
+  .r-mv-cap { background: ButtonFace; color: ButtonText; }
+}
+

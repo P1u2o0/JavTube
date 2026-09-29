@@ -9,6 +9,7 @@
  */
 import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { favLock, favUnlock } from '@/utils/global'
 
 // 默认显示名 - 程序启动后从 settings:saveTagCats / tag-categories.json 读取，用户可自定义
 // 9 个标签大类，初始为空，后续从配置文件或数据库加载
@@ -208,7 +209,10 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
           }
           this.total = total
         } else {
+          // 失败时保留旧列表，但要明确告知（2026-09-29 审计）：原实现只有 console.warn，
+          // 界面既不刷新也无任何提示，用户会把「加载失败」误当成「当前筛选就是这些结果」。
           console.warn('[store] loadMovies 失败:', r.error)
+          if (seq === loadSeq) ElMessage.error(r.error || '加载影片列表失败')
         }
       } catch (e) {
         // IPC 抛异常时不能把异常抛给调用方（10 处调用都没包 catch，会变成
@@ -287,13 +291,19 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
       if (!window.api) return
       const m = this.movies.find(x => x.id === id)
       if (!m) return
+      // 同一 id 的操作去重（2026-09-29 审计）：连点会打出两个在飞请求，后者覆盖前者结论。
+      if (!favLock(id)) return
       const prev = m.cl
       const val = prev === 'y' ? 'n' : 'y'
       m.cl = val                                   // 乐观更新：心形立刻变色
-      const r = await window.api.updateMovie(id, { cl: val }).catch(() => null)
-      if (!r || !r.ok) {
-        m.cl = prev                                // 写库失败：回滚并告知，避免界面与数据不一致
-        ElMessage.error(r?.error || '操作失败')
+      try {
+        const r = await window.api.updateMovie(id, { cl: val }).catch(() => null)
+        if (!r || !r.ok) {
+          m.cl = prev                              // 写库失败：回滚并告知，避免界面与数据不一致
+          ElMessage.error(r?.error || '操作失败')
+        }
+      } finally {
+        favUnlock(id)
       }
     }
   }

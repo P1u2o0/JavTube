@@ -24,6 +24,10 @@ const IPC = require('../../common/ipc-channels')
 const { applyTagMapping } = require('../scraper')
 // 影片的 cast_json/yid 被改写后需要让演员侧缓存失效（见本文件 MOVIES_UPDATE 里的调用）
 const { invalidateActorCaches } = require('./actress')
+// 删除影片后清理不再被引用的本地图片（cover / previews / 演员头像）
+const { collectMovieRefs, purgeUnreferenced } = require('./cleanup')
+// 删除影片后让首页轮播缓存失效（否则首页仍展示已删除的影片，点进去空白）
+const { invalidateHomeCache } = require('../home')
 
 // === 影片表字段元数据 ===
 /**
@@ -100,8 +104,9 @@ const buildMovieUpdateParams = (d, id) => [...UPDATE_COLS.map(([, get]) => get(d
  * 包括分页查询、单条查询、创建、更新、删除、批量收藏/标签、播放记录和搜索。
  * @param {Object} ipcMain - Electron ipcMain 对象
  * @param {Object} db - sql.js 数据库实例
+ * @param {string} [dataDir] - 数据目录（删除影片时清理 covers/ 内的孤儿图片）
  */
-function registerMovieIpc(ipcMain, db) {
+function registerMovieIpc(ipcMain, db, dataDir) {
 
   // IPC: movies:get — 渲染进程 → 主进程
   // 分页查询影片列表，支持过滤、排序、分页、只看收藏等
@@ -118,14 +123,24 @@ function registerMovieIpc(ipcMain, db) {
       if (filter.fl && filter.fl !== '全部') { where.push('fl = ?'); args.push(filter.fl) }
       // 只看收藏
       if (onlyFavorite || filter.onlyFavorite) { where.push('cl = ?'); args.push(FAV_Y) }
-      // 按演员过滤（模糊匹配 yid 字段）
-      if (filter.actress) { where.push('yid LIKE ?'); args.push(`%${filter.actress}%`) }
-      // 按制作商/发行商过滤
-      if (filter.studio) { where.push('(ps LIKE ? OR fx LIKE ?)'); args.push(`%${filter.studio}%`, `%${filter.studio}%`) }
+      // LIKE 通配符转义（2026-09-29 审计）：与 filter.q 同一套做法，用户输入含 `%`/`_` 时
+      // 不当通配符处理，避免「输入单个 _ 匹配到几乎所有影片」这类失真。
+      const likeEsc = (s) => String(s).replace(/[\\%_]/g, (m) => '\\' + m)
+      // 按演员过滤：yid 是「，」分隔的演员名列表，需整名匹配（子串匹配会把「三上」带到「三上悠亚」）
+      // 做法与标签筛选一致：分隔符统一成英文逗号、前后补逗号，再按 `,名字,` 匹配。
+      if (filter.actress) {
+        where.push("(','||REPLACE(yid,'，',',')||',') LIKE ? ESCAPE '\\'")
+        args.push(`%,${likeEsc(filter.actress)},%`)
+      }
+      // 按制作商/发行商过滤（保持子串匹配，补转义）
+      if (filter.studio) {
+        where.push("(ps LIKE ? ESCAPE '\\' OR fx LIKE ? ESCAPE '\\')")
+        args.push(`%${likeEsc(filter.studio)}%`, `%${likeEsc(filter.studio)}%`)
+      }
       // 导演筛选（2026-09-09 新增：详情页点击导演跳转）
-      if (filter.director) { where.push('dy LIKE ?'); args.push(`%${filter.director}%`) }
+      if (filter.director) { where.push("dy LIKE ? ESCAPE '\\'"); args.push(`%${likeEsc(filter.director)}%`) }
       // 按系列过滤
-      if (filter.series) { where.push('xl LIKE ?'); args.push(`%${filter.series}%`) }
+      if (filter.series) { where.push("xl LIKE ? ESCAPE '\\'"); args.push(`%${likeEsc(filter.series)}%`) }
       // 只看有播放记录的
       if (filter.historyOnly) { where.push('play_time IS NOT NULL') }
 
@@ -161,6 +176,7 @@ function registerMovieIpc(ipcMain, db) {
 
       // 构建排序子句
       let orderSql = ''
+      let orderArgs = []
       if (sort.random) {
         // 随机排序（2026-09-28 审计修正）：原实现 `ORDER BY RANDOM()`，每翻一页都重新随机，
         // 第 1 页的影片可能在第 2 页重复出现、另一些永远刷不到。
@@ -169,11 +185,15 @@ function registerMovieIpc(ipcMain, db) {
         // ★ 用二次型而不是线性 (id·K)%P：后者对连续的 id 会产出「等差」顺序
         //   （实测 33,66,99,132…），一眼就能看出不随机。
         // 万一出现 key 相同（极少数），次级键 id DESC 保证顺序仍然确定，不会跨页跳动。
+        // 2026-09-29 审计：原实现 K/B/P 直接拼进字符串，且 seed 非法（NaN/Infinity）时会
+        // 拼出 `id * NaN` → SQL 报错、列表整页空白。此处对 seed 钳制为非 NaN/有限值，
+        // K/B/P 一律改为绑定参数（顺带杜绝拼接注入）。
         const P = 999983
-        const seed = Math.abs(Math.floor(Number(sort.seed) || 1))
+        const seed = Math.min(999983, Math.max(1, Math.floor(Number(sort.seed) || 1)))
         const K = (seed % 99991) + 2
         const B = ((seed * 7919) % 99989) + 3
-        orderSql = `ORDER BY (id * id * ${K} + id * ${B}) % ${P} ASC, id DESC`
+        orderSql = 'ORDER BY (id * id * ? + id * ?) % ? ASC, id DESC'
+        orderArgs = [K, B, P]
       } else {
         // 白名单列名排序，防止 SQL 注入（白名单定义于 constants.js）
         const col = SORTABLE_COLUMNS.includes(sort.by) ? sort.by : 'tjrq'
@@ -187,8 +207,8 @@ function registerMovieIpc(ipcMain, db) {
       const pg = Math.max(1, Number(page) || 1)        // 当前页码
       const off = (pg - 1) * ps                         // 偏移量
 
-      // 查询当前页数据
-      const dataR = db.exec(`SELECT * FROM movies ${whereSql} ${orderSql} LIMIT ? OFFSET ?`, [...args, ps, off])
+      // 查询当前页数据（绑定参数顺序：WHERE args → ORDER BY orderArgs → LIMIT/OFFSET）
+      const dataR = db.exec(`SELECT * FROM movies ${whereSql} ${orderSql} LIMIT ? OFFSET ?`, [...args, ...orderArgs, ps, off])
       const data = rows(dataR[0])
       return { ok: true, data, total }
     } catch (e) {
@@ -267,21 +287,33 @@ function registerMovieIpc(ipcMain, db) {
   })
 
   // IPC: movies:delete — 渲染进程 → 主进程
-  // 删除单条影片
+  // 删除单条影片，并清理其不再被引用的本地图片（2026-09-29 审计）
   ipcMain.handle(IPC.MOVIES_DELETE, (_e, id) => {
-    try { db.run('DELETE FROM movies WHERE id=?', [Number(id)]); persistSoon(db); return { ok: true } }
-    catch (e) { return { ok: false, error: e.message } }
+    try {
+      // 顺序：删库前先收集该片的图片引用，删库后据「剩余引用」清理孤儿文件
+      const refs = collectMovieRefs(db, [Number(id)])
+      db.run('DELETE FROM movies WHERE id=?', [Number(id)])
+      const cleaned = purgeUnreferenced(db, dataDir, refs)
+      persistSoon(db)
+      // 首页轮播缓存存的是影片快照，删除后必须失效，否则轮播仍展示已删影片
+      try { invalidateHomeCache() } catch {}
+      return { ok: true, cleaned }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // IPC: movies:deleteMany — 渲染进程 → 主进程
-  // 批量删除影片
+  // 批量删除影片，并清理其不再被引用的本地图片（2026-09-29 审计）
   ipcMain.handle(IPC.MOVIES_DELETE_MANY, (_e, ids) => {
     try {
       // 单条 IN 替代逐条 DELETE（sql.js 无批量 API，IN 可一次完成）
       const list = (ids || []).map(Number).filter(Number.isFinite)
-      if (!list.length) return { ok: true }
+      if (!list.length) return { ok: true, cleaned: 0 }
+      const refs = collectMovieRefs(db, list)
       db.run(`DELETE FROM movies WHERE id IN (${list.map(() => '?').join(',')})`, list)
-      persistSoon(db); return { ok: true }
+      const cleaned = purgeUnreferenced(db, dataDir, refs)
+      persistSoon(db)
+      try { invalidateHomeCache() } catch {}
+      return { ok: true, cleaned }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
@@ -328,6 +360,8 @@ function registerMovieIpc(ipcMain, db) {
         db.run('ROLLBACK')
         throw e
       }
+      // 标签是首页类别的数据源，批量改标签后让它重算（2026-09-29 审计）
+      try { invalidateHomeCache() } catch {}
       persistSoon(db); return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })

@@ -119,8 +119,16 @@ const noAnim = ref(false)        // 静默归位期间禁掉 CSS 过渡
 const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
 const HERO_WINDOW = 5        // 可见槽位数（中心 + 左右各 2）
 const LOOP_MIN = HERO_WINDOW // 影片数 >= 5 时启用循环传送带
-const SETTLE_MS = 480        // 静默归位延迟（略大于位移过渡 420ms，确保动画已结束）
+const SETTLE_MS = 480        // 静默归位延迟（略大于位移过渡 --dur-xl 420ms，确保动画已结束）
 const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
+
+/**
+ * 系统「减少动态效果」开关。CSS 媒体查询管不到 WAAPI 动画（下面的 playCenterFadeIn），
+ * 所以这里读一次并据此把淡化时长降为 0 —— 与 global.css 的降级策略保持一致：
+ * 大范围运动降级、低强度反馈（颜色/透明度）保留。
+ */
+const REDUCE_MOTION = typeof window !== 'undefined'
+  && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 
 /** 当前居中的影片索引（把越界的 active 取模还原；指示点用它，避免循环瞬间无高亮） */
 const activeIndex = computed(() => {
@@ -226,14 +234,15 @@ function setSlotEl(pos, el) {
  *   - 常驻透明度会让两侧海报长期处于半透明态（与「用白遮罩弱化」的诉求冲突）
  *   - WAAPI 只在切换瞬间叠加一段动画，播放结束自动回落到内联 opacity:1，
  *     静止态完全不透明，白遮罩仍是唯一的弱化手段
- * 时长与位移同步（420ms）、强 ease-out：起步快、收尾稳，丝滑且不拖沓。
+ * 时长与位移同步（--dur-xl 420ms，见 CSS）、强 ease-out：起步快、收尾稳，丝滑且不拖沓。
+ * reduced-motion 下 duration 取 0（WAAPI 不受 CSS 媒体查询约束，必须在这里判断）。
  */
 function playCenterFadeIn() {
   const el = slotEls.get(active.value)
   if (!el?.animate) return
   el.animate(
     [{ opacity: 0.22 }, { opacity: 1 }],
-    { duration: 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }   // 与位移同时长同曲线
+    { duration: REDUCE_MOTION ? 0 : 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }   // 与位移同时长同曲线
   )
 }
 
@@ -367,9 +376,15 @@ onBeforeUnmount(stopTimer)
   transform-style: preserve-3d;
 }
 /* 静默归位：越界后瞬间复位，复位前后画面完全一致，
-   必须禁掉过渡，否则会看到一次横跨整屏的大幅滑动 */
+   必须禁掉过渡，否则会看到一次横跨整屏的大幅滑动。
+   ⚠️ 必须带 !important：global.css 的 reduced-motion 降级块是 `* { transition-*: … !important }`，
+   而 !important 只能压过**普通声明**——降级块与本行都是 !important 时比的是**特异性**，
+   本行 (0,3,0) 高于 `*` (0,0,0)，所以本行胜。不加 !important 时本行是普通声明，会被压过：
+   归位瞬间 5 张海报会各自跑一次 120ms 的透明度过渡（实测整排闪一下）。
+   （别以为「加了 !important 就必胜」——将来若有人也写成 `* { … !important }`，
+     这条就要靠特异性继续赢，所以选择器不要简写。） */
 .flow-wrap.no-anim .slot,
-.flow-wrap.no-anim .shade { transition: none; }
+.flow-wrap.no-anim .shade { transition: none !important; }
 /* 槽位：基准尺寸 = 横向海报 600×400（3:2）；rotateY/translateZ/scale 由内联控制。
    立体轮换过渡：一次平滑的三维插值（旋转+后撤+缩放+位移同步） */
 .slot {
@@ -382,9 +397,10 @@ onBeforeUnmount(stopTimer)
   border-radius: var(--r-md);
   overflow: hidden;
   box-shadow: var(--sh-3);
-  /* 位移 420ms + iOS 抽屉曲线（起步快、中段顺、收尾缓）：
-     之前的 --ease-in-out（0.77,0,0.175,1）前 20% 几乎不动，跟手轮播用它会明显迟滞 */
-  transition: transform 420ms var(--ease-drawer);
+  /* 位移 --dur-xl 420ms + iOS 抽屉曲线（起步快、中段顺、收尾缓）：
+     之前的 --ease-in-out（0.77,0,0.175,1）前 20% 几乎不动，跟手轮播用它会明显迟滞。
+     时长走令牌：这是全项目唯一允许超过 300ms 的档位（整幅海报横移接近一屏宽） */
+  transition: transform var(--dur-xl) var(--ease-drawer);
   will-change: transform, opacity;
 }
 .slot img {
@@ -399,9 +415,9 @@ onBeforeUnmount(stopTimer)
 .shade {
   position: absolute; inset: 0;
   border-radius: var(--r-md);
-  background: #ffffff;
+  background: var(--surface);                     /* 纯白遮罩 = 表面色令牌（不再裸写 #ffffff） */
   opacity: var(--shade, 0);
-  transition: opacity 420ms var(--ease-drawer);   /* 与位移同步，避免"先白了还在滑" */
+  transition: opacity var(--dur-xl) var(--ease-drawer);   /* 与位移同步，避免"先白了还在滑" */
   pointer-events: none;
 }
 /* 缺失影片的槽位：淡红色空白占位图 */
@@ -409,7 +425,9 @@ onBeforeUnmount(stopTimer)
   width: 100%; height: 100%;
   border-radius: var(--r-md);
   background: var(--accent-soft);                    /* 品牌红浅底（令牌）*/
-  border: 1px dashed rgba(226, 26, 32, 0.32);        /* 品牌红 #E21A20 的 32% 透明描边 */
+  /* 品牌红 32% 透明描边：用 color-mix 从 --accent 派生，accent 改色时描边自动跟随
+     （Chromium 111+ 支持，Electron 30 = Chromium 124，安全） */
+  border: 1px dashed color-mix(in srgb, var(--accent) 32%, transparent);
   box-sizing: border-box;
 }
 /* 左右切换按钮：玻璃圆钮（与卡片角标同质感） */
@@ -424,7 +442,7 @@ onBeforeUnmount(stopTimer)
   display: flex; align-items: center; justify-content: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--sh-1);
   transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
-  z-index: 20;
+  z-index: var(--z-base);          /* 叠层阶梯：页内局部浮层 */
 }
 .flow-nav:hover { background: var(--glass-hover); }
 .flow-nav:active { transform: translateY(-50%) scale(0.96); transition-duration: var(--dur-press); }
@@ -451,15 +469,15 @@ onBeforeUnmount(stopTimer)
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface-2);   /* 无封面时的底色 */
   cursor: pointer; text-align: left;
-  /* 移出：340ms 快速收回 */
-  transition: transform 340ms var(--ease-out),
-              box-shadow 340ms var(--ease-out);
+  /* 移出：--dur-lg 快速收回 */
+  transition: transform var(--dur-lg) var(--ease-out),
+              box-shadow var(--dur-lg) var(--ease-out);
 }
 /* 类别卡整体：轻微上浮（进入时长曲线与背景缩放统一，避免「一个硬一个软」的割裂感） */
 .cat-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--sh-2);
-  transition-duration: 420ms;
+  transition-duration: var(--dur-xl);
   transition-timing-function: var(--ease-drawer);
 }
 .cat-card:active { transform: translateY(-1px) scale(0.99); }   /* 按压反馈 */
@@ -468,14 +486,15 @@ onBeforeUnmount(stopTimer)
   position: absolute; inset: 0;
   background-size: cover; background-position: center;
   /* 移出：较短、快速收回（遵循「退出快于进入」） */
-  transition: transform 340ms var(--ease-out);
+  transition: transform var(--dur-lg) var(--ease-out);
 }
 /* hover 放大：旧实现是 300ms + --ease-out —— 起步太猛、到位太硬，观感「生硬」。
-   改为更长时长 + iOS 抽屉曲线（起步快、中段顺、收尾极缓），
-   并放大到 1.08 让位移量更从容，整段过渡像被"吸"进去而不是弹过去 */
+   改为 iOS 抽屉曲线（起步快、中段顺、收尾极缓），并放大到 1.08 让位移量更从容。
+   时长从 620ms 收到 --dur-lg 340ms：与同类卡片（.cat-card 自身）一致，
+   620ms 远超令牌上限、且比卡片上浮慢近一倍，会出现「卡片停住了背景还在滑」的脱节 */
 .cat-card:hover .cat-bg {
   transform: scale(1.08);
-  transition-duration: 620ms;
+  transition-duration: var(--dur-lg);
   transition-timing-function: var(--ease-drawer);
 }
 /* 暗色遮罩：从右往左逐渐加深（左侧最深，承载靠左的类别名） */
@@ -493,12 +512,12 @@ onBeforeUnmount(stopTimer)
   display: flex; align-items: center; justify-content: flex-start;
   padding-left: 14px;
   color: #fff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);   /* 增强对比 */
+  text-shadow: 0 1px 4px rgba(22, 21, 19, 0.55);   /* 增强对比（暖黑，遵循"不用纯黑"规范） */
   pointer-events: none;
 }
 .cat-label .cat-main {
   font-family: var(--font-display); font-weight: 700; font-size: var(--fs-3xl);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-display);   /* 20px 大字 → 收紧（此前误用 +0.02em，与 Apple 相反） */
   max-width: 88%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }

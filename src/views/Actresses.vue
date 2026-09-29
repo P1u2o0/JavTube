@@ -188,11 +188,12 @@ async function onFillAvatars() {
   if (!ran) return
   // 重载列表以显示新头像（主进程已清掉总览缓存）
   await load()
-  const parts = [`已补全 ${ok} 位`]
+  // 成功/失败都要报出来（2026-09-29 审计）：原提示只体现成功数，用户看不出哪些没补上
+  const parts = [`成功 ${ok} 位，失败 ${failed.length} 位`]
   if (cleaned) parts.push(`${cleaned} 位没有可用照片，已清除并统一显示剪影`)
   if (failed.length) {
     const head = failed.slice(0, 4).join('；')
-    parts.push(`${failed.length} 位未补上（${head}${failed.length > 4 ? ' 等' : ''}）`)
+    parts.push(`失败详情：${head}${failed.length > 4 ? ' 等' : ''}`)
   }
   if (failed.length) ElMessage.warning(parts.join('，'))
   else ElMessage.success(parts.join('，'))
@@ -247,8 +248,9 @@ onMounted(load)
   gap: 14px;
 }
 .a-card {
-  display: flex; flex-direction: column; align-items: center; gap: 7px;
-  padding: 12px 8px 11px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  /* 回到 4px 网格：原 padding 12px 8px 11px（11px 脱离网格）+ gap 7px */
+  padding: 12px 8px;
   border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface); cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out),
@@ -301,15 +303,15 @@ onMounted(load)
 .r-sub { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .r-heat { display: flex; align-items: center; gap: 5px; }
 .r-heat-val { font-size: var(--fs-base); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-/* 热度火焰分档配色（与演员影片页一致） */
-.r-flame { --icon-stroke: #111111; stroke-width: 0.9; flex-shrink: 0; }
-.r-flame.t-purple { --icon-fill: #8b46d6; }
-.r-flame.t-darkred { --icon-fill: #c0121a; }
-.r-flame.t-lightred { --icon-fill: #f2564d; }
-.r-flame.t-orange { --icon-fill: #f0812a; }
-.r-flame.t-gold { --icon-fill: #e0a80d; }
-.r-flame.t-blue { --icon-fill: #2f6fdb; }
-.r-flame.t-cyan { --icon-fill: #17b3c9; }
+/* 热度火焰分档配色（令牌与演员影片页共用，改色只改 global.css 一处） */
+.r-flame { --icon-stroke: var(--star-stroke); stroke-width: 0.9; flex-shrink: 0; }
+.r-flame.t-purple { --icon-fill: var(--heat-purple); }
+.r-flame.t-darkred { --icon-fill: var(--heat-darkred); }
+.r-flame.t-lightred { --icon-fill: var(--heat-lightred); }
+.r-flame.t-orange { --icon-fill: var(--heat-orange); }
+.r-flame.t-gold { --icon-fill: var(--heat-gold); }
+.r-flame.t-blue { --icon-fill: var(--heat-blue); }
+.r-flame.t-cyan { --icon-fill: var(--heat-cyan); }
 
 /* 中间弹性区：想看最多的 3 部影片，三等分正好铺满（不足 3 部时其余格留空） */
 .r-movies {
@@ -336,7 +338,8 @@ onMounted(load)
   position: absolute; left: 0; right: 0; bottom: 0;
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
   padding: 14px 8px 5px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, .62));
+  /* 用暖黑（22,21,19）替代纯黑，符合本项目「不用纯黑」的自定规范 */
+  background: linear-gradient(transparent, rgba(22, 21, 19, .62));
   color: #fff; font-size: var(--fs-xs);
 }
 .r-mv-ph2 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -357,7 +360,7 @@ onMounted(load)
 
 .empty { padding: 40px 0; text-align: center; color: var(--muted); font-size: var(--fs-base); }
 /* 加载失败态：可点击重试，颜色用警示色与「暂无数据」区分开（2026-09-28） */
-.empty-err { color: var(--danger, #c45656); cursor: pointer; }
+.empty-err { color: var(--danger); cursor: pointer; }   /* 去掉无效兜底值 #c45656（--danger 已定义，兜底永不生效） */
 
 /* 窄窗口：信息列收紧（海报随行宽自适应缩放） */
 @media (max-width: 1200px) {

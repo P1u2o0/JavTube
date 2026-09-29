@@ -21,7 +21,8 @@
         <img :src="avatarUrl" :alt="name" @error="avatarBroken = true" />
       </div>
       <div class="ah-main">
-        <div class="ah-name">{{ name }}</div>
+        <!-- page-title：页面级标题统一类（字号/字重/字距在 global.css 一处定义） -->
+        <div class="ah-name page-title">{{ name }}</div>
         <div class="ah-count">{{ films.length }} 部作品</div>
       </div>
       <!-- 指数区（评分指数 + 热度）：跟在大名/作品数右侧，靠右对齐。
@@ -111,7 +112,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { resolveCover, safeCall, splitTags } from '@/utils/global'
+import { resolveCover, safeCall, splitTags, favLock, favUnlock } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
 import MovieCard from '@/components/MovieCard.vue'
 import TagChip from '@/components/TagChip.vue'
@@ -330,14 +331,20 @@ async function onPlay(m) {
  *  重启后"喜欢"会复原。这里改为直接 await 并校验 r.ok，失败回滚。 */
 async function onFav(m) {
   if (!window.api) return
+  // 同一 id 的操作去重（2026-09-29 审计）：连点会打出两个在飞请求，后者覆盖前者结论
+  if (!favLock(m.id)) return
   const next = m.cl === 'y' ? 'n' : 'y'
   const idx = films.value.findIndex(x => x.id === m.id)
   if (idx >= 0) films.value[idx] = { ...films.value[idx], cl: next }
-  const r = await window.api.updateMovie(m.id, { cl: next }).catch(() => null)
-  if (!r || !r.ok) {
-    const i2 = films.value.findIndex(x => x.id === m.id)
-    if (i2 >= 0) films.value[i2] = { ...films.value[i2], cl: m.cl }
-    ElMessage.error(r?.error || '操作失败')
+  try {
+    const r = await window.api.updateMovie(m.id, { cl: next }).catch(() => null)
+    if (!r || !r.ok) {
+      const i2 = films.value.findIndex(x => x.id === m.id)
+      if (i2 >= 0) films.value[i2] = { ...films.value[i2], cl: m.cl }
+      ElMessage.error(r?.error || '操作失败')
+    }
+  } finally {
+    favUnlock(m.id)
   }
 }
 
@@ -395,10 +402,9 @@ onMounted(async () => {
 }
 .ah-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ah-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.ah-name {
-  font-family: var(--font-display);
-  font-size: var(--fs-2xl); font-weight: 700; color: var(--text);
-}
+/* .ah-name 的字号 / 字重 / 字距 / 颜色全部来自 global.css 的 .page-title（页面标题体系）
+   —— 此前这里重复定义了 18px/700/color，改字号要改两处，已收口 */
+
 .ah-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ===== 指数区（评分指数 + 热度）：紧接大名右侧、整体靠右 =====
@@ -423,28 +429,29 @@ onMounted(async () => {
 .idx-star svg { stroke-width: 0.9; }              /* 42px 显示时线宽更细，更扁平 */
 .idx-star .star-bg {
   --icon-fill: transparent;                        /* 未填充部分：星内留空，只显示描边 */
-  --icon-stroke: #d8d4cb;                          /* 浅灰描边（空槽） */
+  --icon-stroke: var(--border-strong);             /* 浅灰描边（空槽）＝边框令牌，不再裸写 #d8d4cb */
 }
 .idx-star .star-fg {
   position: absolute; inset: 0; overflow: hidden;
-  --icon-fill: #fbc02d;                            /* 评分填充：黄 */
-  --icon-stroke: #111111;                          /* 边框线：黑（同参考图标） */
+  --icon-fill: var(--star-fill);                   /* 评分填充：金（令牌） */
+  --icon-stroke: var(--star-stroke);               /* 边框线：墨色（令牌） */
 }
 .idx-flame {
   --icon-fill: var(--accent);                      /* 热度填充：品牌红（与 logo 同色） */
-  --icon-stroke: #111111;                          /* 边框线：黑（同参考图标） */
+  --icon-stroke: var(--star-stroke);               /* 边框线：墨色（令牌） */
   stroke-width: 0.9;
   flex-shrink: 0;
 }
 /* 热度排名分档配色：越热越靠上（前 10% 紫 → 前 60% 蓝 → 其余青）。
-   无排名（无人数数据/不在女优榜）时保持上面的品牌红默认值。 */
-.idx-flame.t-purple { --icon-fill: #8b46d6; }      /* 前 10% */
-.idx-flame.t-darkred { --icon-fill: #c0121a; }     /* 前 11%~20% */
-.idx-flame.t-lightred { --icon-fill: #f2564d; }    /* 前 21%~30% */
-.idx-flame.t-orange { --icon-fill: #f0812a; }      /* 前 31%~40% */
-.idx-flame.t-gold { --icon-fill: #e0a80d; }        /* 前 41%~50% */
-.idx-flame.t-blue { --icon-fill: #2f6fdb; }        /* 前 51%~60% */
-.idx-flame.t-cyan { --icon-fill: #17b3c9; }        /* 61% 以后 */
+   无排名（无人数数据/不在女优榜）时保持上面的品牌红默认值。
+   色值统一来自 global.css 的 --heat-* 令牌（演员页排行视图共用同一组）。 */
+.idx-flame.t-purple { --icon-fill: var(--heat-purple); }      /* 前 10% */
+.idx-flame.t-darkred { --icon-fill: var(--heat-darkred); }    /* 前 11%~20% */
+.idx-flame.t-lightred { --icon-fill: var(--heat-lightred); }  /* 前 21%~30% */
+.idx-flame.t-orange { --icon-fill: var(--heat-orange); }      /* 前 31%~40% */
+.idx-flame.t-gold { --icon-fill: var(--heat-gold); }          /* 前 41%~50% */
+.idx-flame.t-blue { --icon-fill: var(--heat-blue); }          /* 前 51%~60% */
+.idx-flame.t-cyan { --icon-fill: var(--heat-cyan); }          /* 61% 以后 */
 .idx-num { display: flex; flex-direction: column; gap: 1px; }
 .idx-val {
   font-family: var(--font-display);

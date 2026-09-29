@@ -187,7 +187,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import CoverImg from '@/components/CoverImg.vue'
 import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint, favLock, favUnlock } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -490,15 +490,21 @@ async function onPlay() {
  */
 async function toggleFav() {
   if (!m.value || !window.api) return
+  // 同一 id 的操作去重（2026-09-29 审计）：连点会打出两个在飞请求，后者覆盖前者结论
+  if (!favLock(m.value.id)) return
   const v = isFav.value ? 'n' : 'y'
   const prev = m.value.cl
   m.value.cl = v
-  // 乐观更新必须捕获失败并回滚（2026-09-28 审计）：原来没有 .catch，
-  // 写库 reject 时按钮停在「已喜欢」而库里没写，重启后才复原，且没有任何提示
-  const r = await window.api.updateMovie(m.value.id, { cl: v }).catch(() => null)
-  if (!r || !r.ok) {
-    m.value.cl = prev
-    ElMessage.error(r?.error || '操作失败')
+  try {
+    // 乐观更新必须捕获失败并回滚（2026-09-28 审计）：原来没有 .catch，
+    // 写库 reject 时按钮停在「已喜欢」而库里没写，重启后才复原，且没有任何提示
+    const r = await window.api.updateMovie(m.value.id, { cl: v }).catch(() => null)
+    if (!r || !r.ok) {
+      m.value.cl = prev
+      ElMessage.error(r?.error || '操作失败')
+    }
+  } finally {
+    favUnlock(m.value.id)
   }
 }
 
@@ -666,7 +672,7 @@ onMounted(async () => {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 700; font-size: var(--fs-3xl);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-display);   /* 20px 大字号 → 收紧（此前误用 +0.02em，与 Apple 相反） */
 }
 /* 标题样式：与番号同行，长标题自动换行 */
 .title-text { font-size: var(--fs-3xl); font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
@@ -752,7 +758,7 @@ onMounted(async () => {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 700; font-size: var(--fs-2xl);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-display);   /* 18px 大字号 → 收紧（此前误用 +0.02em） */
 }
 /* 复制按钮：小型圆形弱化按钮，hover 强调色 */
 .copy-btn {
@@ -772,13 +778,13 @@ onMounted(async () => {
 /* 单颗星：浅灰描边空槽 + 按比例裁切的黄星（样式与演员页指数区统一：黄填充 + 细黑描边） */
 .star { position: relative; width: 19px; height: 19px; display: inline-block; }
 .star svg { stroke-width: 0.9; }
-.star-base { position: absolute; inset: 0; --icon-fill: transparent; --icon-stroke: #d8d4cb; }
+.star-base { position: absolute; inset: 0; --icon-fill: transparent; --icon-stroke: var(--border-strong); }
 .star-clip {
   position: absolute; left: 0; top: 0; height: 100%;
   overflow: hidden;                 /* 按宽度裁出填充比例 */
   transition: width var(--dur-base) var(--ease-out);
 }
-.star-clip .star-on { display: block; --icon-fill: #fbc02d; --icon-stroke: #111111; }
+.star-clip .star-on { display: block; --icon-fill: var(--star-fill); --icon-stroke: var(--star-stroke); }
 .score-num {
   color: var(--text); font-weight: 600; font-size: var(--fs-md);
   font-family: var(--font-display);
@@ -827,7 +833,7 @@ onMounted(async () => {
 .lightbox {
   position: fixed; inset: 0;
   top: 48px;   /* 与 el-dialog 遮罩一致：从顶栏下方开始，顶栏与窗口按钮区不受影响 */
-  z-index: 3000;
+  z-index: var(--z-lightbox);   /* 叠层阶梯：全屏灯箱 */
   /* 遮罩色与 el-dialog（设置等弹窗）保持一致：直接引用 EP 的遮罩变量，
      而不是自定义的 --overlay-backdrop（那是 88% 暖黑，比弹窗重得多） */
   background: var(--el-overlay-color-lighter);
@@ -841,7 +847,7 @@ onMounted(async () => {
   max-width: 82vw; max-height: 92vh;
   width: auto; height: auto;
   border-radius: var(--r-sm);
-  box-shadow: 0 12px 48px rgba(50, 46, 38, 0.5);
+  box-shadow: var(--sh-lift);    /* 阴影第 4 级（灯箱提亮）；此前是令牌外的裸值 0 12px 48px rgba(50,46,38,.5) */
   transition: transform var(--dur-fast) var(--ease-out);
   cursor: grab;
 }
@@ -868,7 +874,7 @@ onMounted(async () => {
   color: rgba(255, 255, 255, 0.85);
   font-size: var(--fs-base);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ls-caps);   /* 叠层页码计数：小字放开（原 0.06em → 令牌 0.02em，去掉第 4 种字距写法） */
 }
 /* 小图横向轨道 */
 .strip-track { display: flex; gap: 8px; overflow-x: auto; flex: 1; scroll-behavior: smooth; padding: 2px; }

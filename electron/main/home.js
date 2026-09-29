@@ -28,6 +28,16 @@ const ARRIVAL_COUNT = 8
 let heroCache = null
 
 /**
+ * 让首页轮播缓存立即失效（2026-09-29 审计）。
+ * 缓存里存的是影片对象快照，删除影片 / 清空数据库后若不失效，首页轮播仍会展示
+ * 已删除的影片 —— 点进去是空白详情。影片删除、批量删除、清空、批量改标签等写路径
+ * 统一调用本函数（参考 actress.js 的 invalidateActorCaches 做法）。
+ */
+function invalidateHomeCache() {
+  heroCache = null
+}
+
+/**
  * 从多值字段中拆分出条目数组。
  * @param {string} v - 字段值（中文/英文逗号分隔）
  * @returns {string[]} 去空后的数组
@@ -206,4 +216,4 @@ function registerHomeIpc(ipcMain, db) {
   })
 }
 
-module.exports = { registerHomeIpc }
+module.exports = { registerHomeIpc, invalidateHomeCache }

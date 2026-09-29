@@ -47,6 +47,30 @@ async function curlAvailable() {
   return curlChecked
 }
 
+// 同 host 请求限速（2026-09-13 引入，2026-09-29 审计从 scraper.js 下沉到网络层）：
+// 同一 host 的连续请求保持最小间隔——突发请求极易触发站点反爬（JAVDB 的 Cloudflare 会直接 403）。
+// 原先只在 fetchHtml（页面请求）里限速，图片下载走 curlDownload 完全没限速 ——
+// 批量刮削时预览图/封面/头像会瞬间打出几十个并发请求。下沉到本层后，
+// curlGet 与 curlDownload 都按 URL host 自动限速，覆盖面完整。
+const lastReqAt = new Map()   // host → 上次请求时间戳
+const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 req/s）
+
+/**
+ * 按 host 限速：距上次请求不足 MIN_REQ_INTERVAL 则等待补足。
+ * 「同步占位」而非「读-等-写」：并发调用在同步段里各自拿到递增 400ms 的槽位，
+ * 真正拉开间隔（批量刮削并发的正是这种情况）。
+ * @param {string} url - 即将请求的地址
+ */
+async function throttleByHost(url) {
+  let host = ''
+  try { host = new URL(url).host } catch { return }
+  const now = Date.now()
+  const slot = Math.max(now, (lastReqAt.get(host) || 0) + MIN_REQ_INTERVAL)
+  lastReqAt.set(host, slot)
+  const wait = slot - now
+  if (wait > 0) await new Promise(r => setTimeout(r, wait))
+}
+
 /**
  * 构造 curl 公共参数。
  * @param {Object} opts - 选项 { proxy, cookie, referer, timeout }
@@ -67,7 +91,7 @@ function buildCommonArgs({ proxy, cookie, referer, timeout = 30000 } = {}) {
  * @returns {Promise<{ ok: boolean, status?: number, html?: string, error?: string }>}
  */
 function curlGet(url, opts = {}) {
-  return new Promise((resolve) => {
+  return throttleByHost(url).then(() => new Promise((resolve) => {
     const tmp = path.join(os.tmpdir(), `javtube-curl-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`)
     const args = [...buildCommonArgs(opts), '-o', tmp, '-w', '%{http_code}', url]
     execFile(CURL_BIN, args, { maxBuffer: 8 * 1024 * 1024, encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, async (err, stdout) => {
@@ -92,7 +116,7 @@ function curlGet(url, opts = {}) {
       }
       resolve({ ok: true, status, html })
     })
-  })
+  }))
 }
 
 /**
@@ -104,7 +128,7 @@ function curlGet(url, opts = {}) {
  * @returns {Promise<{ ok: boolean, status?: number, size?: number, error?: string }>}
  */
 function curlDownload(url, savePath, opts = {}) {
-  return new Promise((resolve) => {
+  return throttleByHost(url).then(() => new Promise((resolve) => {
     const args = [...buildCommonArgs(opts), '-o', savePath, '-w', '%{http_code}', url]
     execFile(CURL_BIN, args, { encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, (err, stdout) => {
       if (err) return resolve({ ok: false, error: err.message })
@@ -119,7 +143,7 @@ function curlDownload(url, savePath, opts = {}) {
       }
       resolve({ ok: true, status, size })
     })
-  })
+  }))
 }
 
-module.exports = { curlGet, curlDownload, curlAvailable, CURL_BIN, USER_AGENT }
+module.exports = { curlGet, curlDownload, curlAvailable, throttleByHost, CURL_BIN, USER_AGENT }

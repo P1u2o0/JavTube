@@ -346,7 +346,7 @@ function onSearch() {
   border-radius: var(--r-md);
   box-shadow: var(--sh-3);
   overflow: hidden;
-  z-index: 100;
+  z-index: var(--z-nav);        /* 叠层阶梯：顶栏下拉面板 */
 }
 .bp-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -368,7 +368,7 @@ function onSearch() {
 .bp-group {
   padding: 9px 14px 5px;
   font-size: var(--fs-sm); font-weight: 600; color: var(--muted);
-  letter-spacing: 0.03em;
+  letter-spacing: var(--ls-caps);   /* 12px 分组标题：小字放开（原 0.03em → 令牌 0.02em） */
 }
 .bp-item {
   display: flex; align-items: flex-start; gap: 9px;
@@ -376,7 +376,8 @@ function onSearch() {
   border-bottom: 1px dashed var(--border);
 }
 .bp-item:last-child { border-bottom: none; }
-/* 状态圆点：进行中品牌红呼吸 / 成功绿 / 失败红 */
+/* 状态圆点：进行中品牌红呼吸 / 成功绿 / 失败红。
+   注：无限脉冲属于"持续运动"，reduced-motion 下由 global.css 统一降级（动画瞬时结束 → 呼吸停掉） */
 .bp-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -385,6 +386,9 @@ function onSearch() {
   background: var(--muted);
 }
 .bp-dot.running { background: var(--accent); animation: bp-pulse 1.2s ease-in-out infinite; }
+/* 注：1.2s 是审计点名的"动效裸值"之一，这里**有意保留裸值、不令牌化** ——
+   它是环境脉冲（status 呼吸灯）而非交互过渡，与 --dur-* 的分级（交互时长 ≤420ms）不是同一语义；
+   若投入 --dur-* 反而会让"动效分级"这条规则被误读。reduced-motion 下由 global.css 统一降级。 */
 .bp-dot.pending { background: var(--muted); }
 .bp-dot.ok { background: var(--success); }
 .bp-dot.fail { background: var(--danger); }

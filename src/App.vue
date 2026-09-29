@@ -106,13 +106,23 @@ onMounted(async () => {
 <!-- 路由入场动画：纯 CSS animation，挂载即播放，不阻塞渲染 -->
 <style>
 .route-anim {
-  animation: route-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* 入场 220ms（--dur-base）+ 强 ease-out。此前是裸值 0.18s 加一条独立曲线，
+     与令牌体系不一致（审计：6 处动效裸值之一）→ 改用令牌，视觉差异极小 */
+  animation: route-in var(--dur-base) var(--ease-out) both;
 }
 @keyframes route-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
+/* 减少动态效果：与 global.css 的策略保持一致 —— 只降级"位移"，保留"淡入"这类低强度反馈。
+   此前这里是 `animation: none`（连淡入也取消），与全局策略不一致。
+   !important 的作用：global.css 的 `* { animation-duration: .01ms !important }` 会覆盖本行，
+   必须提升优先级，否则淡入依旧会被压成瞬时。 */
 @media (prefers-reduced-motion: reduce) {
-  .route-anim { animation: none; }
+  .route-anim { animation: route-in-soft var(--dur-press) var(--ease-out) both !important; }
+}
+@keyframes route-in-soft {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 </style>

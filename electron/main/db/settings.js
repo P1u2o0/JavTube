@@ -15,6 +15,10 @@ const { session } = require('electron')
 const { persistSoon, persist } = require('./util')
 // 恢复数据库前用它试开来源文件（校验是不是可用的 SQLite）
 const { getSQL } = require('./init')
+// 清空数据库前收集图片引用、清空后清理孤儿文件（2026-09-29 审计）
+const { collectAllRefs, purgeUnreferenced } = require('./cleanup')
+// 清空后让首页轮播缓存失效（否则首页仍展示已清空的影片）
+const { invalidateHomeCache } = require('../home')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 
@@ -116,10 +120,19 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       const entries = Object.entries(obj || {})
       if (!entries.length) return { ok: true }
       let proxyChanged = false
-      for (const [key, value] of entries) {
-        db.run(`INSERT INTO settings(key,value) VALUES (?,?)
-          ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
-        if (String(key).startsWith('proxy_')) proxyChanged = true
+      // 包在一次事务里（2026-09-29 审计）：注释一直声称「一次事务」，代码却没有 BEGIN/COMMIT，
+      // 中途失败会留下半更新的设置。写法与 movies.js 的 BATCH_TAGS/APPLY_TAG_MAP 一致。
+      db.run('BEGIN')
+      try {
+        for (const [key, value] of entries) {
+          db.run(`INSERT INTO settings(key,value) VALUES (?,?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
+          if (String(key).startsWith('proxy_')) proxyChanged = true
+        }
+        db.run('COMMIT')
+      } catch (e) {
+        db.run('ROLLBACK')
+        throw e
       }
       persistSoon(db)  // 全部写完后只持久化一次（延迟落盘）
       if (proxyChanged) applyProxySettings(db)
@@ -218,13 +231,28 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
   })
 
   // IPC: settings:clear — 渲染进程 → 主进程
-  // 清空所有数据（删除影片、女优记录，保留设置）
+  // 清空所有数据（删除影片、女优记录，保留设置），并清理不再被引用的本地图片
   ipcMain.handle(IPC.SETTINGS_CLEAR, () => {
     try {
-      db.run('DELETE FROM movies')   // 清空影片表
-      db.run('DELETE FROM actress')  // 清空女优表
+      // 删库前先收集全库图片引用；删库后所有候选文件都不再被引用 → 全部清掉（2026-09-29 审计）。
+      // 注意只删 covers/ 内、且确被这几部影片引用的文件，不会波及本来就是孤儿的文件。
+      const refs = collectAllRefs(db)
+      // 包在一次事务里（2026-09-29 审计）：原实现没有事务，第二步失败会留下「影片已清空、
+      // 女优还在」的半清空状态，用户看到的是残缺数据。
+      db.run('BEGIN')
+      try {
+        db.run('DELETE FROM movies')   // 清空影片表
+        db.run('DELETE FROM actress')  // 清空女优表
+        db.run('COMMIT')
+      } catch (e) {
+        db.run('ROLLBACK')
+        throw e
+      }
+      const cleaned = purgeUnreferenced(db, dataDir, refs)
       persistSoon(db)
-      return { ok: true }
+      // 首页轮播缓存存的是影片快照，清空后必须失效，否则首页仍展示已删除的影片
+      try { invalidateHomeCache() } catch {}
+      return { ok: true, cleaned }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

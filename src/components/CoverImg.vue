@@ -34,7 +34,11 @@ import AppIcon from '@/components/AppIcon.vue'
 // 不自动继承属性：由上面的 v-bind="$attrs" 精确转发到 img（见模板注释）
 defineOptions({ inheritAttrs: false })
 
-defineProps({
+// ★ 必须把 defineProps 的返回值赋给变量：脚本里用到了 props.src（下面的 watch），
+// 而 <script setup> 里 defineProps 不赋值时并不会注入 props 变量 → 运行期
+// ReferenceError: props is not defined，watch 直接失效（「URL 变化自动重试」这个核心行为
+// 从未生效过，组件其他部分靠模板自动解包所以看起来正常）。2026-09-29 审计发现并修正。
+const props = defineProps({
   src: { type: String, default: '' },
   alt: { type: String, default: '' },
   /** 是否懒加载（列表里的图建议开，首屏关键图可关） */

@@ -301,27 +301,78 @@ function currentAvatarOf(db, name) {
   return ''
 }
 
+/** 按「，/,」拆分多值字段（影片 yid 的演员名列表），口径与 avatarStateOf / 女优总览一致 */
+function splitNameList(v) {
+  return String(v || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)
+}
+
+/**
+ * 取某演员在库里记录的性别（cast_json 里第一条带 gender 的条目；取不到按女优 'f'）。
+ * 用于头像文件名加性别后缀，避免同名男女演员互相覆盖同一张图。
+ */
+function genderOf(db, name) {
+  const all = db.exec('SELECT cast_json FROM movies')[0]
+  if (!all) return 'f'
+  for (const [cj] of all.values) {
+    try {
+      const hit = (JSON.parse(cj || '[]') || []).find(c => c && c.name === name && c.gender)
+      if (hit) return hit.gender === 'm' ? 'm' : 'f'
+    } catch {}
+  }
+  return 'f'
+}
+
 /**
  * 把某演员在所有影片 cast_json 里的 avatar 写成 relPath。
  * 必须是「所有出现处」——演员页与女优总览都是扫描 cast_json 取第一个非空值，
  * 只改一处会让不同入口显示不同头像。
- * @returns {number} 实际更新的影片条数
+ *
+ * yid-only 兼容（2026-09-29 审计）：早年数据可能只有 yid（中文逗号分隔的演员名）而没有
+ * cast_json。原实现 `if (!cast.length) continue` 会跳过这类影片 —— 头像文件下载了，
+ * 却没有任何影片引用它（文件成孤儿、前端却报成功）。现在为这类影片**补建 cast_json 条目**
+ * （把 yid 拆成 [{name,gender,avatar}]，与女优总览的拆名口径一致），使头像有引用。
+ *
+ * @returns {{ touched:number, total:number }} touched = 实际写入的影片条数；
+ *   total = 该演员出现的影片条数（含 avatar 本就等于 relPath、无需改写的那些）。
+ *   调用方据 total===0 判断「该演员未关联任何影片」（此时不该留下刚下载的文件）。
+ *   注：本函数不存在「单片失败」状态 —— 写库异常会整条抛到外层 catch（handler 返回 ok:false），
+ *   故不返回 failed 计数（2026-09-29 team-lead 决策：删掉恒 0 的空壳字段）。
  */
 function applyAvatarToCast(db, name, relPath) {
-  const res = db.exec('SELECT id, cast_json FROM movies')[0]
-  if (!res) return 0
+  const res = db.exec('SELECT id, cast_json, yid FROM movies')[0]
+  if (!res) return { touched: 0, total: 0 }
   let touched = 0
-  for (const [id, cj] of res.values) {
-    let cast
-    try { cast = JSON.parse(cj || '[]') } catch { continue }
-    if (!Array.isArray(cast) || !cast.length) continue
-    let changed = false
-    for (const c of cast) {
-      if (c && c.name === name && c.avatar !== relPath) { c.avatar = relPath; changed = true }
+  let total = 0
+  for (const [id, cj, yid] of res.values) {
+    let cast = []
+    let parsed = false
+    try {
+      const arr = JSON.parse(cj || '[]')
+      if (Array.isArray(arr) && arr.length) { cast = arr; parsed = true }
+    } catch {}
+    if (parsed) {
+      let appears = false
+      let changed = false
+      for (const c of cast) {
+        if (c && c.name === name) {
+          appears = true
+          if (c.avatar !== relPath) { c.avatar = relPath; changed = true }
+        }
+      }
+      if (!appears) continue
+      total++
+      // 注意：avatar 已等于 relPath 时 changed=false —— 这也是「已挂上」，不是失败
+      if (changed) { db.run('UPDATE movies SET cast_json=? WHERE id=?', [JSON.stringify(cast), id]); touched++ }
+    } else if (splitNameList(yid).includes(name)) {
+      // yid-only：补建 cast_json 条目（目标演员给 relPath，其余留空）
+      total++
+      const names = splitNameList(yid)
+      const built = names.map(nm => ({ name: nm, gender: 'f', avatar: nm === name ? relPath : '' }))
+      db.run('UPDATE movies SET cast_json=? WHERE id=?', [JSON.stringify(built), id])
+      touched++
     }
-    if (changed) { db.run('UPDATE movies SET cast_json=? WHERE id=?', [JSON.stringify(cast), id]); touched++ }
   }
-  return touched
+  return { touched, total }
 }
 
 /**
@@ -329,14 +380,20 @@ function applyAvatarToCast(db, name, relPath) {
  *
  * 「不可用」= 来源站占位图（粉色假图）或无效图片（坏下载/错误页，前端会显示成破图）。
  * 为什么需要：同一个语义（该女优没有可用照片）在界面上必须只有一种样子 —— 灰色剪影。
+ * @param {Object} db
+ * @param {string} dataDir
+ * @param {string} name - 演员名
+ * @param {{name:string,count:number,reason:string}} [preItem] - 调用方已算好的 todo 条目。
+ *   批量补全时传入可避免每次都对全库重跑 avatarTodoOf（O(N²)，2026-09-29 审计）。
  * @returns {boolean} 是否清理了
  */
-function removeUnusableAvatar(db, dataDir, name) {
+function removeUnusableAvatar(db, dataDir, name, preItem) {
   const cur = currentAvatarOf(db, name).replace(/\\/g, '/')
   if (!cur) return false
   // 复用全库扫描的判定（同时会把识别到的占位图指纹记入 placeholderHashes，
-  // 因此即使本轮已经删掉了同内容的其它几张，这里依然认得出）
-  const item = avatarTodoOf(db, dataDir).find(t => t.name === name)
+  // 因此即使本轮已经删掉了同内容的其它几张，这里依然认得出）。
+  // preItem 由调用方在入口处一次性算好（批量时避免 O(N²) 重扫）。
+  const item = preItem || avatarTodoOf(db, dataDir).find(t => t.name === name)
   if (!item || (item.reason !== '占位图' && item.reason !== '无效图片')) return false
   try { fs.unlinkSync(path.join(dataDir, cur)) } catch {}
   applyAvatarToCast(db, name, '')
@@ -503,6 +560,11 @@ function registerActressIpc(ipcMain, db, dataDir) {
     if (!nm) return { ok: false, error: '演员名为空' }
     if (!dataDir) return { ok: false, error: '未取到数据目录' }
     try {
+      // 一次性算出全库头像现状（2026-09-29 审计）：本 handler 在同一轮批量补全里会被
+      // 逐位调用，原先每次失败都要在 removeUnusableAvatar 里重跑 avatarTodoOf（全表 cast_json
+      // 解析 + 全量头像 md5），批量时是 O(N²)。这里算一次、按名字复用。
+      const todoMap = new Map(avatarTodoOf(db, dataDir).map(t => [t.name, t]))
+
       // 代理与 JAVDB Cookie：与 scraper:scrape 读同一套设置（JAVDB 需代理 + Cookie）
       const st = {}
       try {
@@ -516,14 +578,21 @@ function registerActressIpc(ipcMain, db, dataDir) {
       if (!got.ok) {
         // 补不到（两站都没照片）→ 若当前存的正是占位图/无效图片，清掉它并留空，
         // 让该女优与「本来就没有头像」的那些一样显示本地剪影（统一显示）
-        const cleaned = removeUnusableAvatar(db, dataDir, nm)
+        const cleaned = removeUnusableAvatar(db, dataDir, nm, todoMap.get(nm))
         return { ok: false, error: got.error, cleaned }
       }
 
-      // 已有头像文件且扩展名一致 → 直接覆盖它（不留孤儿文件）；否则用 actorId 命名新建
+      // 已有头像文件且扩展名一致 → 直接覆盖它（不留孤儿文件）；否则用 actorId + 性别后缀命名新建。
+      // 性别后缀（2026-09-29 审计）：原文件名只有 actorId，且本条链路只服务女优；加后缀后
+      // 「同名但性别不同」的两个名字（若都在库里存在）至少不会落到同一个文件名上。
+      // ⚠️ 局限（verify-code 指出）：suffix 取自 genderOf(name)（按名字在库里的记录），同名者恒定同后缀，
+      //    故无法区分「同名且都解析到同一 actorId」的两个人；彻底解决需 fetchActorAvatar 回传站点性别。
+      //    当前保留后缀作为命名约定与前向兼容，不再声称它已完全消除同名覆盖。
+      // 已存在且被引用的旧文件（无后缀）继续复用，避免全库换名产生孤儿。
       const cur = currentAvatarOf(db, nm).replace(/\\/g, '/')
       const ext = (got.url.match(/\.(jpg|jpeg|png|webp)$/i) || ['.jpg'])[0]
-      const rel = cur && cur.toLowerCase().endsWith(ext) ? cur : `${COVER_DIR}/actress/${got.id}${ext}`
+      const gender = genderOf(db, nm)
+      const rel = cur && cur.toLowerCase().endsWith(ext) ? cur : `${COVER_DIR}/actress/${got.id}_${gender}${ext}`
       const abs = path.join(dataDir, rel)
       fs.mkdirSync(path.dirname(abs), { recursive: true })
       // 先下到 .tmp、校验后再改名：中途失败不会破坏已有头像
@@ -534,12 +603,23 @@ function registerActressIpc(ipcMain, db, dataDir) {
         return { ok: false, error: '下载到的不是有效图片' }
       }
       fs.renameSync(tmp, abs)
-      const touched = applyAvatarToCast(db, nm, rel)
+      const { touched, total } = applyAvatarToCast(db, nm, rel)
+      // 该演员的影片里没有任何一处能引用这张图（cast_json 无此名、yid 拆分也不含它）→
+      // 文件留下就是孤儿，头像也永远不会生效，故删掉刚下载的文件并如实报失败，而不是报成功。
+      if (total === 0) {
+        try { fs.unlinkSync(abs) } catch {}
+        return { ok: false, error: '库内没有任何影片的演员字段包含该名字，无法写入头像引用' }
+      }
       persistSoon(db)
       // 女优总览的缓存指纹只看「影片条数 + 最大 id」，改 cast_json 不会让它失效 → 手动清一次，
       // 否则补完后界面最长 60 秒仍显示旧头像
       ovCache.key = ''
-      return { ok: true, data: { name: nm, path: rel, movies: touched, actorId: got.id, note: got.note || '' } }
+      // 不再返回 failed 字段（2026-09-29 team-lead 决策）：本链路是单演员粒度，不存在「按片失败」，
+      // 真正的失败会走上面的 ok:false（前端按演员名汇总）；保留恒 0 的 failed 会误导调用方。
+      return {
+        ok: true,
+        data: { name: nm, path: rel, movies: touched, total, actorId: got.id, note: got.note || '' }
+      }
     } catch (e) { return { ok: false, error: e.message } }
   })
 }

@@ -163,9 +163,9 @@ function onCardClick(m) {
 
 /**
  * 切换喜欢状态（卡片右上角喜欢按钮）
- * 实现说明：store.toggleFav **不是乐观更新** —— 它先 await IPC 写库，成功后才改
- *          `movies` 里的 `cl` 字段触发重渲染；失败则保持原状、无回滚动作。
- *          本地 sql.js 写库为毫秒级，无需乐观更新。
+ * 实现说明：store.toggleFav **是乐观更新** —— 先翻转 `movies` 里的 `cl` 字段立刻重渲染，
+ *          再 await IPC 写库；写库失败会回滚并提示（2026-09-29 审计修正：此处注释曾与实现相反）。
+ *          同一影片的重复点击由 store 内的 in-flight 锁去重。
  * @param {Object} m - 影片对象
  */
 async function onFav(m) { await store.toggleFav(m.id) }
