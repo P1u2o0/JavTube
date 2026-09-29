@@ -39,16 +39,22 @@
         </div>
       </div>
 
-      <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：喜欢按钮 -->
+      <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：喜欢 + 详情 -->
       <div class="tag-row" v-if="m">
         <div class="tags">
           <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
         </div>
-        <button type="button" class="fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
-                :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
-          <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="15" />
-          <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
-        </button>
+        <div class="row-actions">
+          <button type="button" class="pill-btn fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
+                  :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
+            <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="15" />
+            <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
+          </button>
+          <button type="button" class="pill-btn detail-btn" @click="goDetail" title="查看影片详情">
+            <AppIcon name="more" :size="15" />
+            <span>详情</span>
+          </button>
+        </div>
       </div>
 
       <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页）… 最右：评分/时长 -->
@@ -639,8 +645,16 @@ onBeforeUnmount(() => {
 }
 .info-stats .rating { color: var(--star-fill); }
 
-/* 喜欢按钮（图标 + 文字；与详情页 act-fav 同一套文案与红态） */
-.fav-btn {
+/* 标签行右侧的操作按钮组（喜欢 / 详情，同一套胶囊样式） */
+.row-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 胶囊按钮基础样式（图标 + 文字，与详情页操作按钮同一视觉语言） */
+.pill-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -658,8 +672,9 @@ onBeforeUnmount(() => {
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
               border-color var(--dur-fast) var(--ease-out);
 }
-.fav-btn:hover { background: var(--surface-2); color: var(--text); }
-.fav-btn:active { transform: scale(0.98); }
+.pill-btn:hover { background: var(--surface-2); color: var(--text); }
+.pill-btn:active { transform: scale(0.98); }
+/* 已喜欢：品牌红 */
 .fav-btn.on {
   color: var(--accent);
   border-color: var(--accent);
