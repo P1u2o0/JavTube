@@ -71,13 +71,15 @@
             <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
           </span>
           <span class="ac-name">{{ leadActress.name }}</span>
-          <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
+          <!-- +N = 本片除首位外还有 N 位女优；鼠标悬浮给出具体名字，避免这个数字看不出含义 -->
+          <span v-if="actressExtra > 0" class="ac-more"
+                :title="`本片共 ${actresses.length} 位女优，还有：${otherActresses}`">+{{ actressExtra }}</span>
         </button>
       </div>
     </div>
 
     <!-- ============ 右列：相关推荐 ============ -->
-    <aside ref="recColRef" class="rec-col">
+    <aside class="rec-col">
       <div class="rec-head">相关推荐</div>
       <!-- recVersion：每次推荐结果更新自增 → 列表整体淡入（切换影片时丝滑过渡） -->
       <div class="rec-list swap-in" :key="'recs-' + recVersion">
@@ -116,7 +118,6 @@ const store = useMoviesStore()
 
 // ====== 状态 ======
 const boxRef = ref(null)
-const recColRef = ref(null)    // 右列容器：按可用高度反算推荐列表整条数
 const m = ref(null)            // 当前影片行（movies 表）
 const recs = ref([])           // 相关推荐列表
 const recLoading = ref(false)
@@ -183,6 +184,8 @@ const actresses = computed(() => {
 const leadActress = computed(() => actresses.value[0] || null)
 /** 除首位外还有几位（>0 时名字右侧显示 +N） */
 const actressExtra = computed(() => Math.max(0, actresses.value.length - 1))
+/** 其余女优名字（给 +N 做悬浮提示：本片共几位、还有谁） */
+const otherActresses = computed(() => actresses.value.slice(1).map(a => a.name).join('、'))
 const avatarUrl = computed(() => {
   const a = leadActress.value
   if (!a || !a.avatar || avatarBroken.value) return ''
@@ -328,25 +331,6 @@ function fitVideoObject() {
   v.style.objectFit = off <= 0.08 ? 'cover' : 'contain'
 }
 
-// ====== 推荐列表整条数自适应（消除底部半截条 + 空白带）======
-// 视口不够高时 rec-col 被 max-height 钳制，固定 6 条会在底部截出「半条海报 + 一条空白」。
-// 直接按视口反算能完整放下几条（与 .rec-col 的 max-height 同一公式，不依赖列表内容时序），
-// 上限 6、下限 3，写成 --rec-rows 交给 CSS。
-function fitRecRows() {
-  const col = recColRef.value
-  if (!col) return
-  const cs = getComputedStyle(col)
-  const navH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-h')) || 56
-  const cap = window.innerHeight - navH - 48            // = .rec-col 的 max-height
-  const itemH = parseFloat(cs.getPropertyValue('--rec-item-h')) || 149.5
-  const pad = parseFloat(cs.getPropertyValue('--rec-pad')) || 6
-  const headH = parseFloat(cs.getPropertyValue('--head-h')) || 46
-  const rows = Math.max(3, Math.min(6, Math.floor((cap - headH + pad) / itemH)))
-  if (col.style.getPropertyValue('--rec-rows') !== String(rows)) {
-    col.style.setProperty('--rec-rows', String(rows))
-  }
-}
-
 // ====== 进度记忆 ======
 function saveProgress(force = false) {
   if (!art || !m.value) return
@@ -490,8 +474,6 @@ onMounted(async () => {
   await loadHotkeys()
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
-  window.addEventListener('resize', fitRecRows)
-  fitRecRows()
   if (dataDirRef.value) window.__dataDir = dataDirRef.value
   loadMovie(Number(route.params.id))
 })
@@ -500,7 +482,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown, true)
   window.removeEventListener('keyup', onKeyUp, true)
   window.removeEventListener('resize', fitVideoObject)
-  window.removeEventListener('resize', fitRecRows)
   endHold()
   // 兜底保存进度（route 切走/关页都会走这里）
   if (art && m.value && art.currentTime > 0) {
@@ -518,16 +499,24 @@ onBeforeUnmount(() => {
   /* 左列标题行 / 右列「相关推荐」标题的统一行高：
      两列头部等高，下面的播放器与第一张海报的顶边才能严格对齐（改这一处即可） */
   --head-h: 46px;
+  /* 顶部导航真实高度（TopNav 48px）。此前本页从未定义 --nav-h，var() 一直落在 56px 兜底上，
+     与实际差 8px —— 所有按 100vh 反算的公式都会累计这个误差。这里就地给准数。 */
+  --nav-h: 48px;
   /* 播放器宽度上限：按视口高反算出「严格 16:9」时的宽度（宽高比铁律的副产品）。
      它同时是播放器上下的标题行 / 标签行 / 女优行的公共尺子 —— 窗口最大化、盒子居中
      收窄时，这些行也跟着收窄居中，左右边缘始终与播放器边框线对齐，
-     不会在两侧各甩出一截（原先它们铺满 .main-col，左右各超出盒子 50px 上下）。 */
-  --box-max-w: calc((100vh - var(--nav-h, 56px) - var(--head-h) - 130px) * 16 / 9);
+     不会在两侧各甩出一截（原先它们铺满 .main-col，左右各超出盒子 50px 上下）。
+     减掉的 138px：导航 48 + 标题行 46 + 播放器上下留白合计 144（原 130 是按导航 56 配的，
+     导航改准数后 +8 抵消，播放器实际尺寸不变）。 */
+  --box-max-w: calc((100vh - var(--nav-h) - var(--head-h) - 138px) * 16 / 9);
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  min-height: calc(100vh - var(--nav-h, 56px) - 24px);
-  margin: -12px;                 /* 抵消 main-content 的页边距，播放页要贴近满幅 */
+  min-height: calc(100vh - var(--nav-h) - 24px);
+  /* 下内边距吃满 main-content 的 24px 底部内边距（左右上只吃 12px）：
+     否则页面比内容区高出几像素，最大化时 main-content 会常驻一条纵向滚动条，
+     整个内容区被挤窄 8px（背景同色，视觉无差别，滚动条却实实在在占宽）。 */
+  margin: -12px -12px -24px;
   padding: 12px;
   background: var(--bg);
   color: var(--text);
@@ -780,15 +769,17 @@ onBeforeUnmount(() => {
      列越窄 → 左列越宽 → 播放器越大。440 → 400 让播放器加宽 44px（+4.3%）。 */
   width: 400px;
   flex-shrink: 0;
-  /* 推荐项尺寸令牌（单一事实来源）：列表高度按「正好 N 项」反算 */
+  /* 推荐项尺寸令牌：海报 220×137.5（16:10）固定，条目高度随之固定 */
   --rec-thumb-w: 220px;
   --rec-thumb-h: calc(var(--rec-thumb-w) * 10 / 16);   /* 海报 16:10 */
   --rec-pad: 6px;                                      /* .rec-item 上下内边距 */
-  --rec-item-h: calc(var(--rec-thumb-h) + var(--rec-pad) * 2);
-  --rec-rows: 6;                                       /* 一屏正好完整显示 6 项 */
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
-  max-height: calc(100vh - var(--nav-h, 56px) - 48px);
+  /* 高度钉死为「页面内容区」的可用高：视口 - 导航 48 - main-content 上下内边距 36。
+     必须精确到不出滚动条的程度 —— 高 1px 就会把 main-content 撑出一条纵向滚动条
+     （内容区被挤窄 8px），矮一截列表下方又空出一片没有内容的区域（用户两次反馈的空白）。
+     列表条目多时在列内滚动，条目少时 space-between 均摊，两种情况底边都不留空白。 */
+  height: calc(100vh - var(--nav-h) - 36px);
   /* 贴到窗口最右：负外边距吃掉 player-page(12) + main-content(12) 的右侧内边距，
      这样列表滚动条与其它页面一样落在窗口右边缘 */
   margin-right: -24px;
@@ -805,9 +796,14 @@ onBeforeUnmount(() => {
 .rec-list {
   flex: 1;
   min-height: 0;
-  /* 高度锁死为「正好 --rec-rows 项」：第 6 项不再露出半截（首项去掉了上内边距，故减一个 --rec-pad）。
-     列表内容超出部分靠滚动查看。 */
-  max-height: calc(var(--rec-rows) * var(--rec-item-h) - var(--rec-pad));
+  /* 铺满右列剩余高度，不再锁「正好 N 整条」——锁死的高度凑不出整数条时会在列表
+     下方留下一条没有任何内容的空白（用户两次反馈的「底部一片区域不显示内容」）。
+     现在的行为：列表永远铺到右列底边（= 左列底边），条目多时自然滚动、
+     最后一条可能被裁一点（滚动列表的正常表现，也提示「下面还有」）；
+     条目少于一屏时用 space-between 均摊，同样不留空白。 */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   overflow-y: auto;
   padding-right: 8px;
 }
@@ -816,6 +812,8 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 10px;
   padding: var(--rec-pad);
+  /* 列表是 flex 列：条目必须禁止收缩，否则条目多于一屏时会被压扁（而不是出现滚动条） */
+  flex: 0 0 auto;
   border-radius: var(--r-sm);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
@@ -889,6 +887,7 @@ onBeforeUnmount(() => {
 /* 窄窗口：推荐栏换到下方 */
 @media (max-width: 1100px) {
   .player-page { flex-direction: column; }
-  .rec-col { width: 100%; max-height: none; margin-right: 0; }
+  /* 纵向排布后右列高度回到按内容自适应 */
+  .rec-col { width: 100%; height: auto; margin-right: 0; }
 }
 </style>
