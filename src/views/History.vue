@@ -116,8 +116,12 @@ onMounted(async () => {
   await loadHistory()
 })
 
-// 离开本页：还原进入前的全局排序，避免把「播放时间」带给片库/喜欢
-onBeforeUnmount(() => { if (sortBackup) store.sort = sortBackup })
+// 离开本页：还原进入前的全局排序，避免把「播放时间」带给片库/喜欢。
+// 但只在「本页设置的排序仍然生效」时还原 —— 否则会覆盖掉顶栏/用户在离开前的排序改动
+// （例如点顶栏「片库」时 TopNav 的 resetAll 会把排序复位，随后本页卸载又把旧值写回去）。
+onBeforeUnmount(() => {
+  if (sortBackup && store.sort.by === 'play_time' && store.sort.random === false) store.sort = sortBackup
+})
 
 // 顶栏新增影片后：按本页自己的筛选条件重载（不能由顶栏直接 loadMovies，那会把列表换成全库）
 watch(() => store.dataToken, () => loadHistory())

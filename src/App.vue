@@ -92,7 +92,10 @@ onMounted(async () => {
   // （空文件 / 全零 / 站点拦截页），表现为海报灰色空块、缩略图空白。
   // 设置里「启动时自动检查」默认开（键缺失也按开处理）；延迟几秒避开启动高峰，
   // 静默模式：没坏图就不打扰，修好了才提示一条。
-  if (store.settings?.auto_check_images !== 'n') {
+  // 只在「设置确实加载成功」时才自动检查：settings 为空说明设置没拉回来，
+  // 这时无法区分「用户关了」和「加载失败」，不擅自跑（2026-09-29 审计）
+  const settingsLoaded = Object.keys(store.settings || {}).length > 0
+  if (settingsLoaded && store.settings.auto_check_images !== 'n') {
     window.setTimeout(() => {
       useImageRepair().checkAndRepair({ silent: true }).catch(() => {})
     }, 4000)

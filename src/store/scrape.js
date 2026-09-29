@@ -46,8 +46,10 @@ export const useScrapeStore = defineStore('scrape', {
         const done = []
         const alive = []
         for (const t of this.tasks) (t.status === 'running' || t.status === 'pending' ? alive : done).push(t)
-        // 先丢最老的已完成任务，pending/running 一个都不动
-        const keepDone = done.slice(Math.max(0, done.length - Math.max(0, 50 - alive.length)))
+        // tasks 是 unshift 入队（**新任务在前**），所以「最新的已完成任务」在数组开头：
+        // 保留开头 N 个（2026-09-29 审计修正：此前写成 slice(len-N)，保留的其实是最旧的，
+        // 与注释「先丢最老的」正好相反）。
+        const keepDone = done.slice(0, Math.max(0, 50 - alive.length))
         this.tasks = [...keepDone, ...alive]
       }
     },

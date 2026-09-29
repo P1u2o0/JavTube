@@ -144,12 +144,30 @@ async function initDb(dataDir) {
   let recoveredFrom = ''
   /** 加载并做完整性校验；不合格直接抛错（调用方决定回退到哪一份） */
   const tryLoadDb = (p) => {
-    const d = new Sqlite.Database(fs.readFileSync(p))
+    const buf = fs.readFileSync(p)
+    // ① 文件头校验（2026-09-29 审计补）：**0 或 1 字节的文件会被 sql.js 当成「合法空库」**
+    //    静默接受（实测：integrity_check 返回 ok、0 张表）。而「写了一半就被强杀/掉电」
+    //    产生的正是这种文件 —— 不在这里拦下，就会绕过整个恢复链、再被首次落盘覆盖掉唯一备份。
+    //    正常 SQLite 文件头固定 16 字节 "SQLite format 3\0"。
+    if (buf.length < 100 || buf.subarray(0, 15).toString('latin1') !== 'SQLite format 3') {
+      throw new Error(`不是有效的 SQLite 文件（${buf.length} 字节，文件头不匹配）`)
+    }
+    const d = new Sqlite.Database(buf)
     const q = d.exec('PRAGMA integrity_check')
     const verdict = q && q[0] && q[0].values[0] ? String(q[0].values[0][0]) : ''
     if (verdict && verdict.toLowerCase() !== 'ok') {
       try { d.close() } catch {}
       throw new Error('integrity_check = ' + verdict)
+    }
+    // ② 结构校验：能打开但连 movies 表都没有 → 空壳库，同样按损坏处理
+    let hasMovies = false
+    try {
+      const t = d.exec("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='movies'")
+      hasMovies = !!(t && t[0] && t[0].values[0] && Number(t[0].values[0][0]) > 0)
+    } catch {}
+    if (!hasMovies) {
+      try { d.close() } catch {}
+      throw new Error('数据库里没有 movies 表（空壳库）')
     }
     return d
   }
@@ -337,7 +355,14 @@ async function initDb(dataDir) {
   }, 10000)
 
   // 手动强制保存函数：立即将数据库写入磁盘（失败时保留 dirty 以便下一轮重试）
-  const force = () => { if (saveDbToDisk(db, dbPath)) dirty = false }
+  const force = () => {
+    const ok = saveDbToDisk(db, dbPath)
+    if (ok) dirty = false
+    // ★ 必须把结果返回出去（2026-09-29 审计修回归）：util.persist 透传 _forceSave 的返回值，
+    // settings:backup 又依赖它判断「有没有真的写下去」。原实现没有 return → 恒 undefined
+    // → persist 恒 false → 备份数据库按钮 100% 报「落盘失败」，用户拿不到备份文件。
+    return ok
+  }
   // 进程退出时强制保存
   process.on('exit', force)
 

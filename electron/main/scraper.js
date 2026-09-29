@@ -234,6 +234,29 @@ function isGifRenamed(abs) {
 }
 
 /**
+ * 一次读取同时判定「是否有效图片」与「是否 GIF 伪装」。
+ * 为什么要有这个：`usable()`（图片完整性扫描）需要同时拿到这两个结论，分别调用
+ * isImageFile + isGifRenamed 会重复 open/read —— 全库 3,000+ 张预览图时是可测量的同步 I/O 开销
+ * （2026-09-29 审计）。判定规则与上面两个函数完全一致，不引入新语义。
+ * @param {string} abs
+ * @returns {{ok:boolean, kind:string, gif:boolean}}
+ */
+function inspectImage(abs) {
+  let fd
+  try {
+    fd = fs.openSync(abs, 'r')
+    const buf = Buffer.alloc(16)
+    const n = fs.readSync(fd, buf, 0, 16, 0)
+    const head = buf.subarray(0, n)
+    const kind = imageKind(head)
+    const gif = head.subarray(0, 3).toString('latin1') === 'GIF' && !/\.gif$/i.test(abs)
+    return { ok: !!kind, kind, gif }
+  } catch { return { ok: false, kind: '', gif: false } } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd) } catch {} }
+  }
+}
+
+/**
  * 按演员名从 JAVDB 取头像，供「补全缺失头像」使用。
  *
  * 两步：
@@ -930,4 +953,4 @@ async function scrapeMovie(ph, {
   return { ok: false, error: lastError || '未找到该番号的信息' }
 }
 
-module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile, isGifRenamed }
+module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile, isGifRenamed, inspectImage }

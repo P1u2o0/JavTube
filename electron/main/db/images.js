@@ -15,7 +15,7 @@
 const fs = require('fs')
 const path = require('path')
 const IPC = require('../../common/ipc-channels')
-const { scrapeMovie, isImageFile, isGifRenamed } = require('../scraper')
+const { scrapeMovie, isImageFile, isGifRenamed, inspectImage } = require('../scraper')
 const { COVER_DIR } = require('../constants')
 
 /**
@@ -28,9 +28,10 @@ const { COVER_DIR } = require('../constants')
 function usable(abs) {
   try {
     if (!fs.existsSync(abs)) return false
-    if (!isImageFile(abs)) return false
-    if (isGifRenamed(abs)) return false
-    return true
+    // 一次读取拿到两个结论（2026-09-29 审计：原实现分别调 isImageFile + isGifRenamed，
+    // 每张图重复 open/read 一次；全库 3,000+ 张时是可测量的同步 I/O 开销）
+    const r = inspectImage(abs)
+    return r.ok && !r.gif
   } catch { return false }
 }
 
@@ -136,16 +137,29 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   // 以「坏图张数的变化」上报，见 movieImages 注释
   const after = movieImages(db, dataDir, id)
 
-  // 清理该片不再被引用的预览图（2026-09-28 审计）：重新刮削后预览数量变少时，
-  // 旧序号的文件会留在 covers/previews 里成为孤儿（磁盘缓慢增长）。
-  // 只删「同一前缀 + 序号后缀」且不在数据库引用列表里的文件 —— 前缀带了 '-'，
-  // 不会误伤番号前缀相同的其它影片（如 ABF-2 不会碰 ABF-20-*.jpg）。
+  // 清理该片不再被引用的预览图（2026-09-29 审计修正）：
+  // 原实现拿「数据库里的 ph + '-'」当文件前缀去匹配，但文件名是抓取时用 cleanPh 生成的，
+  // 两者可能不一致（大小写/连字符/去前导零）→ 既清不掉自己的孤儿，又可能误删番号前缀相近的
+  // 其它影片的预览图。改为：① 前缀直接取自本片仍在引用的文件名（不猜）；
+  // ② 删除前确认该文件不被任何影片引用。
   try {
     const keep = new Set(dbPrevs.map(rel => path.basename(rel)))
     const prevDir = path.join(dataDir, COVER_DIR, 'previews')
-    if (fs.existsSync(prevDir)) {
-      for (const f of fs.readdirSync(prevDir)) {
-        if (f.startsWith(ph + '-') && !keep.has(f)) { try { fs.unlinkSync(path.join(prevDir, f)) } catch {} }
+    if (keep.size && fs.existsSync(prevDir)) {
+      const sample = [...keep][0]
+      const prefix = sample.replace(/-\d+\.[A-Za-z0-9]+$/, '')
+      if (prefix && prefix !== sample) {
+        const referenced = new Set()
+        const all = db.exec('SELECT previews FROM movies')[0]
+        for (const [pj] of (all ? all.values : [])) {
+          try { for (const x of (JSON.parse(pj || '[]') || [])) referenced.add(path.basename(String(x))) } catch {}
+        }
+        const re = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-\\d+\\.[A-Za-z0-9]+$')
+        for (const f of fs.readdirSync(prevDir)) {
+          if (re.test(f) && !keep.has(f) && !referenced.has(f)) {
+            try { fs.unlinkSync(path.join(prevDir, f)) } catch {}
+          }
+        }
       }
     }
   } catch {}

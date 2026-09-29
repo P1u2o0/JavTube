@@ -114,7 +114,12 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
             }
           }
           this.inited = true
-        } catch (e) { console.warn('init err', e) }
+        } catch (e) {
+          console.warn('init err', e)
+          // 失败不缓存（2026-09-29 审计）：原实现把失败也留在 _initP 里，
+          // 之后任何一次 initIfNeeded 都直接返回这个已失败的 promise，设置/分类永远拉不回来。
+          this._initP = null
+        }
       })()
       return this._initP
     },

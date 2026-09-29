@@ -49,7 +49,10 @@ registerCoverScheme()
 // 没有它时双击两次图标会起两个进程各自持有同一份 app.db：内存各一份、退出时互相覆盖，
 // .tmp/.bak 轮转也会打架（两个进程写同一个 app.db.tmp），表现为「最近的操作莫名丢失」
 // 或「库里出现另一个窗口的数据」。拿不到锁就直接退出，并把已有窗口拉到前台。
-const gotSingleLock = app.requestSingleInstanceLock()
+// 注意：Electron 的锁粒度是 userData（全机一份），而数据目录是 exe 同级 ——
+// 所以「绿色版复制多份分别放不同目录」这种用法会被误伤（2026-09-29 审计已记录）；
+// 开发调试（npm run dev）直接跳过这把锁，避免被已安装版挡住。
+const gotSingleLock = app.isPackaged ? app.requestSingleInstanceLock() : true
 if (!gotSingleLock) {
   console.warn('[main] 已有实例在运行，本次启动退出')
   app.quit()
@@ -250,6 +253,11 @@ function createWindow() {
 // === 应用生命周期 ===
 // app.whenReady() 在 Electron 完成初始化后触发，是应用启动的正式入口
 app.whenReady().then(async () => {
+  // 没拿到单实例锁就直接结束（否则 quit() 是异步的，后续仍会 initDb —— 正好是这把锁要防的竞争）
+  if (!gotSingleLock) {
+    console.warn('[main] 未获得单实例锁，跳过初始化')
+    return
+  }
   console.log('[main] ====== APP READY ======')
   let dataDir = ''
   try {

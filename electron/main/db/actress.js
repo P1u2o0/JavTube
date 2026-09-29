@@ -418,16 +418,23 @@ function registerActressIpc(ipcMain, db, dataDir) {
         pickStr(d.zb, g('zb', '')), pickStr(d.birthday, g('birthday', '')),
         pickStr(d.debut, g('debut', '')), pickStr(d.remark, g('remark', '')), Number(id)
       ])
-      persistSoon(db); return { ok: true }
+      persistSoon(db)
+      // 改名字/头像后演员总览与热度缓存必须失效（2026-09-29 审计）：
+      // 缓存键只含 COUNT/MAX(id)，改字段不会自然失效 → 演员页最多 60 秒还显示旧名字/旧头像。
+      invalidateActorCaches()
+      return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
 
   // IPC: actress:delete — 渲染进程 → 主进程
   // 删除女优
   ipcMain.handle(IPC.ACTRESS_DELETE, (_e, id) => {
-    try { db.run('DELETE FROM actress WHERE id=?', [Number(id)])
-      persistSoon(db); return { ok: true } }
-    catch (e) { return { ok: false, error: e.message } }
+    try {
+      db.run('DELETE FROM actress WHERE id=?', [Number(id)])
+      persistSoon(db)
+      invalidateActorCaches()          // 名单变了，演员页缓存同样要立刻失效
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // IPC: actor:films — 渲染进程 → 主进程（2026-09-14）
