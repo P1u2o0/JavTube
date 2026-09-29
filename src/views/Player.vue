@@ -474,7 +474,7 @@ onBeforeUnmount(() => {
      两列头部等高，下面的播放器与第一张海报的顶边才能严格对齐（改这一处即可） */
   --head-h: 46px;
   display: flex;
-  gap: 18px;
+  gap: 14px;
   align-items: flex-start;
   min-height: calc(100vh - var(--nav-h, 56px) - 24px);
   margin: -12px;                 /* 抵消 main-content 的页边距，播放页要贴近满幅 */
@@ -500,7 +500,9 @@ onBeforeUnmount(() => {
 .player-box {
   width: 100%;
   aspect-ratio: 16 / 9;
-  max-height: calc(100vh - var(--head-h) - 220px);
+  /* 高度上限＝视口 − 顶栏 − 标题行 − 播放器下方内容（标签行 12+34、女优行 8+46、页底 12）。
+     播放器由宽度决定大小（16:9 撑满左列），这里只是防止在超宽窗口下顶出页面。 */
+  max-height: calc(100vh - var(--nav-h, 56px) - var(--head-h) - 130px);
   border-radius: var(--r-md);
   overflow: hidden;
   background: #000;
@@ -685,8 +687,16 @@ onBeforeUnmount(() => {
 
 /* ====== 右列：推荐 ====== */
 .rec-col {
-  width: 440px;
+  /* 右列宽度只影响文字列宽度：海报尺寸由 --rec-thumb-w 锁死（220×137.5 不变）。
+     列越窄 → 左列越宽 → 播放器越大。440 → 400 让播放器加宽 44px（+4.3%）。 */
+  width: 400px;
   flex-shrink: 0;
+  /* 推荐项尺寸令牌（单一事实来源）：列表高度按「正好 N 项」反算 */
+  --rec-thumb-w: 220px;
+  --rec-thumb-h: calc(var(--rec-thumb-w) * 10 / 16);   /* 海报 16:10 */
+  --rec-pad: 6px;                                      /* .rec-item 上下内边距 */
+  --rec-item-h: calc(var(--rec-thumb-h) + var(--rec-pad) * 2);
+  --rec-rows: 5;                                       /* 一屏正好完整显示 5 项 */
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
   max-height: calc(100vh - var(--nav-h, 56px) - 48px);
@@ -703,12 +713,20 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--text);
 }
-.rec-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 8px; }
+.rec-list {
+  flex: 1;
+  min-height: 0;
+  /* 高度锁死为「正好 --rec-rows 项」：第 6 项不再露出半截（首项去掉了上内边距，故减一个 --rec-pad）。
+     列表内容超出部分靠滚动查看。 */
+  max-height: calc(var(--rec-rows) * var(--rec-item-h) - var(--rec-pad));
+  overflow-y: auto;
+  padding-right: 8px;
+}
 .rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
 .rec-item {
   display: flex;
   gap: 10px;
-  padding: 6px;
+  padding: var(--rec-pad);
   border-radius: var(--r-sm);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
@@ -719,7 +737,7 @@ onBeforeUnmount(() => {
 .rec-item:active { transform: scale(0.99); }
 .rec-item .thumb {
   position: relative;
-  width: 220px;
+  width: var(--rec-thumb-w);
   aspect-ratio: 16 / 10;
   border-radius: var(--r-sm);
   overflow: hidden;
