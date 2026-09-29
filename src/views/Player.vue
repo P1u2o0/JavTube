@@ -18,7 +18,7 @@
       <!-- 标题行（播放器上方）：番号 + 片名。
            行高固定 --head-h，与右列「相关推荐」标题同高 → 播放器与第一张海报顶边对齐 -->
       <div class="info-head">
-        <div class="info-title" v-if="m" :title="[m.ph, m.pm || m.ph].filter(Boolean).join(' ')">
+        <div class="info-title swap-in" v-if="m" :key="'title-' + m.id" :title="[m.ph, m.pm || m.ph].filter(Boolean).join(' ')">
           <span class="info-ph">{{ m.ph }}</span>
           <span class="info-name">{{ m.pm || m.ph }}</span>
         </div>
@@ -40,7 +40,7 @@
       </div>
 
       <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：喜欢 + 详情 -->
-      <div class="tag-row" v-if="m">
+      <div class="tag-row swap-in" v-if="m" :key="'tags-' + m.id">
         <div class="tags">
           <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
         </div>
@@ -58,7 +58,7 @@
       </div>
 
       <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页）… 最右：评分/时长 -->
-      <div class="actress-row" v-if="m">
+      <div class="actress-row swap-in" v-if="m" :key="'act-' + m.id">
         <button v-if="leadActress" type="button" class="actress"
                 :title="`查看 ${leadActress.name} 的全部影片`"
                 @click="goActor(leadActress.name)">
@@ -80,7 +80,8 @@
     <!-- ============ 右列：相关推荐 ============ -->
     <aside class="rec-col">
       <div class="rec-head">相关推荐</div>
-      <div class="rec-list">
+      <!-- recVersion：每次推荐结果更新自增 → 列表整体淡入（切换影片时丝滑过渡） -->
+      <div class="rec-list swap-in" :key="'recs-' + recVersion">
         <div v-if="!recs.length && !recLoading" class="rec-empty">暂无推荐</div>
         <div v-for="r in recs" :key="r.id" class="rec-item" @click="goMovie(r.id)">
           <div class="thumb">
@@ -90,10 +91,9 @@
           </div>
           <div class="rec-info">
             <div class="rec-title" :title="r.pm || r.ph">{{ r.pm || r.ph }}</div>
-            <div class="rec-meta">
-              <span class="rec-ph">{{ r.ph }}</span>
-            </div>
-            <!-- 评分单独一行：颜色与播放页下方统计里的评分一致（--star-fill） -->
+            <!-- 演员名（番号不再展示） -->
+            <div class="rec-actors" v-if="recActors(r)" :title="recActors(r)">{{ recActors(r) }}</div>
+            <!-- 评分：单独一行，配色与播放页下方统计的评分同源（--star-fill） -->
             <div class="rec-score" v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</div>
             <div class="rec-watched" v-if="fmtCount(r.watched)">看过 {{ fmtCount(r.watched) }}</div>
           </div>
@@ -121,6 +121,7 @@ const boxRef = ref(null)
 const m = ref(null)            // 当前影片行（movies 表）
 const recs = ref([])           // 相关推荐列表
 const recLoading = ref(false)
+const recVersion = ref(0)      // 推荐结果版本号：自增即触发右侧列表淡入过渡
 const mediaErr = ref(false)
 let art = null                 // ArtPlayer 实例（非响应式）
 let recordedFor = null         // recordPlay 去重：同一部影片一次会话只记一次
@@ -138,6 +139,17 @@ const ext = computed(() => {
 function coverUrl(r) {
   if (!r || r._err) return ''
   try { return resolveCover(r.cover, r.id) || '' } catch { return '' }
+}
+
+/**
+ * 推荐项的演员名：后端 PLAYER_RECOMMEND 直接给出 actors（yid 拆分 + cast_json 女优），
+ * 多演员用「、」连接（CSS 单行截断）。旧后端数据回退到 yid 字段。
+ * @param {Object} r - 推荐项
+ * @returns {string} 演员名串；无演员返回空串
+ */
+function recActors(r) {
+  if (Array.isArray(r?.actors) && r.actors.length) return r.actors.join('、')
+  return splitTags(r?.yid).join('、')
 }
 
 function fmtDur(min) {
@@ -379,6 +391,9 @@ function initOrSwitchPlayer() {
   art.on('video:error', () => { mediaErr.value = true })
   art.on('video:volumechange', () => { try { localStorage.setItem('jt-vol', String(art.volume)) } catch {} })
   art.on('video:loadedmetadata', resumeIfNeeded)
+  // 换源（点右侧推荐）后自动起播：switchUrl 不保证自动播放（上一部处于暂停/播完时尤其），
+  // 这里统一在元数据就绪后补一次 play；被浏览器自动播放策略拒绝时静默忽略。
+  art.on('video:loadedmetadata', () => { try { art.play()?.catch?.(() => {}) } catch {} })
 
   // 续播：超过 15 秒且不在结尾附近才跳
   async function resumeIfNeeded() {
@@ -407,6 +422,7 @@ async function loadRecommendations(id) {
     recs.value = r?.ok ? (r.data || []) : []
   } catch { recs.value = [] }
   recLoading.value = false
+  recVersion.value++      // 列表整体淡入（切换影片后新推荐丝滑登场）
 }
 
 // ====== 操作 ======
@@ -684,11 +700,14 @@ onBeforeUnmount(() => {
 
 /* ====== 右列：推荐 ====== */
 .rec-col {
-  width: 400px;
+  width: 412px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
   max-height: calc(100vh - var(--nav-h, 56px) - 48px);
+  /* 贴到窗口最右：负外边距吃掉 player-page(12) + main-content(12) 的右侧内边距，
+     这样列表滚动条与其它页面一样落在窗口右边缘 */
+  margin-right: -24px;
 }
 .rec-head {
   height: var(--head-h);         /* 与左列标题行等高 → 海报顶边对齐播放器顶边 */
@@ -699,7 +718,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--text);
 }
-.rec-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.rec-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 8px; }
 .rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
 .rec-item {
   display: flex;
@@ -707,11 +726,12 @@ onBeforeUnmount(() => {
   padding: 6px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
 /* 首项去掉上内边距：缩略图顶边正好落在列表顶边（= 播放器顶边） */
 .rec-item:first-child { padding-top: 0; }
 .rec-item:hover { background: var(--surface-2); }
+.rec-item:active { transform: scale(0.99); }
 .rec-item .thumb {
   position: relative;
   width: 196px;
@@ -748,8 +768,15 @@ onBeforeUnmount(() => {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
-.rec-meta { margin-top: 5px; font-size: 12px; color: var(--muted); display: flex; gap: 10px; }
-.rec-meta .rec-ph { color: var(--text-2); font-variant-numeric: tabular-nums; }
+/* 演员名（替代原番号位置；过长单行截断） */
+.rec-actors {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* 评分：单独一行，配色与播放页下方统计的评分同源（--star-fill） */
 .rec-score {
   margin-top: 4px;
@@ -765,9 +792,18 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
+/* 换片过渡：信息块按 m.id 重建 DOM → 动画重放（淡入 + 轻微上移）。
+   用「重建即淡入」而不是 Transition out-in —— 旧元素不参与离开动画，中间不会出现空档，
+   播放器顶边位置与第一行内容都不会抖。prefers-reduced-motion 下由全局规则自动瞬时结束。 */
+.swap-in { animation: jt-swap-in var(--dur-base) var(--ease-out) both; }
+@keyframes jt-swap-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* 窄窗口：推荐栏换到下方 */
 @media (max-width: 1100px) {
   .player-page { flex-direction: column; }
-  .rec-col { width: 100%; max-height: none; }
+  .rec-col { width: 100%; max-height: none; margin-right: 0; }
 }
 </style>
