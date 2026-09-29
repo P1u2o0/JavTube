@@ -24,6 +24,7 @@
     "test:fill:e2e": "node scripts/test-fill-scrape.js"
   },
   "dependencies": {
+    "artplayer": "^5.4.0",
     "element-plus": "^2.8.0",
     "pinia": "^2.2.0",
     "sql.js": "^1.10.3",

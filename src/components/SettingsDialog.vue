@@ -205,6 +205,53 @@
         </div>
       </el-tab-pane>
 
+      <!-- ============ 播放页快捷键（2026-09-29）============ -->
+      <el-tab-pane label="快捷键" name="hotkeys">
+        <div class="set-grid">
+          <div class="g-label">快退 / 快进步长</div>
+          <div class="g-control">
+            <el-select v-model="hk.seekStep" style="width:140px">
+              <el-option v-for="n in [5, 10, 15, 30]" :key="n" :label="n + ' 秒'" :value="n" />
+            </el-select>
+            <span class="g-tip" v-if="showTips">播放页单击 ← / → 时的快退 / 快进秒数</span>
+          </div>
+
+          <div class="g-label">长按倍速</div>
+          <div class="g-control">
+            <el-select v-model="hk.holdSpeed" style="width:140px">
+              <el-option v-for="n in [1.5, 2, 3, 4]" :key="n" :label="n + ' 倍速'" :value="n" />
+            </el-select>
+            <span class="g-tip" v-if="showTips">长按 → 时以该倍速播放，松开恢复原速</span>
+          </div>
+
+          <div class="g-label">长按判定时间</div>
+          <div class="g-control">
+            <el-select v-model="hk.holdThresholdMs" style="width:140px">
+              <el-option v-for="n in [250, 350, 500]" :key="n" :label="n + ' 毫秒'" :value="n" />
+            </el-select>
+            <span class="g-tip" v-if="showTips">方向键按住超过该时长视为「长按」，短于则算单击（快进/退一步）</span>
+          </div>
+
+          <div class="g-label">键位绑定</div>
+          <div class="g-control">
+            <div class="hk-grid">
+              <div v-for="(label, name) in KEY_LABELS" :key="name" class="hk-row">
+                <span class="hk-name">{{ label }}</span>
+                <button type="button" class="hk-btn" :class="{ rec: recTarget === name }"
+                        @click="startRec(name)"
+                        @keydown.prevent.stop="onRecKey($event, name)"
+                        @blur="recTarget === name && (recTarget = '')">
+                  {{ recTarget === name ? '按下新按键…' : keyLabel(hk.keys[name]) }}
+                </button>
+              </div>
+            </div>
+            <span class="g-tip" v-if="showTips">
+              点击按键框后按下新按键即可改绑（Esc 取消）；一个按键只能绑定一个功能。保存后在播放页生效
+            </span>
+          </div>
+        </div>
+      </el-tab-pane>
+
       <!-- ============ 关于 ============ -->
       <el-tab-pane label="关于" name="about">
         <div class="set-grid">
@@ -281,8 +328,44 @@ const st = reactive({
   proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890', javdb_cookie: '',
   show_tips: 'y',
   // 启动时自动检查失效图片：默认开（设置里没有这个键时也按开处理，见 App.vue）
-  auto_check_images: 'y'
+  auto_check_images: 'y',
+  // 播放页快捷键（JSON 字符串，载入时解析到 hk）
+  hotkeys: ''
 })
+
+// ── 播放页快捷键（2026-09-29）──────────────────────────
+// 结构与主进程 init.js 的默认值一致；此处是编辑器，落库走 saveAll 的 'hotkeys' key
+const HK_DEFAULTS = {
+  seekStep: 5, holdSpeed: 2, holdThresholdMs: 350,
+  keys: { toggle: ' ', forward: 'arrowright', back: 'arrowleft',
+          mute: 'm', fullscreen: 'f', volUp: 'arrowup', volDown: 'arrowdown' }
+}
+const hk = reactive(JSON.parse(JSON.stringify(HK_DEFAULTS)))
+// 键位显示名（顺序即界面排列顺序）
+const KEY_LABELS = { toggle: '播放 / 暂停', back: '快退（单击）', forward: '快进（单击）',
+                     mute: '静音', fullscreen: '全屏', volUp: '音量 +', volDown: '音量 −' }
+// 正在录制的键位名（点击按键框后进入录制态）
+const recTarget = ref('')
+function keyLabel(k) {
+  if (!k) return '未绑定'
+  if (k === ' ') return 'Space'
+  return k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1)
+}
+function startRec(name) { recTarget.value = name }
+/** 录制态下捕获按键（Esc 取消；冲突时拒绝并提示） */
+function onRecKey(e, name) {
+  if (e.key === 'Escape') { recTarget.value = ''; return }
+  const key = (e.key || '').toLowerCase()
+  if (!key) return
+  for (const [other, bind] of Object.entries(hk.keys)) {
+    if (other !== name && bind === key) {
+      ElMessage.warning(`「${keyLabel(key)}」已被「${KEY_LABELS[other]}」占用`)
+      return
+    }
+  }
+  hk.keys[name] = key
+  recTarget.value = ''
+}
 
 // 失效图片检查与修复（与启动自动检查共用同一段逻辑）
 const imgRepair = useImageRepair()
@@ -314,6 +397,14 @@ async function load() {
     pageSizeN.value = Number(st.page_size || 20)
     colsPerRowN.value = Number(st.cols_per_row || 5)
     previewCountN.value = Number(st.preview_count || 0)
+    // 快捷键：settings.hotkeys（JSON）→ hk；缺项回落默认值
+    try {
+      const saved = JSON.parse(st.hotkeys || '{}')
+      Object.assign(hk, { seekStep: saved.seekStep ?? HK_DEFAULTS.seekStep,
+                          holdSpeed: saved.holdSpeed ?? HK_DEFAULTS.holdSpeed,
+                          holdThresholdMs: saved.holdThresholdMs ?? HK_DEFAULTS.holdThresholdMs })
+      Object.assign(hk.keys, saved.keys || {})
+    } catch { /* 解析失败按默认键位 */ }
   }
   await loadCats()
 }
@@ -452,10 +543,11 @@ async function saveAll() {
   st.page_size = String(pageSizeN.value)
   st.cols_per_row = String(colsPerRowN.value)
   st.preview_count = String(previewCountN.value)
+  st.hotkeys = JSON.stringify(hk)
   const kvKeys = [
     'player_path', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
-    'proxy_enabled', 'proxy_url', 'javdb_cookie', 'auto_check_images'
+    'proxy_enabled', 'proxy_url', 'javdb_cookie', 'auto_check_images', 'hotkeys'
   ]
   const batch = {}
   for (const k of kvKeys) batch[k] = String(st[k] ?? '')
@@ -640,6 +732,24 @@ async function clearDb() {
 .about-line { padding: 3px 0; color: var(--text-2); font-size: var(--fs-md); }
 .about-line b { color: var(--text); font-family: var(--font-display); }
 .about-muted { color: var(--muted); font-size: var(--fs-base); }
+
+/* 快捷键键位绑定（2026-09-29 播放页） */
+.hk-grid { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+.hk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hk-name { font-size: var(--fs-base); color: var(--text-2); }
+.hk-btn {
+  min-width: 110px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-1, #f5f5f5);
+  color: var(--text);
+  font-size: var(--fs-base);
+  cursor: pointer;
+  text-align: center;
+}
+.hk-btn:hover { border-color: var(--accent); }
+.hk-btn.rec { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 </style>
 
 <style>

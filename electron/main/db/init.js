@@ -293,7 +293,10 @@ async function initDb(dataDir) {
     ['score', 'REAL DEFAULT 0'],
     ['duration', 'INTEGER DEFAULT 0'],
     ['play_count', 'INTEGER DEFAULT 0'],
-    ['cast_json', 'TEXT']
+    ['cast_json', 'TEXT'],
+    // 内置播放页（2026-09-29）：play_pos=上次播放位置(秒) / play_dur=上次取得的视频总时长(秒)
+    ['play_pos', 'REAL DEFAULT 0'],
+    ['play_dur', 'REAL DEFAULT 0']
   ])
   // actress.gender — 女优/男优标记（'f' 默认 / 'm'），用于演员页与默认剪影选择
   ensureColumns('actress', [
@@ -321,7 +324,15 @@ async function initDb(dataDir) {
     // === 标签设置（2026-09-09 新增） ===
     ['tag_mapping','[]'],       // 标签映射规则（JSON 数组 [[原标签,新标签],...]，刮削后自动替换）
     // === 界面（2026-09-09 新增） ===
-    ['show_tips','y']           // 设置对话框是否显示选项注释小字 (y/n)
+    ['show_tips','y'],          // 设置对话框是否显示选项注释小字 (y/n)
+    // === 播放页快捷键（2026-09-29 新增，JSON） ===
+    // seekStep: 单击←/→快退/进秒数; holdSpeed: 长按→的倍速; holdThresholdMs: 长按判定;
+    // keys: 键位绑定（值为 KeyboardEvent.key 的小写形式）
+    ['hotkeys', JSON.stringify({
+      seekStep: 5, holdSpeed: 2, holdThresholdMs: 350,
+      keys: { toggle: ' ', forward: 'arrowright', back: 'arrowleft',
+              mute: 'm', fullscreen: 'f', volUp: 'arrowup', volDown: 'arrowdown' }
+    })]
   ]
   for (const [k, v] of defaults) {
     // INSERT OR IGNORE：如果 key 已存在则跳过，不报错

@@ -187,7 +187,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import CoverImg from '@/components/CoverImg.vue'
 import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
-import { resolveCover, buildScrapeUpdate, safeCall, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint, favLock, favUnlock } from '@/utils/global'
+import { resolveCover, buildScrapeUpdate, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint, favLock, favUnlock } from '@/utils/global'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -476,13 +476,11 @@ async function load(id) {
 }
 
 /**
- * 播放影片并记录播放
+ * 播放影片（2026-09-29 起进内置播放页；外部播放器入口保留在播放页的信息栏）
  */
-async function onPlay() {
+function onPlay() {
   if (!m.value?.py) return ElMessage.warning('未设置视频路径')
-  const r = await window.api.playVideo(m.value.py).catch(() => null)
-  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
-  safeCall(window.api.recordPlay(m.value.id))
+  router.push(`/play/${m.value.id}`)
 }
 
 /**

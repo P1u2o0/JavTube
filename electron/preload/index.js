@@ -81,6 +81,30 @@ contextBridge.exposeInMainWorld('api', {
    */
   recordPlay: (id) => ipcRenderer.invoke(IPC.MOVIES_RECORD_PLAY, id),
 
+  // === 播放页（2026-09-29 内置播放器）===
+
+  /**
+   * 读取播放进度（续播用）
+   * @param {number} id - 影片 ID
+   * @returns {Promise<Object>} { ok, pos, dur, playTime, playCount }
+   */
+  getPlayProgress: (id) => ipcRenderer.invoke(IPC.PLAYER_GET_PROGRESS, id),
+
+  /**
+   * 保存播放进度（播放页节流调用 + 关页前兜底调用）
+   * @param {Object} p - { id, pos(秒), dur(秒) }
+   * @returns {Promise<Object>} { ok }
+   */
+  savePlayProgress: (p) => ipcRenderer.invoke(IPC.PLAYER_SAVE_PROGRESS, p),
+
+  /**
+   * 相关推荐：播放页右侧栏 topN
+   * @param {number} id - 当前影片 ID
+   * @param {number} [limit=12]
+   * @returns {Promise<Object>} { ok, data:[{id,ph,pm,cover,score,duration,want,rank,why}] }
+   */
+  getRecommendations: (id, limit) => ipcRenderer.invoke(IPC.PLAYER_RECOMMEND, { id, limit }),
+
   /**
    * 批量设置收藏状态
    * @param {number[]} ids - 影片 ID 数组

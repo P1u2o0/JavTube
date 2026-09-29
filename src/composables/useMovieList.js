@@ -10,7 +10,7 @@
  */
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { safeCall, buildScrapeUpdate, bumpCover, statsFillHint } from '@/utils/global'
+import { buildScrapeUpdate, bumpCover, statsFillHint } from '@/utils/global'
 import { useScrapeStore } from '@/store/scrape'
 
 /**
@@ -62,13 +62,11 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
   function onDetail(m) { router.push(`/detail/${m.id}`) }
 
   /**
-   * 播放影片：原三视图内联实现逐字相同，此处收拢。
+   * 播放影片：2026-09-29 起统一进内置播放页（原走外部播放器）。
    */
-  async function onPlay(m) {
-    if (!window.api || !m.py) return ElMessage.warning('未设置视频路径')
-    const r = await window.api.playVideo(m.py).catch(() => null)
-    if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
-    safeCall(window.api.recordPlay(m.id))
+  function onPlay(m) {
+    if (!m.py) return ElMessage.warning('未设置视频路径')
+    router.push(`/play/${m.id}`)
   }
 
   /**

@@ -25,8 +25,12 @@ const { registerSettingsIpc, applyProxySettings } = require('./db/settings')
 const { registerUtilsIpc } = require('./ipc-utils')
 // 首页推荐数据（轮播 / 类别按钮 / 近期上新）
 const { registerHomeIpc } = require('./home')
+// 播放页 IPC（进度记忆 + 相关推荐）
+const { registerPlayerIpc } = require('./db/player')
 // javtube-cover 封面协议（自本文件拆出）
 const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
+// javtube-media 视频流协议（内置播放页，2026-09-29）
+const { registerMediaScheme, setupMediaProtocol } = require('./media-protocol')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -44,6 +48,7 @@ if (process.env.JAVTUBE_DISABLE_GPU === '1') {
 
 // 必须在 app ready 之前注册 privileged scheme（Electron 硬性要求）
 registerCoverScheme()
+registerMediaScheme()
 
 // ====== 单实例锁（2026-09-28 审计补）======
 // 没有它时双击两次图标会起两个进程各自持有同一份 app.db：内存各一份、退出时互相覆盖，
@@ -293,6 +298,12 @@ app.whenReady().then(async () => {
   } catch (e) {
     console.error('[main] setupCoverProtocol FAILED:', e?.message || e)
   }
+  // 视频流协议（内置播放页 <video> 用，同上不依赖 DB）
+  try {
+    setupMediaProtocol()
+  } catch (e) {
+    console.error('[main] setupMediaProtocol FAILED:', e?.message || e)
+  }
 
   // 数据库降级恢复告知（2026-09-28 审计）：从 .bak/.tmp 恢复或最终建了空库时必须让用户知道
   if (db && db._recoveredFrom) {
@@ -319,6 +330,7 @@ app.whenReady().then(async () => {
     registerImageIpc(ipcMain, db, dataDirForGlobal)                  // 图片完整性 IPC（扫描/修复失效封面与预览图）
     registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
     registerHomeIpc(ipcMain, db)                                    // 首页推荐 IPC
+    registerPlayerIpc(ipcMain, db)                                  // 播放页 IPC（进度 + 相关推荐，2026-09-29）
     console.log('[main] IPC OK')
   } catch (e) {
     console.error('[main] IPC reg FAILED:', e?.stack || e)

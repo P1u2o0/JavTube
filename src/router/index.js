@@ -19,6 +19,7 @@ import History from '@/views/History.vue'
 import Actresses from '@/views/Actresses.vue'
 import Detail from '@/views/Detail.vue'
 import ActorFilms from '@/views/ActorFilms.vue'
+import Player from '@/views/Player.vue'
 
 // 路由表定义
 const routes = [
@@ -41,7 +42,10 @@ const routes = [
   { path: '/detail/:id', component: Detail, meta: { title: '详情' }, props: true },
 
   // 演员影片页（2026-09-14）- 某演员出演的全部影片，:name 为演员名
-  { path: '/actor/:name', component: ActorFilms, meta: { title: '演员' }, props: true }
+  { path: '/actor/:name', component: ActorFilms, meta: { title: '演员' }, props: true },
+
+  // 内置播放页（2026-09-29）- 左侧播放器 + 右侧相关推荐，:id 为影片 ID
+  { path: '/play/:id', component: Player, meta: { title: '播放' }, props: true }
 ]
 
 // 创建路由实例，使用 Hash 模式（Electron 应用中避免文件协议路径冲突）

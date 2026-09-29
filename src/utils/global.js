@@ -93,6 +93,32 @@ export function resolveCover(cover, key) {
 }
 
 /**
+ * 把视频文件绝对路径解析为 <video>/播放器可加载的 URL（2026-09-29 内置播放页）。
+ * 走 javtube-media:// 协议（主进程支持 Range 206，拖进度条必需），
+ * 编码方式与 resolveCover 完全一致（base64url + 占位 host '0'）。
+ * @param {string} py - movies.py（视频文件绝对路径）
+ * @returns {string} javtube-media://0/<base64url>；空路径返回空串
+ */
+export function resolveMedia(py) {
+  if (!py) return ''
+  if (/^javtube-media:\/\//i.test(py)) return py
+  let abs = String(py)
+  // 兼容 file:// 前缀（理论上 py 存的就是绝对路径，这里只是兜底）
+  if (/^file:\/\/\//i.test(abs)) {
+    try {
+      const u = new URL(abs)
+      abs = decodeURIComponent(u.pathname.replace(/^\//, ''))
+      if (/^\/[A-Za-z]:/.test(abs)) abs = abs.slice(1)
+    } catch { abs = abs.replace(/^file:\/\/\//i, '') }
+  }
+  const enc = btoa(unescape(encodeURIComponent(abs)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `javtube-media://0/${enc}`
+}
+
+/**
  * 同一影片「喜欢」操作的 in-flight 去重锁（2026-09-29 审计）。
  *
  * 问题：片库 store.toggleFav、详情页 toggleFav、演员页 onFav 三处都能改同一部影片的收藏，

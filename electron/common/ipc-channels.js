@@ -26,6 +26,11 @@ module.exports = {
   HOME_RECOMMEND: 'home:recommend',        // 首页推荐（轮播/类别按钮/近期上新）
   MOVIES_RECORD_PLAY: 'movies:recordPlay',
 
+  // === 播放页（2026-09-29 内置播放器）===
+  PLAYER_GET_PROGRESS: 'player:getProgress',    // 读播放进度（续播）
+  PLAYER_SAVE_PROGRESS: 'player:saveProgress',  // 节流保存播放进度
+  PLAYER_RECOMMEND: 'player:recommend',         // 播放页右侧「相关推荐」
+
   // === 女优 ===
   // 2026-09-14 演员头像：按演员名查询其出演影片 + 演员信息（男女通用）
   ACTOR_FILMS: 'actor:films',

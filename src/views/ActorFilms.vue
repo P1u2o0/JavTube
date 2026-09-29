@@ -112,7 +112,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { resolveCover, safeCall, splitTags, favLock, favUnlock } from '@/utils/global'
+import { resolveCover, splitTags, favLock, favUnlock } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
 import MovieCard from '@/components/MovieCard.vue'
 import TagChip from '@/components/TagChip.vue'
@@ -314,17 +314,11 @@ function onCardClick(m) {
   router.push(`/detail/${m.id}`)
 }
 /**
- * 播放。
- * 原实现是 `safeCall(() => window.api.playMovie(m.py))`：safeCall 只吃 Promise，
- * 传函数等于永不执行（点了没反应）；且没有失败提示、不记录播放次数。
- * 现与其他页面（useMovieList.onPlay / Detail.onPlay）保持一致：
- * 校验视频路径 → playVideo → 失败给明确原因 → 成功后记一次播放（累加观看记录）。
+ * 播放：2026-09-29 起统一进内置播放页（与 useMovieList.onPlay / Detail.onPlay 一致）。
  */
-async function onPlay(m) {
-  if (!window.api || !m?.py) return ElMessage.warning('未设置视频路径')
-  const r = await window.api.playVideo(m.py).catch(() => null)
-  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
-  safeCall(window.api.recordPlay(m.id))
+function onPlay(m) {
+  if (!m?.py) return ElMessage.warning('未设置视频路径')
+  router.push(`/play/${m.id}`)
 }
 /** 切换喜欢（乐观更新 + 失败回滚）
  *  原实现的写库调用同样因为 safeCall 传函数而从未执行 —— 界面已变红、库里却没变，
