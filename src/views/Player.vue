@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
 
 /* ====== 右列：推荐 ====== */
 .rec-col {
-  width: 412px;
+  width: 440px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
@@ -719,7 +719,7 @@ onBeforeUnmount(() => {
 .rec-item:active { transform: scale(0.99); }
 .rec-item .thumb {
   position: relative;
-  width: 196px;
+  width: 220px;
   aspect-ratio: 16 / 10;
   border-radius: var(--r-sm);
   overflow: hidden;
