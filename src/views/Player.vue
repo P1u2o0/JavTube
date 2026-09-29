@@ -15,23 +15,12 @@
   <div class="player-page" tabindex="-1">
     <!-- ============ 左列：标题 + 播放器 + 女优信息 ============ -->
     <div class="main-col">
-      <!-- 标题行（播放器上方）：番号 + 片名 + 操作按钮。
+      <!-- 标题行（播放器上方）：番号 + 片名。
            行高固定 --head-h，与右列「相关推荐」标题同高 → 播放器与第一张海报顶边对齐 -->
       <div class="info-head">
         <div class="info-title" v-if="m" :title="[m.ph, m.pm || m.ph].filter(Boolean).join(' ')">
           <span class="info-ph">{{ m.ph }}</span>
           <span class="info-name">{{ m.pm || m.ph }}</span>
-        </div>
-        <div class="info-actions" v-if="m">
-          <button class="act-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav" :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
-            <AppIcon name="heart" :size="16" />
-          </button>
-          <button class="act-btn" @click="goDetail" title="查看详情">
-            <AppIcon name="more" :size="16" />
-          </button>
-          <button class="act-btn" @click="playExternal" title="用外部播放器打开">
-            <AppIcon name="globe" :size="16" />
-          </button>
         </div>
       </div>
 
@@ -50,28 +39,38 @@
         </div>
       </div>
 
-      <!-- 播放器下方：女优（头像+名字）+ 类别标签 →（右）评分/时长/分类 -->
+      <!-- 播放器下方一行：女优（头像+名字）+ 全部标签 → 最右：评分统计 + 喜欢 -->
       <div class="info-sub" v-if="m">
-        <!-- 女优：圆形头像 + 名字，点击进入该女优的影片页（多女优时显示首位 + 余数） -->
-        <button v-if="leadActress" type="button" class="actress"
-                :title="`查看 ${leadActress.name} 的全部影片`"
-                @click="goActor(leadActress.name)">
-          <span class="ac-avatar">
-            <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
-            <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
+        <div class="sub-left">
+          <!-- 女优：圆形头像 + 名字，点击进入该女优的影片页（多女优时显示首位 + 余数） -->
+          <button v-if="leadActress" type="button" class="actress"
+                  :title="`查看 ${leadActress.name} 的全部影片`"
+                  @click="goActor(leadActress.name)">
+            <span class="ac-avatar">
+              <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
+              <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
+            </span>
+            <span class="ac-name">{{ leadActress.name }}</span>
+            <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
+          </button>
+
+          <!-- 影片全部标签：体型/行为/玩法 三类排在所有标签之前（顺序：体型 → 行为 → 玩法） -->
+          <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
+        </div>
+
+        <div class="sub-right">
+          <span class="info-stats">
+            <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
+            <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
+            <span v-if="m.fl && m.fl !== '全部'">{{ m.fl }}</span>
           </span>
-          <span class="ac-name">{{ leadActress.name }}</span>
-          <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
-        </button>
-
-        <!-- 类别标签：只取「体型 / 行为 / 玩法」三类里命中的 -->
-        <span v-for="t in catTags" :key="t" class="cat-tag">{{ t }}</span>
-
-        <span class="info-stats">
-          <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
-          <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
-          <span v-if="m.fl && m.fl !== '全部'">{{ m.fl }}</span>
-        </span>
+          <!-- 喜欢（图标 + 文字，与详情页同一套文案与红态） -->
+          <button type="button" class="fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
+                  :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
+            <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="15" />
+            <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -175,19 +174,27 @@ const avatarUrl = computed(() => {
   try { return resolveCover(a.avatar) || '' } catch { return '' }
 })
 
-// ====== 类别标签：只显示「体型 / 行为 / 玩法」三类里命中的 ======
+// ====== 标签：全部展示，其中「体型 / 行为 / 玩法」三类排到最前 ======
 const CAT_WHITELIST = ['体型', '行为', '玩法']
-const catTags = computed(() => {
-  const bq = new Set(splitTags(m.value?.bq))
-  if (!bq.size) return []
+/**
+ * 影片全部标签（bq）重排：
+ *  1) 先输出「体型 → 行为 → 玩法」三类里命中的标签（类内保持分类配置顺序，跨类去重）
+ *  2) 其余标签按 bq 原顺序跟在后面
+ * @returns {string[]}
+ */
+const sortedTags = computed(() => {
+  const all = splitTags(m.value?.bq)
+  if (!all.length) return []
+  const present = new Set(all)
   const cats = store.categories || []
-  const out = []
+  const keyTags = []
   for (const name of CAT_WHITELIST) {
     const c = cats.find(x => x && x.cat === name)
     if (!c || !Array.isArray(c.tags)) continue
-    for (const t of c.tags) if (bq.has(t) && !out.includes(t)) out.push(t)
+    for (const t of c.tags) if (present.has(t) && !keyTags.includes(t)) keyTags.push(t)
   }
-  return out
+  const keySet = new Set(keyTags)
+  return [...keyTags, ...all.filter(t => !keySet.has(t))]
 })
 
 /** 键位配置：默认值 + 设置表 hotkeys 覆盖 */
@@ -540,15 +547,28 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
-/* 播放器下方：女优（头像+名字）→ 类别标签 →（右）评分/时长/分类 */
+/* 播放器下方一行：左（女优 + 全部标签）/ 右（评分统计 + 喜欢按钮，永远贴最右） */
 .info-sub {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-top: 12px;
-  flex-wrap: wrap;
   font-size: 13px;
   color: var(--muted);
+}
+.sub-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sub-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 .actress {
   display: inline-flex;
@@ -584,7 +604,7 @@ onBeforeUnmount(() => {
 .ac-name { white-space: nowrap; }
 .ac-more { color: var(--muted); font-size: 12px; font-weight: 500; }
 
-/* 类别标签（只展示「体型/行为/玩法」，不可点 → 不用 TagChip 的 pointer 语义） */
+/* 标签（展示影片全部 bq；三类排在前，纯展示不可点 → 不用 TagChip 的 pointer 语义） */
 .cat-tag {
   padding: 3px 10px;
   border-radius: var(--r-tag);
@@ -596,25 +616,36 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.info-stats { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; }
+.info-stats { display: inline-flex; align-items: center; gap: 14px; white-space: nowrap; }
 .info-stats .rating { color: var(--star-fill); }
 
-.info-actions { display: flex; gap: 10px; flex-shrink: 0; }
-.act-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--text-2);
-  cursor: pointer;
+/* 喜欢按钮（图标 + 文字；与详情页 act-fav 同一套文案与红态） */
+.fav-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  gap: 5px;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
 }
-.act-btn:hover { background: var(--surface-2); color: var(--text); }
-.act-btn.on { color: var(--accent); border-color: var(--accent); }
+.fav-btn:hover { background: var(--surface-2); color: var(--text); }
+.fav-btn:active { transform: scale(0.98); }
+.fav-btn.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.fav-btn.on .app-icon { color: var(--accent); }
 
 /* ====== 右列：推荐 ====== */
 .rec-col {
