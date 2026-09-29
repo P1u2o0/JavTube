@@ -594,14 +594,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 10px 3px 3px;
+  gap: 9px;
+  padding: 4px 12px 4px 4px;
   border: none;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
@@ -609,8 +609,8 @@ onBeforeUnmount(() => {
 .actress:hover { background: var(--surface-2); }
 .actress:active { transform: scale(0.97); }
 .ac-avatar {
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   flex-shrink: 0;
   border-radius: 50%;
   overflow: hidden;
@@ -621,9 +621,9 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 .ac-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ac-fallback { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.ac-fallback { font-size: 16px; font-weight: 600; color: var(--text-2); }
 .ac-name { white-space: nowrap; }
-.ac-more { color: var(--muted); font-size: 12px; font-weight: 500; }
+.ac-more { color: var(--muted); font-size: 13px; font-weight: 500; }
 
 /* 标签（展示影片全部 bq；三类排在前，纯展示不可点 → 不用 TagChip 的 pointer 语义） */
 .cat-tag {
