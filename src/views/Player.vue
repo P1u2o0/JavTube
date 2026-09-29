@@ -62,7 +62,6 @@
           <span class="info-stats">
             <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
             <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
-            <span v-if="m.fl && m.fl !== '全部'">{{ m.fl }}</span>
           </span>
           <!-- 喜欢（图标 + 文字，与详情页同一套文案与红态） -->
           <button type="button" class="fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
@@ -91,7 +90,11 @@
               <span class="rec-ph">{{ r.ph }}</span>
               <span v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</span>
             </div>
-            <div class="rec-why">{{ r.why }}</div>
+            <!-- 热度数据（替代原「共同标签/同厂商」推荐理由描述） -->
+            <div class="rec-stats" v-if="fmtCount(r.watched) || fmtCount(r.want)">
+              <span v-if="fmtCount(r.watched)">看过 {{ fmtCount(r.watched) }}</span>
+              <span v-if="fmtCount(r.want)">想看 {{ fmtCount(r.want) }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -141,6 +144,19 @@ function fmtDur(min) {
   if (!n) return ''
   const h = Math.floor(n / 60), mm = Math.round(n % 60)
   return h ? `${h}小时${mm ? mm + '分' : ''}` : `${mm}分钟`
+}
+
+/**
+ * 想看/看过人数格式化：推荐栏窄，1 万以上折成「1.2万」避免换行；1 万以内原样显示。
+ * @param {number|string} n
+ * @returns {string} 空值（0/NaN）返回空串，调用方据此隐藏
+ */
+function fmtCount(n) {
+  const v = Number(n) || 0
+  if (v <= 0) return ''
+  if (v < 10000) return String(v)
+  const w = v / 10000
+  return (w >= 10 ? Math.round(w) : Math.round(w * 10) / 10) + '万'
 }
 
 // ====== 女优（标题下方：圆形头像 + 名字）======
@@ -649,7 +665,7 @@ onBeforeUnmount(() => {
 
 /* ====== 右列：推荐 ====== */
 .rec-col {
-  width: 360px;
+  width: 400px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
@@ -679,7 +695,7 @@ onBeforeUnmount(() => {
 .rec-item:hover { background: var(--surface-2); }
 .rec-item .thumb {
   position: relative;
-  width: 168px;
+  width: 196px;
   aspect-ratio: 16 / 10;
   border-radius: var(--r-sm);
   overflow: hidden;
@@ -707,21 +723,23 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: var(--text);
   line-height: 1.45;
-  max-height: 2.9em;
+  max-height: 4.35em;            /* 最多 3 行（3 × 1.45em） */
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
-.rec-meta { margin-top: 4px; font-size: 12px; color: var(--muted); display: flex; gap: 10px; }
+.rec-meta { margin-top: 5px; font-size: 12px; color: var(--muted); display: flex; gap: 10px; }
 .rec-meta .rec-ph { color: var(--text-2); font-variant-numeric: tabular-nums; }
-.rec-why {
+/* 热度数据：看过 / 想看（放不下时自动换行，不撑破卡片） */
+.rec-stats {
   margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 窄窗口：推荐栏换到下方 */
