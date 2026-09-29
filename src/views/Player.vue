@@ -88,13 +88,10 @@
             <div class="rec-title" :title="r.pm || r.ph">{{ r.pm || r.ph }}</div>
             <div class="rec-meta">
               <span class="rec-ph">{{ r.ph }}</span>
-              <span v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</span>
             </div>
-            <!-- 热度数据（替代原「共同标签/同厂商」推荐理由描述） -->
-            <div class="rec-stats" v-if="fmtCount(r.watched) || fmtCount(r.want)">
-              <span v-if="fmtCount(r.watched)">看过 {{ fmtCount(r.watched) }}</span>
-              <span v-if="fmtCount(r.want)">想看 {{ fmtCount(r.want) }}</span>
-            </div>
+            <!-- 评分单独一行：颜色与播放页下方统计里的评分一致（--star-fill） -->
+            <div class="rec-score" v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</div>
+            <div class="rec-watched" v-if="fmtCount(r.watched)">看过 {{ fmtCount(r.watched) }}</div>
           </div>
         </div>
       </div>
@@ -731,14 +728,18 @@ onBeforeUnmount(() => {
 }
 .rec-meta { margin-top: 5px; font-size: 12px; color: var(--muted); display: flex; gap: 10px; }
 .rec-meta .rec-ph { color: var(--text-2); font-variant-numeric: tabular-nums; }
-/* 热度数据：看过 / 想看（放不下时自动换行，不撑破卡片） */
-.rec-stats {
+/* 评分：单独一行，配色与播放页下方统计的评分同源（--star-fill） */
+.rec-score {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--star-fill);
+  font-variant-numeric: tabular-nums;
+}
+/* 看过人数（数据缺失时整行不渲染） */
+.rec-watched {
   margin-top: 4px;
   font-size: 12px;
   color: var(--muted);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
   font-variant-numeric: tabular-nums;
 }
 
