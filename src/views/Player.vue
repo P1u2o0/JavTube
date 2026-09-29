@@ -518,6 +518,11 @@ onBeforeUnmount(() => {
   /* 左列标题行 / 右列「相关推荐」标题的统一行高：
      两列头部等高，下面的播放器与第一张海报的顶边才能严格对齐（改这一处即可） */
   --head-h: 46px;
+  /* 播放器宽度上限：按视口高反算出「严格 16:9」时的宽度（宽高比铁律的副产品）。
+     它同时是播放器上下的标题行 / 标签行 / 女优行的公共尺子 —— 窗口最大化、盒子居中
+     收窄时，这些行也跟着收窄居中，左右边缘始终与播放器边框线对齐，
+     不会在两侧各甩出一截（原先它们铺满 .main-col，左右各超出盒子 50px 上下）。 */
+  --box-max-w: calc((100vh - var(--nav-h, 56px) - var(--head-h) - 130px) * 16 / 9);
   display: flex;
   gap: 14px;
   align-items: flex-start;
@@ -532,6 +537,20 @@ onBeforeUnmount(() => {
 /* ====== 左列 ====== */
 .main-col { flex: 1; min-width: 0; }
 
+/* 与播放器等宽同列（单一尺子 --box-max-w）：
+   播放器上方的标题、下方的标签行 / 女优行 / 报错块，左右边缘必须与播放器边框线严格对齐。
+   窗口够宽时上面这个 max-width 会生效（盒子居中收窄），若这些行仍铺满 .main-col，
+   就会左右各超出盒子一大截 —— 就是「最大化下两行跟播放器对不齐」的原因。 */
+.info-head,
+.player-box,
+.tag-row,
+.actress-row,
+.media-error {
+  width: 100%;
+  max-width: var(--box-max-w);
+  margin-inline: auto;
+}
+
 /* 标题行：位于播放器上方；高度锁死 --head-h（内部标题单行截断，不会被长片名撑高） */
 .info-head {
   height: var(--head-h);
@@ -544,13 +563,11 @@ onBeforeUnmount(() => {
 
 .player-box {
   /* 宽高比铁律：盒子必须永远是严格 16:9。高度被视口钳制时同步收窄宽度
-     （max-width 按 100vh 反算），绝不让宽高比跑偏 —— 一旦跑偏，视频按 contain
-     就铺不满盒子，四边露黑边且在四角圆弧处收成黑楔（「四角黑边」的根源）。
-     代价：矮宽窗口下播放器左右留一点页底色空隙（居中），比黑边好看得多。 */
-  width: 100%;
-  max-width: calc((100vh - var(--nav-h, 56px) - var(--head-h) - 130px) * 16 / 9);
+     （max-width = --box-max-w，见 .player-page），绝不让宽高比跑偏 —— 一旦跑偏，
+     视频按 contain 就铺不满盒子，四边露黑边且在四角圆弧处收成黑楔（「四角黑边」的根源）。
+     代价：矮宽窗口下播放器左右留一点页底色空隙（居中），比黑边好看得多。
+     宽度上限与居中在 .main-col 下的公共规则里统一给（与下方两行同一把尺子）。 */
   aspect-ratio: 16 / 9;
-  margin-inline: auto;
   border-radius: var(--r-md);
   overflow: hidden;
   background: #000;
