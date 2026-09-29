@@ -27,11 +27,6 @@ module.exports = {
   MOVIES_RECORD_PLAY: 'movies:recordPlay',
 
   // === 女优 ===
-  ACTRESS_LIST: 'actress:list',
-  ACTRESS_GET: 'actress:get',
-  ACTRESS_CREATE: 'actress:create',
-  ACTRESS_UPDATE: 'actress:update',
-  ACTRESS_DELETE: 'actress:delete',
   // 2026-09-14 演员头像：按演员名查询其出演影片 + 演员信息（男女通用）
   ACTOR_FILMS: 'actor:films',
   // 2026-09-22 演员页总览：全库女优（作品数/热度排名/各自身上想看最多的 3 部影片）
@@ -61,7 +56,6 @@ module.exports = {
   // === 对话框 ===
   DIALOG_OPEN_DIR: 'dialog:openDir',
   DIALOG_OPEN_VIDEO: 'dialog:openVideo',
-  DIALOG_OPEN_IMAGE: 'dialog:openImage',
   DIALOG_OPEN_FILE: 'dialog:openFile',
   DIALOG_SAVE_DB: 'dialog:saveDb',
   DIALOG_OPEN_DB: 'dialog:openDb',

@@ -47,9 +47,10 @@ function underCovers(dataDir, rel) {
 /**
  * 从查询结果行（[cover, previews, cast_json]）里收集全部图片引用。
  *
- * 有意**不**纳入 `actress` 表的 `img` 字段（2026-09-29，verify-code 复核）：该字段由
- * `dialog:openImage` 写入用户任意选择的绝对路径，应用自身从不写 `covers/` 下的路径，
- * 所以把它纳入「剩余引用集合」的收益≈0（它永远不会与被删影片的候选文件相交）。
+ * 有意**不**纳入 `actress` 表的 `img` 字段：该字段原由「女优管理页」经文件选择对话框
+ * 写入用户任意选择的绝对路径，应用自身从不写 `covers/` 下的路径。该来源页面与其专用
+ * 对话框通道已一并移除（2026-09-29），`actress` 表暂无 UI 消费方，故纳入「剩余引用集合」
+ * 收益≈0（它永远不会与被删影片的候选文件相交）。
  * 注：纳入并不会越界删除（候选文件本身已被 underCovers 门控），只是无意义。
  * @param {Array<Array>} values - db.exec 的 values
  * @returns {Set<string>} 归一化后的相对路径集合

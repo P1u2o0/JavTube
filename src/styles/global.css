@@ -114,7 +114,10 @@
   --dur-slow: 300ms;    /* 较大：对话框 / 面板 */
   --dur-lg: 340ms;      /* 大件：整卡上浮 + 背景图缩放（同类卡片共用，避免"一个硬一个软"） */
   --dur-xl: 420ms;      /* 最大：首页封面流整幅海报的横向位移；位移接近一屏宽，需要更长插值才不像"弹射"。
-                           这是全项目唯一超过 300ms 的档位，上限锁定 420ms，不要再加 */
+                           这是全项目唯一超过 300ms 的档位，上限锁定 420ms，不要再加。
+                           ⚠️ 防呆：必须严格小于 Home.vue 的 SETTLE_MS（480ms，循环越界后的静默归位延迟）。
+                           归位是靠"关过渡改索引"实现的，若本条 ≥ SETTLE_MS，位移还没播完就归位，
+                           画面会被截断成一次横跨整屏的滑动（Home.vue 的回归测试会因此变红）。 */
 
   /* ====== 字号阶梯（收拢散落字号，统一引用，不改视觉） ====== */
   --fs-xs: 11px;             /* 角标 / 辅助小字 */
@@ -554,7 +557,6 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: var(--ls-disp
     outline: 1px solid ButtonText;
     outline-offset: -1px;
   }
-  .slot-ph { outline: 1px solid CanvasText; outline-offset: -1px; }
   .tab.active, .view-toggle button.on, .dot.on { color: Highlight; }
   .tab.active::after { background: Highlight; }
   .r-mv-cap { background: ButtonFace; color: ButtonText; }

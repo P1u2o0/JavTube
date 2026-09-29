@@ -107,41 +107,6 @@ contextBridge.exposeInMainWorld('api', {
   // === 女优相关接口 ===
 
   /**
-   * 获取女优列表
-   * @returns {Promise<Object>} { ok, data }
-   */
-  getActressList: () => ipcRenderer.invoke(IPC.ACTRESS_LIST),
-
-  /**
-   * 获取女优详情（含参演影片）
-   * @param {number} id - 女优 ID
-   * @returns {Promise<Object>} { ok, data }
-   */
-  getActress: (id) => ipcRenderer.invoke(IPC.ACTRESS_GET, id),
-
-  /**
-   * 创建女优
-   * @param {Object} data - 女优数据
-   * @returns {Promise<Object>} { ok, id }
-   */
-  createActress: (data) => ipcRenderer.invoke(IPC.ACTRESS_CREATE, data),
-
-  /**
-   * 更新女优信息
-   * @param {number} id - 女优 ID
-   * @param {Object} data - 要更新的字段
-   * @returns {Promise<Object>} { ok }
-   */
-  updateActress: (id, data) => ipcRenderer.invoke(IPC.ACTRESS_UPDATE, { id, data }),
-
-  /**
-   * 删除女优
-   * @param {number} id - 女优 ID
-   * @returns {Promise<Object>} { ok }
-   */
-  deleteActress: (id) => ipcRenderer.invoke(IPC.ACTRESS_DELETE, id),
-
-  /**
    * 按演员名查询其出演的全部影片 + 演员信息（性别/头像/资料）
    * @param {string} name - 演员名
    * @returns {Promise<{ok:boolean,data:{name,gender,avatar,info,movies}}>}
@@ -280,9 +245,6 @@ contextBridge.exposeInMainWorld('api', {
 
   /** 打开视频文件选择对话框，返回选中文件路径 */
   openVideoDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_VIDEO),
-
-  /** 打开图片文件选择对话框，返回选中文件路径 */
-  openImageDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_IMAGE),
 
   /** 打开可执行文件选择对话框，返回选中文件路径 */
   openFileDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_FILE),

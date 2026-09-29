@@ -16,7 +16,6 @@ import Home from '@/views/Home.vue'
 import Library from '@/views/Library.vue'
 import Favorite from '@/views/Favorite.vue'
 import History from '@/views/History.vue'
-import Actress from '@/views/Actress.vue'
 import Actresses from '@/views/Actresses.vue'
 import Detail from '@/views/Detail.vue'
 import ActorFilms from '@/views/ActorFilms.vue'
@@ -34,9 +33,6 @@ const routes = [
 
   // 观看记录 - 按播放时间倒序展示观看历史
   { path: '/history', component: History, meta: { title: '观看记录' } },
-
-  // 女优管理 - 管理女优信息、查看参演影片
-  { path: '/actress', component: Actress, meta: { title: '女优' } },
 
   // 演员 - 库内女优总览（2026-09-22）：头像墙（按作品数）+ 热度排行榜两个视图
   { path: '/actresses', component: Actresses, meta: { title: '演员' } },

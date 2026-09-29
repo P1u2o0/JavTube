@@ -6,9 +6,14 @@
            ① 轮播：按近期观看的类别 / 系列 / 女优挑选同类影片，以
               **封面流（coverflow）**形式呈现——中心为当前影片大海报，
               左右两侧依次露出半幅并逐渐缩小。
-              **影片 ≥ 5 部时渲染 5 份副本构成循环传送带 → 5 个槽位永远填满，
-              左右按钮首尾循环**（第 5 张点下一张回到第 1 张），不会再出现空位占位图；
-              不足 5 部时首尾如实显示空位占位、到边界即停。
+              **任意影片数（≥ 1）都渲染 5 份副本构成循环传送带 → 5 个槽位永远被海报填满**，
+              左右按钮首尾循环（第 5 张点下一张回到第 1 张）；
+              库内不足 5 部时副本会重复出现（如 3 部 → B C A B C），
+              即"复制海报凑满 5 格"（用户 2026-09-29 选定，取代此前的空位占位 + 反向滑回）。
+              **推进方向恒定**：自动轮播与「下一部」一律按 1→2→…→末张→接回第 1 张
+              单向循环，不存在「到头反向」的往复（2026-09-29 按要求改）。
+              **手动优先**：手动切一张（按钮/指示点/海报）会把自动轮播重新计时，
+              4.5s 内不会再自动切；窗口不可见时自动轮播暂停，切回来继续。
               每次打开软件挑选一次（主进程会话级缓存，软件内切页不重随机）
            ② 类别按钮：全库标签频率前 5（4 字以内），单张背景海报 + 暗遮罩；
               **5 个类别的背景海报互不相同**（主进程按封面去重挑选）；hover 时背景缓慢放大
@@ -28,26 +33,22 @@
              海报 left 按自身索引固定，切换只动 belt → 运动完全均匀自然 -->
         <div class="flow">
           <!-- 所有海报常驻 DOM（无进出场），切换仅改内联 style → CSS transition 必然触发。
-               影片 >= 5 部时渲染 5 份副本（见 heroSlots：共 5n 个槽位），任意位置左右都有内容，
-               5 个槽位永远填满、不再出现空位占位图 -->
+               渲染 5 份副本（见 heroSlots：共 5n 个槽位），任意位置左右都有内容，
+               5 个槽位永远填满、不存在空位占位图 -->
           <div class="stage">
             <div v-for="s in heroSlots" :key="s.key" class="slot"
-                 :ref="el => setSlotEl(s.pos, el)" :style="slotStyle(s.pos, !s.movie)">
-              <template v-if="s.movie">
-                <CoverImg :src="coverOf(s.movie)" :alt="s.movie.pm || ''" :title="s.movie.pm || ''"
-                          :lazy="false" @click="onSlotClick(s.pos)" />
-                <div class="shade"></div>
-              </template>
-              <!-- 影片数不足 5 部时，首尾槽位显示淡红色空位占位图 -->
-              <div v-else class="slot-ph"></div>
+                 :ref="el => setSlotEl(s.pos, el)" :style="slotStyle(s.pos)">
+              <CoverImg :src="coverOf(s.movie)" :alt="s.movie.pm || ''" :title="s.movie.pm || ''"
+                        :lazy="false" @click="onSlotClick(s.pos)" />
+              <div class="shade"></div>
             </div>
           </div>
         </div>
         <!-- 左右切换 -->
-        <button v-if="hero.length > 1" class="flow-nav prev" aria-label="上一部" @click="step(-1)">
+        <button v-if="hero.length > 1" class="flow-nav prev" aria-label="上一部" @click="manualStep(-1)">
           <AppIcon name="back" :size="18" />
         </button>
-        <button v-if="hero.length > 1" class="flow-nav next" aria-label="下一部" @click="step(1)">
+        <button v-if="hero.length > 1" class="flow-nav next" aria-label="下一部" @click="manualStep(1)">
           <AppIcon name="back" :size="18" class="flip" />
         </button>
       </div>
@@ -117,18 +118,29 @@ let timer = null                 // 自动轮播
 let settleTimer = null           // 循环越界后的静默归位
 const noAnim = ref(false)        // 静默归位期间禁掉 CSS 过渡
 const HERO_INTERVAL = 4500   // 自动轮播间隔（毫秒）
-const HERO_WINDOW = 5        // 可见槽位数（中心 + 左右各 2）
-const LOOP_MIN = HERO_WINDOW // 影片数 >= 5 时启用循环传送带
+const HERO_WINDOW = 5        // 可见槽位数（中心 + 左右各 2）= 副本份数
 const SETTLE_MS = 480        // 静默归位延迟（略大于位移过渡 --dur-xl 420ms，确保动画已结束）
 const ARRIVAL_TOTAL = 8      // 近期上新位总数（4 列 × 2 行）
 
 /**
  * 系统「减少动态效果」开关。CSS 媒体查询管不到 WAAPI 动画（下面的 playCenterFadeIn），
- * 所以这里读一次并据此把淡化时长降为 0 —— 与 global.css 的降级策略保持一致：
+ * 所以这里单独跟踪并据此把淡化时长降为 0 —— 与 global.css 的降级策略保持一致：
  * 大范围运动降级、低强度反馈（颜色/透明度）保留。
+ *
+ * 用 ref + change 监听（而不是模块常量只读一次）：用户在系统设置里拨动「动画效果」后
+ * 无需重启软件即可生效 —— CSS 侧的媒体查询是实时的，JS 侧若只读一次就会出现
+ * 「CSS 已经动了、WAAPI 还按旧值跑」的不一致。
  */
-const REDUCE_MOTION = typeof window !== 'undefined'
+const REDUCE_MOTION = ref(
+  typeof window !== 'undefined'
   && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+)
+if (typeof window !== 'undefined' && window.matchMedia) {
+  try {
+    window.matchMedia('(prefers-reduced-motion: reduce)')
+      .addEventListener('change', e => { REDUCE_MOTION.value = e.matches })
+  } catch { /* 旧内核无 addEventListener：退化为启动时读一次，不影响功能 */ }
+}
 
 /** 当前居中的影片索引（把越界的 active 取模还原；指示点用它，避免循环瞬间无高亮） */
 const activeIndex = computed(() => {
@@ -142,32 +154,29 @@ function coverOf(m) {
 }
 
 /**
- * 轮播槽位列表。
+ * 轮播槽位列表 —— 「传送带」：**任意影片数（≥ 1）都渲染 5 份副本**。
+ * 共 5n 个槽位，第 k 个的位置固定为 `k - 2n`，内容是 `hero[k % n]`；可见判定 |pos - active| <= 2。
  *
- * 影片 >= 5 部 → 渲染 **5 份副本**的「传送带」：共 5n 个槽位，第 k 个的位置固定为 `k - 2n`，
- *   内容是 `hero[k % n]`；可见判定为 |pos - active| <= 2。
- *   由于可见窗口只跨 5 个连续 pos，而 n >= 5 时 `pos % n` 在窗口内两两不同，
- *   **每部影片恰好有一个副本可见** → 任意 active 下 5 个槽位都被填满。
- *   循环切换时 active 会临时越界，靠副本接续；动画结束后由 scheduleSettle 静默归位。
+ * 为什么 5 份副本对任意 n 都成立：
+ *   可见窗口只跨 5 个连续 pos，渲染区间 [-2n, 3n-1] 恰好覆盖 active ∈ [-2n+2, 3n-3]
+ *   （= safeActiveRange）下的可见区间 [active-2, active+2] → **任意 active 下 5 个槽位都被填满**。
+ *   n >= 5 时窗口内 `pos % n` 两两不同，每部影片恰好一个副本可见（画面与 5 部时无异）；
+ *   n < 5 时副本必然重复（如 n=3、active=0 → pos -2..2 → B C A B C），
+ *   即用户选定的「复制海报凑满 5 格」，取代此前的空位占位 + 反向滑回。
+ *   静默归位的不变式同样对任意 n 成立：pos 与 pos+n 上的影片相同（list[p % n]），
+ *   且两者相对 active 的偏移一致 → active 与 active+n 的画面签名逐像素相同。
  *
- *   为什么是 5 份而不是 3 份：连点"下一部"时 active 会在归位前持续累加，
+ * 为什么是 5 份而不是 3 份：连点"下一部"时 active 会在归位前持续累加，
  *   3 份（pos ∈ [-n, 2n-1]）最多只撑得住越界 2~3 格，快速连点会把副本用尽、槽位凭空消失。
  *   5 份把安全区间扩到 active ∈ [-2n+2, 3n-3]，连点十几下也不会露馅。
- *
- * 影片 < 5 部 → 每部一个固定位置，首尾补空位占位（数量确实不足，如实显示）。
  */
 const heroSlots = computed(() => {
   const list = hero.value
   const n = list.length
   if (!n) return []
   const out = []
-  if (n >= LOOP_MIN) {
-    for (let k = 0; k < n * 5; k++) {
-      out.push({ key: 'b' + k, movie: list[k % n], pos: k - n * 2 })
-    }
-  } else {
-    for (let i = 0; i < n; i++) out.push({ key: 'm' + i, movie: list[i], pos: i })
-    for (const p of [-2, -1, n, n + 1]) out.push({ key: 'ph' + p, movie: null, pos: p })
+  for (let k = 0; k < n * HERO_WINDOW; k++) {
+    out.push({ key: 'b' + k, movie: list[k % n], pos: k - n * 2 })
   }
   return out
 })
@@ -178,14 +187,14 @@ function safeActiveRange(n) {
 }
 
 /**
- * 3D coverflow 槽位样式：海报按相对中心距离 d 绕 Y 轴旋转 + 向 Z 轴后撤 + 水平偏移。
- * 所有海报（含占位）常驻 DOM，切换时 active 变化仅让各槽位的 d 变化 → transform/opacity
- * 由 CSS transition 平滑过渡，呈现「当前海报缩小向后转到侧面、下一张放大向前转到正中」。
+ * coverflow 槽位样式：按相对中心的距离 d 算「水平偏移 + 缩放」，纵深只由 scale 表达
+ * （不用 perspective / translateZ —— 3D 合成层在 5 张海报同时大位移时会掉帧）。
+ * 所有海报常驻 DOM，切换时 active 变化仅让各槽位的 d 变化 → transform/opacity
+ * 由 CSS transition 平滑过渡，呈现「当前海报缩小滑向侧面、下一张放大滑到正中」。
  * |d|>2 的海报移到屏外并隐藏（仍常驻，保证过渡连续）。
- * @param {number} pos - 槽位固定位置（-n ~ 2n-1；非循环模式为 0 ~ n-1 及首尾占位位）
- * @param {boolean} [ph] - 是否空位占位（层级略低、稍淡）
+ * @param {number} pos - 槽位固定位置（-2n ~ 3n-1）
  */
-function slotStyle(pos, ph = false) {
+function slotStyle(pos) {
   const d = pos - active.value
   const sign = d < 0 ? -1 : 1
   const off = Math.abs(d) > 2          // 超出视野 → 移出屏外隐藏
@@ -200,9 +209,9 @@ function slotStyle(pos, ph = false) {
     // 纵深改由 scale 单独表达，GPU 只需处理 2D 合成，滑动明显更顺
     transform: `translate(-50%, -50%) translateX(${x}px) scale(${scale})`,
     opacity: off ? 0 : 1,          // 静止态一律不透明；淡入淡出由切换时的 WAAPI 动画负责
-    zIndex: 10 - abs - (ph ? 1 : 0),
-    '--shade': off ? 0 : (ph ? veil + 0.1 : veil),   // 白色遮罩强度（中心 0，越外越白）
-    pointerEvents: ph || off ? 'none' : undefined
+    zIndex: 10 - abs,
+    '--shade': off ? 0 : veil,     // 白色遮罩强度（中心 0，越外越白）
+    pointerEvents: off ? 'none' : undefined
   }
 }
 
@@ -217,7 +226,13 @@ async function load() {
     hero.value = r.data.hero || []
     categories.value = r.data.categories || []
     arrivals.value = r.data.arrivals || []
-    if (active.value >= hero.value.length) active.value = 0   // 防越界
+    // 防越界：active 允许临时越界（传送带副本），但重新加载后必须回到基础区间，
+    // 否则会落在新列表没有渲染的副本位置上 → 首屏 5 格可能填不满
+    const n = hero.value.length
+    if (!n) active.value = 0
+    else if (active.value < 0 || active.value >= n) {
+      active.value = ((active.value % n) + n) % n
+    }
   }
 }
 
@@ -242,34 +257,68 @@ function playCenterFadeIn() {
   if (!el?.animate) return
   el.animate(
     [{ opacity: 0.22 }, { opacity: 1 }],
-    { duration: REDUCE_MOTION ? 0 : 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }   // 与位移同时长同曲线
+    { duration: REDUCE_MOTION.value ? 0 : 420, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }   // 与位移同时长同曲线
   )
 }
 
 /** 切换轮播（dir=1 下一部 / -1 上一部）。
- *  影片 >= 5 部时**首尾循环**：active 允许临时越界（如 n → n+1），
- *  传送带里的副本负责无缝接续，动画结束后再静默归位到 [0, n)，用户无感。
- *  影片不足 5 部时首尾是空位占位、不能居中，因此到边界即停。 */
+ *  **恒定单向循环**：走到末尾后直接接回第 1 张、继续同方向推进，没有「到头反向」的往复。
+ *  传送带里的副本负责无缝接续（active 允许临时越界，动画结束后静默归位）——
+ *  对任意影片数都成立，n < 5 时同一部影片的多个副本会同时可见（复制凑满 5 格）。
+ *  注意：本函数是「切一格」的原子操作，自动轮播与手动都调用它；
+ *        手动入口要包一层 manualStep()，用于把自动轮播重新计时。 */
 function step(dir) {
   const n = hero.value.length
   if (n < 2) return
-  if (n >= LOOP_MIN) {
-    active.value += dir
-    // 连点过快时 active 一路累加，接近传送带副本边界 → 立刻静默归位（宁可闪一下也不能让槽位消失）
-    const [lo, hi] = safeActiveRange(n)
-    if (active.value < lo || active.value > hi) normalizeNow()
-    playCenterFadeIn()
-    scheduleSettle()
-  } else {
-    const next = active.value + dir
-    if (next < 0 || next >= n) return
-    active.value = next
-    playCenterFadeIn()
-  }
+  active.value += dir
+  // 连点过快时 active 一路累加，接近传送带副本边界 → 立刻静默归位（宁可闪一下也不能让槽位消失）
+  const [lo, hi] = safeActiveRange(n)
+  if (active.value < lo || active.value > hi) normalizeNow()
+  playCenterFadeIn()
+  scheduleSettle()
 }
 
-/** 跳到指定轮播项（指示点） */
-function go(i) { active.value = i; playCenterFadeIn() }
+/**
+ * 手动「上一部 / 下一部」= 切一格 + **把自动轮播重新计时**。
+ *
+ * 为什么必须重新计时（用户 2026-09-29 反馈）：
+ *   不加这一下，手动切完不到 4.5s 自动那一步就会插进来 —— 尤其「末张 → 第 1 张」这一格
+ *   后面紧跟一个静默归位（480ms），自动步恰好落在归位之后，用户看到的就是
+ *   「刚点完又是一跳」的顿挫。重新计时后，手动操作之后 4.5s 内一定不会再自动切。
+ */
+function manualStep(dir) {
+  step(dir)
+  bumpAuto()
+}
+
+/**
+ * 跳到指定轮播项（指示点）。
+ *
+ * **必须取「离当前最近的那一份副本」**，不能直接写基础副本的 pos：
+ * 传送带里 index i 出现在 pos = i + k*n（k = -2..2）。过去直接 `active = i`，
+ * 于是从第 5 个点回第 1 个时位移是 4 格（1200px）—— 整条带子横飞，观感就是「卡一下」
+ * （实测：20 组点对里最大位移 900px）。
+ * 取最近副本后位移 ≤ 2 格（|d|=2 → 480px，实测最大 480px），
+ * 「5 → 1」正好是**向前 1 格**（300px，落到 pos = n 那份副本上），
+ * 与自动轮播的「末张 → 第 1 张」是同一个动作，自然衔接；越界由 scheduleSettle 稍后静默归位。
+ * 平票（正好差 n/2）取向前那份，保持「正方向优先」。
+ * n < 5 时副本会重复，取最近副本同样只走 1~2 格，不会横飞。
+ */
+function go(i) {
+  const n = hero.value.length
+  if (!n) return
+  let best = i
+  for (let k = -2; k <= 2; k++) {
+    const p = i + k * n
+    const d = Math.abs(p - active.value)
+    const bd = Math.abs(best - active.value)
+    if (d < bd || (d === bd && p > best)) best = p
+  }
+  active.value = best
+  playCenterFadeIn()
+  scheduleSettle()
+  bumpAuto()
+}
 
 /**
  * 点击槽位：中心海报进详情，其他海报移到中心。
@@ -284,6 +333,7 @@ function onSlotClick(pos) {
   active.value = pos
   playCenterFadeIn()
   scheduleSettle()
+  bumpAuto()
 }
 
 /** 打开影片详情 */
@@ -326,32 +376,61 @@ function normalizeNow() {
   requestAnimationFrame(() => requestAnimationFrame(() => { noAnim.value = false }))
 }
 
-/** 启动自动轮播（到头反向往返，避免末尾跳回首张时海报横跨整屏飞回造成顿挫） */
+/**
+ * 启动自动轮播。与手动「下一部」走**同一条** step(1)：
+ * 恒定单向推进 1→2→…→末张→接回第 1 张，不再「到头反向」往复
+ * （反向会让观感忽左忽右，用户明确要求方向一致）。
+ * 传送带副本保证「末张 → 第 1 张」是无缝接续，不需要靠反向来回避整屏横飞。
+ *
+ * 只重启「间隔计时器」，**不清 settleTimer**：静默归位该发生还得发生，
+ * 否则会把 active 永久留在越界区间（画面没错，但副本会白跑）。
+ * 窗口不可见时不启动（下面 onVisibility 会在切回来时重新启动）。
+ */
 function startTimer() {
-  stopTimer()
+  pauseTimer()
   if (hero.value.length < 2) return
-  let dir = 1
+  if (typeof document !== 'undefined' && document.hidden) return
   timer = setInterval(() => {
-    const n = hero.value.length
-    if (settleTimer) return                    // 正在静默归位，跳过本次，避免与归位抢索引
-    const cur = activeIndex.value
-    let next = cur + dir
-    if (next < 0 || next >= n) { dir = -dir; next = cur + dir }
-    active.value = next
-    playCenterFadeIn()   // 与手动切换保持一致（此前自动轮播不播淡入）
+    if (settleTimer) return                 // 正在静默归位，跳过本次，避免与归位抢索引
+    step(1)
   }, HERO_INTERVAL)
 }
-function stopTimer() {
+
+/** 只停「间隔计时器」（保留待执行的静默归位） */
+function pauseTimer() {
   if (timer) { clearInterval(timer); timer = null }
+}
+
+/**
+ * 手动操作后把自动轮播重新计时。
+ * 只在「本来就开着自动轮播」时重启 —— 影片 < 2 部或窗口不可见时不会凭空开启。
+ */
+function bumpAuto() {
+  if (timer) startTimer()
+}
+
+/** 完全停掉（含待执行的静默归位与 no-anim 状态）：组件卸载时用 */
+function stopTimer() {
+  pauseTimer()
   if (settleTimer) { clearTimeout(settleTimer); settleTimer = null }
   noAnim.value = false
+}
+
+/** 窗口切走/最小化时停掉自动轮播，切回来再继续：看不见就不空转，回来也不会一次补一串 */
+function onVisibilityChange() {
+  if (document.hidden) pauseTimer()
+  else startTimer()
 }
 
 onMounted(async () => {
   await load()
   startTimer()
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
-onBeforeUnmount(stopTimer)
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  stopTimer()
+})
 </script>
 
 <style scoped>
@@ -399,8 +478,16 @@ onBeforeUnmount(stopTimer)
   box-shadow: var(--sh-3);
   /* 位移 --dur-xl 420ms + iOS 抽屉曲线（起步快、中段顺、收尾缓）：
      之前的 --ease-in-out（0.77,0,0.175,1）前 20% 几乎不动，跟手轮播用它会明显迟滞。
-     时长走令牌：这是全项目唯一允许超过 300ms 的档位（整幅海报横移接近一屏宽） */
-  transition: transform var(--dur-xl) var(--ease-drawer);
+     时长走令牌：这是全项目唯一允许超过 300ms 的档位（整幅海报横移接近一屏宽）
+     ⚠️ opacity 必须与 transform **同时长同曲线**一起过渡（2026-09-29 盲测发现的缺陷）：
+     slotStyle 对 |d|>2 的槽位内联 opacity:0，而 off 分支的 x 是**钳制在 ±900** 的 ——
+     只过渡 transform 时，d 由 2 变 3 的那一帧 opacity 立刻归零，可那张海报此刻还停在
+     x=±480、**有约 300~430px 宽仍在视口内**，于是屏上凭空出现一块空洞，要等 420ms
+     才被滑进来的海报填上（实测 4 个场景 29 个「还在屏内却已不可见」的帧）。
+     一起过渡后淡出跟随滑出，离开视野时才基本透明。
+     注意：`.no-anim`（静默归位）会把两者的过渡一起关掉，所以"归位要瞬时"的约束不受影响。 */
+  transition: transform var(--dur-xl) var(--ease-drawer),
+              opacity var(--dur-xl) var(--ease-drawer);
   will-change: transform, opacity;
 }
 .slot img {
@@ -419,16 +506,6 @@ onBeforeUnmount(stopTimer)
   opacity: var(--shade, 0);
   transition: opacity var(--dur-xl) var(--ease-drawer);   /* 与位移同步，避免"先白了还在滑" */
   pointer-events: none;
-}
-/* 缺失影片的槽位：淡红色空白占位图 */
-.slot-ph {
-  width: 100%; height: 100%;
-  border-radius: var(--r-md);
-  background: var(--accent-soft);                    /* 品牌红浅底（令牌）*/
-  /* 品牌红 32% 透明描边：用 color-mix 从 --accent 派生，accent 改色时描边自动跟随
-     （Chromium 111+ 支持，Electron 30 = Chromium 124，安全） */
-  border: 1px dashed color-mix(in srgb, var(--accent) 32%, transparent);
-  box-sizing: border-box;
 }
 /* 左右切换按钮：玻璃圆钮（与卡片角标同质感） */
 .flow-nav {
