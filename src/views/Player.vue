@@ -39,37 +39,35 @@
         </div>
       </div>
 
-      <!-- 播放器下方一行：女优（头像+名字）+ 全部标签 → 最右：评分统计 + 喜欢 -->
-      <div class="info-sub" v-if="m">
-        <div class="sub-left">
-          <!-- 女优：圆形头像 + 名字，点击进入该女优的影片页（多女优时显示首位 + 余数） -->
-          <button v-if="leadActress" type="button" class="actress"
-                  :title="`查看 ${leadActress.name} 的全部影片`"
-                  @click="goActor(leadActress.name)">
-            <span class="ac-avatar">
-              <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
-              <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
-            </span>
-            <span class="ac-name">{{ leadActress.name }}</span>
-            <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
-          </button>
-
-          <!-- 影片全部标签：体型/行为/玩法 三类排在所有标签之前（顺序：体型 → 行为 → 玩法） -->
+      <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：喜欢按钮 -->
+      <div class="tag-row" v-if="m">
+        <div class="tags">
           <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
         </div>
+        <button type="button" class="fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
+                :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
+          <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="15" />
+          <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
+        </button>
+      </div>
 
-        <div class="sub-right">
-          <span class="info-stats">
-            <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
-            <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
+      <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页）… 最右：评分/时长 -->
+      <div class="actress-row" v-if="m">
+        <button v-if="leadActress" type="button" class="actress"
+                :title="`查看 ${leadActress.name} 的全部影片`"
+                @click="goActor(leadActress.name)">
+          <span class="ac-avatar">
+            <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
+            <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
           </span>
-          <!-- 喜欢（图标 + 文字，与详情页同一套文案与红态） -->
-          <button type="button" class="fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
-                  :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
-            <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="15" />
-            <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
-          </button>
-        </div>
+          <span class="ac-name">{{ leadActress.name }}</span>
+          <span v-if="actressExtra > 0" class="ac-more">+{{ actressExtra }}</span>
+        </button>
+
+        <span class="info-stats">
+          <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
+          <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
+        </span>
       </div>
     </div>
 
@@ -560,8 +558,8 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
-/* 播放器下方一行：左（女优 + 全部标签）/ 右（评分统计 + 喜欢按钮，永远贴最右） */
-.info-sub {
+/* 播放器下方第一行：标签 … 最右喜欢按钮 */
+.tag-row {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -569,21 +567,24 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: var(--muted);
 }
-.sub-left {
+.tag-row .tags {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px 8px;
 }
-.sub-right {
-  flex-shrink: 0;
+/* 第二行：女优（头像+名字）… 最右评分/时长 */
+.actress-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
 }
 .actress {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -629,7 +630,13 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.info-stats { display: inline-flex; align-items: center; gap: 14px; white-space: nowrap; }
+.info-stats {
+  margin-left: auto;             /* 评分/时长贴着女优行最右 */
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+}
 .info-stats .rating { color: var(--star-fill); }
 
 /* 喜欢按钮（图标 + 文字；与详情页 act-fav 同一套文案与红态） */
