@@ -312,6 +312,21 @@ function endHold() {
   hideBadge()
 }
 
+// ====== 播放器铺满（消除边角黑边）======
+// 视频层由 GPU 合成且像素对齐取整：只要「盒子宽高比 ≠ 视频宽高比」，object-fit:contain
+// 就会在边缘留黑边（盒子被 max-height 压矮、或片源比例与 16:9 略有出入时都会出现，
+// 黑边在四角圆弧处收成黑楔，最显眼）。偏差 ≤ 8% 时改用 cover 裁掉一点画面（肉眼不可见）
+// 铺满盒子；偏差大（如 4:3 老片）则保留 contain 的有意留黑。
+function fitVideoObject() {
+  const v = art && art.video
+  const box = boxRef.value
+  if (!v || !box || !v.videoWidth || !v.videoHeight || !box.clientWidth || !box.clientHeight) return
+  const vAr = v.videoWidth / v.videoHeight
+  const bAr = box.clientWidth / box.clientHeight
+  const off = Math.abs(vAr - bAr) / vAr
+  v.style.objectFit = off <= 0.08 ? 'cover' : 'contain'
+}
+
 // ====== 进度记忆 ======
 function saveProgress(force = false) {
   if (!art || !m.value) return
@@ -376,9 +391,13 @@ function initOrSwitchPlayer() {
   art.on('video:error', () => { mediaErr.value = true })
   art.on('video:volumechange', () => { try { localStorage.setItem('jt-vol', String(art.volume)) } catch {} })
   art.on('video:loadedmetadata', resumeIfNeeded)
+  art.on('video:loadedmetadata', fitVideoObject)
   // 换源（点右侧推荐）后自动起播：switchUrl 不保证自动播放（上一部处于暂停/播完时尤其），
   // 这里统一在元数据就绪后补一次 play；被浏览器自动播放策略拒绝时静默忽略。
   art.on('video:loadedmetadata', () => { try { art.play()?.catch?.(() => {}) } catch {} })
+  // 窗口尺寸变化会改变盒子宽高比（max-height 参与钳制时尤其），铺满方式需要重算
+  window.addEventListener('resize', fitVideoObject)
+
 
   // 续播：超过 15 秒且不在结尾附近才跳
   async function resumeIfNeeded() {
@@ -456,6 +475,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown, true)
   window.removeEventListener('keyup', onKeyUp, true)
+  window.removeEventListener('resize', fitVideoObject)
   endHold()
   // 兜底保存进度（route 切走/关页都会走这里）
   if (art && m.value && art.currentTime > 0) {
@@ -506,6 +526,19 @@ onBeforeUnmount(() => {
   border-radius: var(--r-md);
   overflow: hidden;
   background: #000;
+}
+/* 圆角双保险：视频层是 GPU 合成层，个别驱动下父级 overflow:hidden 的圆角裁切会失效
+   （视频方角盖住圆角、四角出现黑楔）。让 ArtPlayer 根节点与 <video> 自身也带同样圆角，
+   裁切在合成层内部完成。进全屏（art-fullscreen / 网页全屏）时恢复 0，避免全屏圆角。 */
+.player-box :deep(.art-video-player),
+.player-box :deep(.art-video-player video) {
+  border-radius: var(--r-md);
+}
+.player-box :deep(.art-video-player.art-fullscreen),
+.player-box :deep(.art-video-player.art-fullscreen video),
+.player-box :deep(.art-video-player.art-fullscreen-web),
+.player-box :deep(.art-video-player.art-fullscreen-web video) {
+  border-radius: 0;
 }
 
 /* 长按倍速 / 快退角标（挂在 ArtPlayer 根节点上，非 scoped —— 用 :global 穿透） */
