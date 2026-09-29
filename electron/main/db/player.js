@@ -172,9 +172,9 @@ function registerPlayerIpc(ipcMain, db) {
     const data = scored.slice(0, Number(limit) || 12).map(({ c, s, why }) => ({
       id: c.id, ph: c.ph, pm: c.pm, cover: c.cover,
       score: c.score, duration: c.duration, want: c.want,
-      watched: c.watched,
       // 演员名（yid 拆分 + cast_json 里的女优）—— _actors 是 Set，必须转数组后再过 IPC，
-      // 否则前端 Array.isArray 判定失败（2026-09-29 实测：Set 能序列化但不是数组）
+      // 否则前端 Array.isArray 判定失败（2026-09-29 实测：Set 能序列化但不是数组）。
+      // 播放页推荐项展示演员名（番号、看过人数均不再展示，故不返回 watched）
       actors: Array.from(c._actors),
       rank: Math.round(s * 10) / 10,
       why: why.slice(0, 2).join(' · ') || '同类影片'

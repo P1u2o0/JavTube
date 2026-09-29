@@ -72,7 +72,6 @@
 
         <span class="info-stats">
           <span v-if="m.score > 0" class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
-          <span v-if="m.duration > 0">{{ fmtDur(m.duration) }}</span>
         </span>
       </div>
     </div>
@@ -95,7 +94,6 @@
             <div class="rec-actors" v-if="recActors(r)" :title="recActors(r)">{{ recActors(r) }}</div>
             <!-- 评分：单独一行，配色与播放页下方统计的评分同源（--star-fill） -->
             <div class="rec-score" v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</div>
-            <div class="rec-watched" v-if="fmtCount(r.watched)">看过 {{ fmtCount(r.watched) }}</div>
           </div>
         </div>
       </div>
@@ -157,19 +155,6 @@ function fmtDur(min) {
   if (!n) return ''
   const h = Math.floor(n / 60), mm = Math.round(n % 60)
   return h ? `${h}小时${mm ? mm + '分' : ''}` : `${mm}分钟`
-}
-
-/**
- * 想看/看过人数格式化：推荐栏窄，1 万以上折成「1.2万」避免换行；1 万以内原样显示。
- * @param {number|string} n
- * @returns {string} 空值（0/NaN）返回空串，调用方据此隐藏
- */
-function fmtCount(n) {
-  const v = Number(n) || 0
-  if (v <= 0) return ''
-  if (v < 10000) return String(v)
-  const w = v / 10000
-  return (w >= 10 ? Math.round(w) : Math.round(w * 10) / 10) + '万'
 }
 
 // ====== 女优（标题下方：圆形头像 + 名字）======
@@ -782,13 +767,6 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   font-size: 12px;
   color: var(--star-fill);
-  font-variant-numeric: tabular-nums;
-}
-/* 看过人数（数据缺失时整行不渲染） */
-.rec-watched {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
