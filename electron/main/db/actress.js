@@ -245,6 +245,81 @@ function avatarStateOf(db) {
 }
 
 /**
+ * 全库「女优名 → 头像相对路径」映射（只含非空项）。
+ * 口径与 computeOverview / avatarStateOf 完全一致：cast_json 优先，缺 cast_json 时回退拆 yid
+ * （这类没有头像）；同一位女优在多部影片里出现时，取全库扫描到的**第一个非空值**。
+ *
+ * 为什么需要它（2026-09-30 修复，用户报告「有些女优演员页有头像、女优影片页和播放页没有」）：
+ *   头像是「跨影片共享」的字段（同一女优的所有影片都指向同一个文件），但它是**逐片刮削写入**的：
+ *   某部影片刮削时来源站没有该女优的照片、或头像下载失败，写进该片 cast_json 的就是空串；
+ *   而这位女优在别的影片里明明有头像。
+ *   - 演员页（computeOverview）聚合**全库**取第一个非空 → 有头像；
+ *   - 女优影片页（ACTOR_FILMS）与播放页（只拿得到**当前这一部**的 cast_json）→ 没头像。
+ *   实测（用户库 376 部）：女优影片页 5 位、播放页 23 部影片会因此丢头像。
+ *   本映射是「库里已知头像」的唯一事实来源，供上面两处按名字补齐，使三个入口显示同一个头像。
+ *
+ * 缓存策略与热度/总览一致（影片集合指纹 + 60s TTL）；cast_json 被改写时由
+ * invalidateActorCaches() 立即失效，不必等 TTL。
+ * @returns {Map<string, string>}
+ */
+const avatarMapCache = { key: '', at: 0, map: null }
+function actorAvatarMap(db) {
+  const key = moviesKey(db)
+  const now = Date.now()
+  if (avatarMapCache.map && avatarMapCache.key === key && now - avatarMapCache.at < 60000) return avatarMapCache.map
+  const map = new Map()
+  for (const [name, e] of avatarStateOf(db)) if (e.avatar) map.set(name, e.avatar)
+  avatarMapCache.key = key
+  avatarMapCache.at = now
+  avatarMapCache.map = map
+  return map
+}
+
+/**
+ * 读取时补齐 cast_json 里的空头像（**只改返回值，不写库**）。
+ * 供「只拿得到单部影片」的入口使用（播放页/详情页的 movies:getOne），使它们与演员页显示同一个头像。
+ * 不写库是刻意的：入库口径保持「本片刮削到什么就存什么」，避免读一次影片就改动其它影片的数据。
+ *
+ * 两种情况：
+ *   ① cast_json 有演员条目 → 只把 avatar 为空的那些按名字补上已知头像（男优不在映射里，天然跳过）；
+ *   ② cast_json 为空/不可解析（早年只刮到 yid 的影片）→ 按 yid 拆分补建条目，已知头像一并带上。
+ *      口径与 applyAvatarToCast 的 yid-only 分支一致（补建时同样给 gender 'f'），
+ *      使这类影片的播放页也能显示头像，而不是退化成「名字有、头像没有」。
+ *
+ * @param {Object} db
+ * @param {string} castJson - movies.cast_json 原始值
+ * @param {string} [yid] - movies.yid（cast_json 缺失时用于补建条目）
+ * @returns {string} 补齐后的 JSON 字符串；无需改动/无已知头像时**原样返回入参**
+ */
+function fillCastAvatars(db, castJson, yid) {
+  const raw = String(castJson || '')
+  let cast = []
+  try {
+    const arr = JSON.parse(raw || '[]')
+    if (Array.isArray(arr) && arr.length) cast = arr
+  } catch { cast = [] }
+  if (!cast.length) {
+    const names = splitNameList(yid)
+    if (!names.length) return castJson
+    const map = actorAvatarMap(db)
+    if (!map.size) return castJson
+    const built = [...new Map(names.map(nm => [nm, { name: nm, gender: 'f', avatar: map.get(nm) || '' }])).values()]
+    // 一个都没补到头像时不必造出与原来等价的结果（保持 payload 不变，减少无意义差异）
+    if (!built.some(c => c.avatar)) return castJson
+    return JSON.stringify(built)
+  }
+  let map = null
+  let changed = false
+  for (const c of cast) {
+    if (!c || !c.name || c.avatar) continue
+    if (!map) map = actorAvatarMap(db)
+    const known = map.get(c.name)
+    if (known) { c.avatar = known; changed = true }
+  }
+  return changed ? JSON.stringify(cast) : castJson
+}
+
+/**
  * 列出「需要补头像」的女优，四种情况：
  *   ① avatar 为空          → '无头像'（前端显示本地剪影）
  *   ② 文件不存在            → '文件缺失'
@@ -398,7 +473,8 @@ function removeUnusableAvatar(db, dataDir, name, preItem) {
   try { fs.unlinkSync(path.join(dataDir, cur)) } catch {}
   applyAvatarToCast(db, name, '')
   persistSoon(db)
-  ovCache.key = ''
+  // 头像被清空 → 总览与「名字→头像」映射都要立刻失效，否则界面最长 60 秒仍显示旧头像
+  invalidateActorCaches()
   return true
 }
 
@@ -431,14 +507,25 @@ function registerActressIpc(ipcMain, db, dataDir) {
         if (hitYid(mv.yid)) return true
         try { return (JSON.parse(mv.cast_json || '[]') || []).some(c => c && c.name === nm) } catch { return false }
       })
-      // 从命中影片的 cast_json 取该演员的性别/头像（取第一条）
-      let gender = 'f', avatar = ''
+      // 该演员的性别取自命中影片的 cast_json（第一条有该名字的条目）
+      let gender = 'f'
       for (const mv of movies) {
         try {
-          const hit = (JSON.parse(mv.cast_json || '[]') || []).find(c => c.name === nm)
-          if (hit) { gender = hit.gender || 'f'; avatar = hit.avatar || ''; break }
+          const hit = (JSON.parse(mv.cast_json || '[]') || []).find(c => c && c.name === nm)
+          if (hit) { gender = hit.gender || 'f'; break }
         } catch {}
       }
+      // 头像：**用全库已知头像**，不再取「这一部影片 cast_json 里的值」。
+      // ★ 2026-09-30 修复（用户报告「演员页有头像、女优影片页没有」）：原实现
+      //   `for (const mv of movies) { const hit = cast.find(c => c.name === nm)
+      //     if (hit) { avatar = hit.avatar || ''; break } }`
+      //   —— movies 按 fxrq DESC（最新在前）排过序，只要她**最新那部影片**的 cast_json
+      //   里 avatar 是空的（该片刮削时来源站没图/下载失败），这里就立刻 break 并返回空头像，
+      //   尽管她别的影片、以及演员页都有头像。实测用户库有 5 位女优命中此路径。
+      //   改用 actorAvatarMap —— 它与演员页（computeOverview）、女优总览同源同口径，
+      //   保证「演员页看到的头像」与「本页头像」永远是同一张。
+      let avatar = ''
+      try { avatar = actorAvatarMap(db).get(nm) || '' } catch {}
       // 演员资料（actress 表，用户维护）：身高/三围/生日等，无则留空
       const info = firstRow(db.exec('SELECT * FROM actress WHERE name=?', [nm])[0]) || null
       // 返回渲染层前剥掉两个大 JSON 字段（2026-09-21）：
@@ -528,9 +615,9 @@ function registerActressIpc(ipcMain, db, dataDir) {
         return { ok: false, error: '库内没有任何影片的演员字段包含该名字，无法写入头像引用' }
       }
       persistSoon(db)
-      // 女优总览的缓存指纹只看「影片条数 + 最大 id」，改 cast_json 不会让它失效 → 手动清一次，
-      // 否则补完后界面最长 60 秒仍显示旧头像
-      ovCache.key = ''
+      // 女优总览与「名字→头像」映射的缓存指纹只看「影片条数 + 最大 id」，改 cast_json 不会让它
+      // 失效 → 手动清一次，否则补完后界面最长 60 秒仍显示旧头像（女优影片页/播放页也读这个映射）
+      invalidateActorCaches()
       // 不再返回 failed 字段（2026-09-29 team-lead 决策）：本链路是单演员粒度，不存在「按片失败」，
       // 真正的失败会走上面的 ok:false（前端按演员名汇总）；保留恒 0 的 failed 会误导调用方。
       return {
@@ -542,15 +629,17 @@ function registerActressIpc(ipcMain, db, dataDir) {
 }
 
 /**
- * 让演员侧的两个会话缓存立即失效。
- * 影片的 cast_json/yid 被改写（详情页编辑演员、批量改演员等）时由 movies.js 调用 ——
- * 缓存键只含 COUNT/MAX(id)，改字段不会自然失效，否则演员页最多 60 秒还显示旧名单。
+ * 让演员侧的三个会话缓存立即失效（热度排名 / 女优总览 / 名字→头像映射）。
+ * 影片的 cast_json/yid 被改写（详情页编辑演员、批量改演员、补头像等）时调用 ——
+ * 缓存键只含 COUNT/MAX(id)，改字段不会自然失效，否则演员页最多 60 秒还显示旧名单/旧头像。
  */
 function invalidateActorCaches() {
   heatCache.key = ''
   heatCache.at = 0
   ovCache.key = ''
   ovCache.at = 0
+  avatarMapCache.key = ''
+  avatarMapCache.at = 0
 }
 
-module.exports = { registerActressIpc, invalidateActorCaches }
+module.exports = { registerActressIpc, invalidateActorCaches, actorAvatarMap, fillCastAvatars }

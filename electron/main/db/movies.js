@@ -22,8 +22,9 @@ const IPC = require('../../common/ipc-channels')
 // 标签映射函数：直接复用刮削时用的那一个（单一事实来源，避免两处实现随时间漂移）
 // scraper.js 只依赖 net-curl / fs / path / url / constants，不反向依赖 db 层，无循环引用
 const { applyTagMapping } = require('../scraper')
-// 影片的 cast_json/yid 被改写后需要让演员侧缓存失效（见本文件 MOVIES_UPDATE 里的调用）
-const { invalidateActorCaches } = require('./actress')
+// 影片的 cast_json/yid 被改写后需要让演员侧缓存失效（见本文件 MOVIES_UPDATE 里的调用）；
+// fillCastAvatars 用于 movies:getOne 返回前补齐 cast_json 里的空头像（只改返回值，不写库）
+const { invalidateActorCaches, fillCastAvatars } = require('./actress')
 // 删除影片后清理不再被引用的本地图片（cover / previews / 演员头像）
 const { collectMovieRefs, purgeUnreferenced } = require('./cleanup')
 // 删除影片后让首页轮播缓存失效（否则首页仍展示已删除的影片，点进去空白）
@@ -223,7 +224,12 @@ function registerMovieIpc(ipcMain, db, dataDir) {
     try {
       const r = db.exec('SELECT * FROM movies WHERE id=?', [Number(id)])
       const m = firstRow(r[0])
-      return m ? { ok: true, data: m } : { ok: false, error: 'not found' }
+      if (!m) return { ok: false, error: 'not found' }
+      // 演员头像跨影片共享、但入库是逐片写入的（见 actress.js actorAvatarMap 注释）：
+      // 只返回本片的 cast_json 会让「演员页有头像、播放页没有」。这里按名字把空头像补成
+      // 库内已知头像 —— 只改返回给渲染层的值，不写库（避免读一次影片就改动别的影片数据）。
+      try { m.cast_json = fillCastAvatars(db, m.cast_json, m.yid) } catch {}
+      return { ok: true, data: m }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

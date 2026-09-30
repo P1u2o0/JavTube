@@ -169,7 +169,10 @@ function fmtDur(min) {
 const avatarBroken = ref(false)
 
 /**
- * 女优列表：优先取 cast_json 里 gender !== 'm' 的项（带 avatar，是头像的唯一可靠来源）；
+ * 女优列表：优先取 cast_json 里 gender !== 'm' 的项。
+ * 头像由**主进程**补齐（movies:getOne 返回前按「全库已知头像」填，见 actress.js actorAvatarMap）：
+ * 本页只拿得到当前这一部影片的 cast_json，而入库是逐片写入的 —— 本片刮削时没取到头像就留空，
+ * 于是出现「演员页有头像、播放页没有」（2026-09-30 修复）。补齐与演员页同源，故此处直接用。
  * cast_json 缺失（未刮削的老数据）时退回演员文本字段 —— 名字仍可点，头像用首字占位。
  * @returns {{name: string, avatar: string}[]}
  */
