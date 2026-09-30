@@ -26,20 +26,33 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
 
 (async () => {
   const SQL = await initSqlJs({ locateFile: () => path.join(ROOT, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm') });
+  // 被标记 / 被断言的目标行：**不能写死 id**。dev 库每次重建后 id 会整体漂移
+  // （当前是 10..318），写死的 8 早已不存在 → `UPDATE ... WHERE id=8` 改动 0 行、
+  // 断言恒返回「无该行」，③④⑤ 变成**永远假失败**（2026-09-30 实测发现）。
+  // 改为从快照里取真实存在的最小 id。
+  let TID = null;
   const readPm = (file) => {
     if (!fs.existsSync(file)) return '(不存在)'
-    try { return new SQL.Database(fs.readFileSync(file)).exec('SELECT pm FROM movies WHERE id=8')[0]?.values?.[0]?.[0] ?? '(无该行)' }
+    if (TID == null) return '(未确定目标行)'
+    try { return new SQL.Database(fs.readFileSync(file)).exec('SELECT pm FROM movies WHERE id=' + TID)[0]?.values?.[0]?.[0] ?? '(无该行)' }
     catch (e) { return '(读取失败)' }
   }
 
   // 本次运行独有的快照（原实现「有就复用」固定文件名 → 会拿陈旧快照覆盖真库，见 _devdb.js）
   const snap = devdb.takeSnapshot('restore-test', LIVE)
+  try { TID = new SQL.Database(snap.content).exec('SELECT MIN(id) FROM movies')[0].values[0][0] } catch { }
+  if (TID == null) {
+    console.log('❌ 快照库里查不到任何影片行，无法定位断言目标 → 跳过（dev 库不写盘）')
+    devdb.restoreSnapshot(snap)
+    process.exit(1)
+  }
+  console.log('被标记/被断言的目标行 id =', TID)
 
   let child = null, ws = null
   try {
     // ① 带标记的备份库
     const mk = new SQL.Database(snap.content)
-    mk.run('UPDATE movies SET pm=? WHERE id=8', [MARKER])
+    mk.run('UPDATE movies SET pm=? WHERE id=?', [MARKER, TID])
     const markedPath = path.join(ROOT, 'tmp', '_marked-backup.db')
     fs.writeFileSync(markedPath, Buffer.from(mk.export()))
     console.log('标记库:', markedPath, '| 标记:', MARKER)
@@ -86,7 +99,7 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
     await sleep(2500)
 
     ok('数据目录已是 exe 同级 data', String(await ev('window.__dataDir')).endsWith('electron\\dist\\data'))
-    ok('测试前影片 8 为原内容', readPm(LIVE) !== MARKER, String(readPm(LIVE)).slice(0, 18))
+    ok(`测试前影片 ${TID} 为原内容`, readPm(LIVE) !== MARKER, String(readPm(LIVE)).slice(0, 18))
     ok('relaunchApp 已暴露', (await ev('typeof window.api.relaunchApp')) === 'function')
 
     // ③ 执行恢复
