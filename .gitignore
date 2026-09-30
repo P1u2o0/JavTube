@@ -5,6 +5,9 @@ dist-electron/
 release/
 out/
 out-portable/
+# electron-builder 中断后留下的临时构建目录（release26 / release260 …）与 Vite 临时配置
+release2*/
+vite.config.mjs.timestamp-*
 
 # 运行时数据（本地数据库、封面缓存，不入库）
 data/
