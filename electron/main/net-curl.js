@@ -36,15 +36,19 @@ const CURL_BIN = process.platform === 'win32'
 
 let curlChecked = null
 /**
- * 检查系统 curl 是否可用（结果缓存）。
+ * 检查系统 curl 是否可用。
+ * 只缓存**成功**结果（2026-09-30 审计）：原来连 false 也永久缓存 ——
+ * 首次探测若因杀软扫描/系统忙碌而超时失败，整个会话就再也不会尝试 curl，
+ * 表现为「刮削全部失败、图片全空」，而用户重启软件就好了（问题被掩盖成偶发）。
  * @returns {Promise<boolean>}
  */
 async function curlAvailable() {
-  if (curlChecked !== null) return curlChecked
-  curlChecked = await new Promise((resolve) => {
+  if (curlChecked === true) return true
+  const okv = await new Promise((resolve) => {
     execFile(CURL_BIN, ['--version'], { timeout: 5000 }, (err) => resolve(!err))
   })
-  return curlChecked
+  if (okv) curlChecked = true
+  return okv
 }
 
 // 同 host 请求限速（2026-09-13 引入，2026-09-29 审计从 scraper.js 下沉到网络层）：
@@ -104,10 +108,13 @@ function curlGet(url, opts = {}) {
         // 异步读：原实现用 readFileSync 同步读整页（JAVDB/JAVBUS 详情页可达数百 KB），
         // 会在主进程上造成一次可见的同步阻塞（批量刮削时反复发生）。改用 promises 读。
         html = await fs.promises.readFile(tmp, 'utf8')
-        fs.unlinkSync(tmp)
       } catch (e) {
+        // 读失败也要清掉临时文件（2026-09-30 审计）：原实现只在读取成功的路径上 unlink，
+        // 读失败（文件被占/权限/磁盘满）会把 curl 下好的整个响应体留在 tmp 目录里。
+        try { fs.unlinkSync(tmp) } catch {}
         return resolve({ ok: false, error: '读取响应失败: ' + e.message })
       }
+      try { fs.unlinkSync(tmp) } catch {}
       const status = Number(String(stdout).trim()) || 0
       // 注意：JAVBUS 在反爬触发时返回 302 但响应体仍是有效详情页，
       // 因此只要拿到响应体就交由上层判断内容是否有效（由 assertJavdbNotBlocked 等负责）

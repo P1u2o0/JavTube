@@ -10,6 +10,12 @@
 
 const fs = require('fs')
 const path = require('path')
+// 仅用于「连续落盘失败」时判断是否打包版（决定要不要弹提示，见 saveDbToDisk）。
+// ⚠️ 必须容错取值：electron 模块在**非 Electron 进程**（纯 node 跑 scripts/ 或离线测试）
+//    里导出的是二进制路径**字符串**，`const { app } = require('electron')` 会得到
+//    undefined，随后 app.isPackaged 会抛 TypeError 把「保存失败」变成「保存抛异常」。
+let appRef = null
+try { const m = require('electron'); appRef = m && m.app ? m.app : null } catch { appRef = null }
 // 封面目录名等共享常量（集中定义于 constants.js）
 const { COVER_DIR } = require('../constants')
 
@@ -94,9 +100,30 @@ function saveDbToDisk(db, dbPath) {
       fs.renameSync(dbPath, bak)      // 旧库改名保留（原子，不经过"无文件"状态）
     }
     fs.renameSync(tmp, dbPath)        // 新库就位（原子操作）
+    db._saveFailStreak = 0            // 成功即清零连续失败计数（见 catch 里的提示逻辑）
     return true
   } catch (e) {
     console.error('[db] save failed:', e)
+    // 连续失败要给用户一个明确信号（2026-09-30 审计）：此前只有控制台一行日志，
+    // 用户看到的是「软件里改得好好的，重开全没了」—— 根因（磁盘满、目录只读、
+    // 杀软锁文件、NAS 掉线）完全无从判断。这里累计连续失败次数，达到阈值时用
+    // **非阻塞**消息框告知一次（每会话仅一次），并给出数据目录便于自查。
+    // 只在打包后的正式版提示：开发/自动化环境（未打包）不弹窗，避免打断测试。
+    db._saveFailStreak = (db._saveFailStreak || 0) + 1
+    if (db._saveFailStreak >= 3 && !db._saveWarned && appRef?.isPackaged) {
+      db._saveWarned = true
+      try {
+        const { dialog } = require('electron')
+        dialog.showMessageBox({
+          type: 'warning',
+          title: '数据未能写入磁盘',
+          message: `已连续 ${db._saveFailStreak} 次保存失败，最近的修改可能不会保留。`,
+          detail: `数据库路径：${dbPath}\n\n` +
+            '常见原因：磁盘空间不足、数据目录被设为只读、文件被杀毒软件锁定。\n' +
+            '处理建议：先不要关闭软件，检查上述原因后重试；也可用「设置 → 备份数据库」另存一份当前数据。'
+        }).catch(() => {})
+      } catch { /* 提示失败不影响主流程 */ }
+    }
     return false                      // 失败必须让调用方知道，否则脏标记被清掉就不再重试
   }
 }
@@ -277,7 +304,8 @@ async function initDb(dataDir) {
   }
 
   // movies 表的历史增量列：
-  //   play_time  — 最近播放时间（ISO 8601，见 movies:recordPlay）
+  //   play_time  — 最近播放时间（本地时间格式 YYYY-MM-DD HH:mm:ss，见 util.nowLocal / movies:recordPlay。
+  //                注意：不是 ISO 8601 —— 与它比较的阈值必须同样用 nowLocal 生成）
   //   previews   — 预览图本地相对路径的 JSON 数组
   //   want       — 想看人数（来源 JAVDB）
   //   watched    — 看过人数（来源 JAVDB）

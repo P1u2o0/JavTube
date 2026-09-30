@@ -85,32 +85,49 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       // 支持的视频文件扩展名列表（定义于 constants.js）
       const results = []
       const fsp = fs.promises
-      // 异步递归遍历目录：
-      // 原实现用 readdirSync + statSync 同步走完整棵目录树，几万文件时会
-      // 把主进程事件循环完全占住（窗口无响应、所有 IPC 排队）。
-      // 改为 async/await 后事件循环可继续处理其他 IPC；同一层的文件并发 stat。
-      async function walk(dir) {
-        let entries
-        try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch { return }
-        const tasks = []
-        for (const f of entries) {
-          const full = path.join(dir, f.name)
-          if (f.isDirectory()) { tasks.push(walk(full)); continue }   // 子目录
-          if (!f.isFile()) continue
-          const ext = path.extname(f.name).toLowerCase()
-          // 检查是否为视频文件
-          if (!VIDEO_EXTS.includes(ext)) continue
-          // 返回文件路径、文件名、扩展名（不含点）和文件大小
-          tasks.push((async () => {
-            let sz = 0
-            try { sz = (await fsp.stat(full)).size } catch {}
-            results.push({ path: full, name: f.name, ext: ext.slice(1), size: sz })
-          })())
+      // 读不了的子目录要如实上报（2026-09-30 审计）：原实现 catch 后静默 return，
+      // 于是「NAS 掉线 / 权限不足 / 路径写错」全都表现为「扫描完成，0 个文件」，
+      // 用户以为目录里真的没有片子。这里收集前几条失败原因随结果一起返回。
+      const skipped = []
+      const noteSkip = (p, e) => { if (skipped.length < 5) skipped.push(`${p}（${e?.code || e?.message || '读取失败'}）`) }
+      // 并发上限（2026-09-30 审计）：原实现对本层所有条目无上限 Promise.all
+      // —— NAS/SMB 上一次性打出几千个并发请求会拖垮共享会话，反而更慢甚至超时。
+      //
+      // 这里用「按层广度遍历 + 层内固定 24 路并发」：
+      //   · 并发恒定、递归不嵌套 → 不存在「限流池被等待子任务的父目录占满」的死锁；
+      //   · 一层全部处理完再进下一层 → 不会出现「worker 看到队列瞬时为空就提前退出」
+      //     （那种写法在起始队列只有 1 项时，其余 worker 会立刻退出，退化成单线程串行）。
+      const WORKERS = 24
+      let level = [dirPath]
+      while (level.length) {
+        const next = []
+        let cursor = 0
+        const consume = async () => {
+          while (cursor < level.length) {
+            const dir = level[cursor++]
+            let entries
+            try { entries = await fsp.readdir(dir, { withFileTypes: true }) } catch (e) { noteSkip(dir, e); continue }
+            for (const f of entries) {
+              const full = path.join(dir, f.name)
+              if (f.isDirectory()) { next.push(full); continue }   // 子目录 → 下一层
+              if (!f.isFile()) continue
+              const ext = path.extname(f.name).toLowerCase()
+              if (!VIDEO_EXTS.includes(ext)) continue
+              // 文件大小单独容错：stat 失败（权限/被占用）不丢条目，大小记 0 并记录原因
+              let sz = 0
+              try { sz = (await fsp.stat(full)).size } catch (e) { noteSkip(full, e) }
+              results.push({ path: full, name: f.name, ext: ext.slice(1), size: sz })
+            }
+          }
         }
-        await Promise.all(tasks)
+        await Promise.all(Array.from({ length: Math.min(WORKERS, level.length) }, consume))
+        level = next
       }
-      await walk(dirPath)
-      return { ok: true, data: results }
+      // 一个文件都没扫到且存在读失败的目录 → 明确报失败，避免被当成「空目录」
+      if (!results.length && skipped.length) {
+        return { ok: false, error: `目录读取失败：${skipped[0]}`, skipped }
+      }
+      return { ok: true, data: results, skipped }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

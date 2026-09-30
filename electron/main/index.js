@@ -318,22 +318,38 @@ app.whenReady().then(async () => {
   }
 
   console.log('[main] registering IPC...')
-  try {
-    // 注册所有 IPC 通道处理器
-    registerUtilsIpc(ipcMain, {
-      db,
-      getMainWindow: () => mainWindow,   // 运行时读取当前窗口，与原闭包语义一致
-      dataDir: dataDirForGlobal
-    })                                                              // 工具类 IPC
-    registerMovieIpc(ipcMain, db, dataDirForGlobal)                  // 影片数据 IPC（删除时要清理 covers/ 内的孤儿图片）
-    registerActressIpc(ipcMain, db, dataDirForGlobal)                // 女优数据 IPC（含补全头像：要写 covers/actress）
-    registerImageIpc(ipcMain, db, dataDirForGlobal)                  // 图片完整性 IPC（扫描/修复失效封面与预览图）
-    registerSettingsIpc(ipcMain, db, dataDirForGlobal)              // 设置数据 IPC
-    registerHomeIpc(ipcMain, db)                                    // 首页推荐 IPC
-    registerPlayerIpc(ipcMain, db)                                  // 播放页 IPC（进度 + 相关推荐，2026-09-29）
-    console.log('[main] IPC OK')
-  } catch (e) {
-    console.error('[main] IPC reg FAILED:', e?.stack || e)
+  // 每个领域模块各自 try（2026-09-30 审计）：原实现 7 个注册调用共用一个 try ——
+  // 任何一个模块在注册期抛错（典型是通道重复注册），其后所有模块的 IPC 都不会注册，
+  // 而用户只看到「某些功能点了没反应」，控制台里才有线索。逐个包起来后，
+  // 单个模块出问题不影响其余模块，且失败数量会被汇总上报。
+  const ipcFailures = []
+  const reg = (name, fn) => {
+    try { fn(); console.log(`[main] IPC OK: ${name}`) }
+    catch (e) { ipcFailures.push(`${name}: ${e?.message || e}`); console.error(`[main] IPC reg FAILED (${name}):`, e?.stack || e) }
+  }
+  reg('utils', () => registerUtilsIpc(ipcMain, {
+    db,
+    getMainWindow: () => mainWindow,   // 运行时读取当前窗口，与原闭包语义一致
+    dataDir: dataDirForGlobal
+  }))                                                              // 工具类 IPC
+  reg('movies', () => registerMovieIpc(ipcMain, db, dataDirForGlobal))     // 影片数据 IPC（删除时要清理 covers/ 内的孤儿图片）
+  reg('actress', () => registerActressIpc(ipcMain, db, dataDirForGlobal))  // 女优数据 IPC（含补全头像：要写 covers/actress）
+  reg('images', () => registerImageIpc(ipcMain, db, dataDirForGlobal))     // 图片完整性 IPC（扫描/修复失效封面与预览图）
+  reg('settings', () => registerSettingsIpc(ipcMain, db, dataDirForGlobal)) // 设置数据 IPC
+  reg('home', () => registerHomeIpc(ipcMain, db))                         // 首页推荐 IPC
+  reg('player', () => registerPlayerIpc(ipcMain, db))                     // 播放页 IPC（进度 + 相关推荐，2026-09-29）
+  if (ipcFailures.length) {
+    console.error('[main] IPC 部分模块注册失败:', ipcFailures.join(' | '))
+    // 让用户知道「有些功能不可用」，而不是遇到奇怪的半残界面。
+    // 只在打包后的正式版弹：开发/自动化环境（未打包）里控制台日志已足够，
+    // 且原生消息框会弹到桌面最前、可能把无人值守的验证脚本挂住。
+    if (app.isPackaged) {
+      try {
+        dialog.showErrorBox('部分功能初始化失败',
+          `以下模块的 IPC 未能注册：\n${ipcFailures.join('\n')}\n\n` +
+          '对应功能（如片库、刮削、播放页）可能无法使用。请保留此信息并反馈。')
+      } catch {}
+    }
   }
 
   console.log('[main] will call createWindow NOW')

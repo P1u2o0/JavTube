@@ -39,12 +39,14 @@ function firstRow(r) { return rows(r)[0] }
 function firstScalar(r) { return r?.values?.[0]?.[0] }
 
 /**
- * 生成当前时间的 ISO 格式字符串（本地时间，精确到秒）。
- * 格式：YYYY-MM-DD HH:mm:ss（与 movies.tjrq 字段既有数据格式一致）
+ * 生成项目统一的本地时间字符串（本地时间，精确到秒）。
+ * 格式：YYYY-MM-DD HH:mm:ss（与 movies.tjrq / movies.play_time 字段的既有数据格式一致）
+ * @param {Date} [date] - 指定时间（不传 = 当前时间）。用于生成「N 天前」的阈值字符串，
+ *   与库里的本地格式做同格式比较（传 ISO 字符串去比会因 ' '<'T' 在同日误判）
  * @returns {string} 格式化的时间字符串
  */
-function nowLocal() {
-  const d = new Date()
+function nowLocal(date) {
+  const d = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date()
   const p = n => String(n).padStart(2, '0')  // 补零函数
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }

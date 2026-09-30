@@ -282,6 +282,10 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       if (data && ('cast_json' in data || 'yy' in data || 'yid' in data)) {
         try { invalidateActorCaches() } catch {}
       }
+      // 首页轮播缓存里存的是影片快照（含封面/标签），改库后同样要失效
+      // （2026-09-30 审计：DELETE / DELETE_MANY / BATCH_TAGS 都调了，只有 UPDATE 漏了，
+      //  表现为「重新刮削换了封面，首页轮播还是旧图，重启才更新」）
+      try { invalidateHomeCache() } catch {}
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -406,6 +410,9 @@ function registerMovieIpc(ipcMain, db, dataDir) {
           throw e
         }
         persistSoon(db)
+        // 批量替换标签同样会改 bq，首页轮播的「共同兴趣」判定基于标签快照 → 一并失效
+        // （2026-09-30 审计：BATCH_TAGS 调了，applyTagMap 漏了）
+        try { invalidateHomeCache() } catch {}
       }
       return { ok: true, total: all.length, changed, applied: changed.length }
     } catch (e) { return { ok: false, error: e.message } }

@@ -11,7 +11,7 @@
  */
 
 const IPC = require('../../common/ipc-channels')
-const { rows: rowsRaw, persistSoon } = require('./util')
+const { rows: rowsRaw, persistSoon, nowLocal } = require('./util')
 
 // db.exec 返回的是结果数组，util.rows 收单个结果对象 —— 在这里统一拆包
 const rowsOf = (res) => rowsRaw(res && res[0])
@@ -106,10 +106,15 @@ function scoreCandidate(cur, cand, taste, nowMs) {
 
 /** 构建用户口味画像：近 60 天观看 + 全部收藏 的标签/女优频次表 */
 function buildTaste(db, nowMs) {
+  // 阈值也用「本地时间格式」生成（2026-09-30 审计）：play_time 是 nowLocal() 写的
+  // `YYYY-MM-DD HH:mm:ss`，而这里原来传 ISO（`...THH:mm:ss.sssZ`）—— 同为字符串比较，
+  // 日期部分相同的那一天会因为 ' '(0x20) < 'T'(0x54) 判成「早于阈值」，
+  // 窗口边缘那一天的观看记录会被漏掉。两边格式统一后比较才有意义。
+  const threshold = nowLocal(new Date(nowMs - 60 * 86400000))
   const rows = rowsOf(db.exec(
     `SELECT ${CAND_COLS} FROM movies
      WHERE cl = 'y' OR (play_time IS NOT NULL AND play_time >= ?)`,
-    [new Date(nowMs - 60 * 86400000).toISOString()]
+    [threshold]
   ))
   const tags = new Map()
   const actors = new Map()
@@ -130,56 +135,65 @@ function buildTaste(db, nowMs) {
 function registerPlayerIpc(ipcMain, db) {
   // ── 读取播放进度 ─────────────────────────────────────────
   ipcMain.handle(IPC.PLAYER_GET_PROGRESS, (_e, id) => {
-    const res = db.exec('SELECT play_pos, play_dur, play_time, play_count FROM movies WHERE id = ?', [Number(id)])
-    const r = rowsOf(res)[0]
-    if (!r) return { ok: false, error: '影片不存在' }
-    return { ok: true, pos: Number(r.play_pos) || 0, dur: Number(r.play_dur) || 0, playTime: r.play_time || '', playCount: Number(r.play_count) || 0 }
+    // 三个 handler 统一包 try（2026-09-30 审计）：db.exec 抛错时 handler 直接 reject，
+    // 渲染层没接住就是 unhandled rejection，界面表现为「转圈/空白」而无任何提示。
+    // 与本项目其它 IPC 的约定保持一致：一律返回 { ok:false, error }。
+    try {
+      const res = db.exec('SELECT play_pos, play_dur, play_time, play_count FROM movies WHERE id = ?', [Number(id)])
+      const r = rowsOf(res)[0]
+      if (!r) return { ok: false, error: '影片不存在' }
+      return { ok: true, pos: Number(r.play_pos) || 0, dur: Number(r.play_dur) || 0, playTime: r.play_time || '', playCount: Number(r.play_count) || 0 }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // ── 保存播放进度（播放页节流调用 + 关页前兜底调用）──────────
   ipcMain.handle(IPC.PLAYER_SAVE_PROGRESS, (_e, payload) => {
-    const { id, pos, dur } = payload || {}
-    if (!id || !Number.isFinite(Number(pos))) return { ok: false, error: '参数不合法' }
-    db.run(
-      'UPDATE movies SET play_pos = ?, play_dur = ? WHERE id = ?',
-      [Math.max(0, Number(pos)), Math.max(0, Number(dur) || 0), Number(id)]
-    )
-    persistSoon(db)
-    return { ok: true }
+    try {
+      const { id, pos, dur } = payload || {}
+      if (!id || !Number.isFinite(Number(pos))) return { ok: false, error: '参数不合法' }
+      db.run(
+        'UPDATE movies SET play_pos = ?, play_dur = ? WHERE id = ?',
+        [Math.max(0, Number(pos)), Math.max(0, Number(dur) || 0), Number(id)]
+      )
+      persistSoon(db)
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // ── 相关推荐 ─────────────────────────────────────────────
   ipcMain.handle(IPC.PLAYER_RECOMMEND, (_e, payload) => {
-    const { id, limit = 12 } = payload || {}
-    const nowMs = Date.now()
-    const cur = rowsOf(db.exec(`SELECT ${CAND_COLS} FROM movies WHERE id = ?`, [Number(id)]))[0]
-    if (!cur) return { ok: false, error: '影片不存在' }
-    // 预解析当前影片信号（Set 提到循环外）
-    cur._tags = new Set(splitMulti(cur.bq))
-    cur._actors = actorNames(cur)
-    cur._series = new Set(splitMulti(cur.xl))
+    try {
+      const { id, limit = 12 } = payload || {}
+      const nowMs = Date.now()
+      const cur = rowsOf(db.exec(`SELECT ${CAND_COLS} FROM movies WHERE id = ?`, [Number(id)]))[0]
+      if (!cur) return { ok: false, error: '影片不存在' }
+      // 预解析当前影片信号（Set 提到循环外）
+      cur._tags = new Set(splitMulti(cur.bq))
+      cur._actors = actorNames(cur)
+      cur._series = new Set(splitMulti(cur.xl))
 
-    const taste = buildTaste(db, nowMs)
-    const cands = rowsOf(db.exec(`SELECT ${CAND_COLS} FROM movies WHERE id != ?`, [Number(id)]))
-    const scored = []
-    for (const c of cands) {
-      c._tags = new Set(splitMulti(c.bq))
-      c._actors = actorNames(c)
-      const { s, why } = scoreCandidate(cur, c, taste, nowMs)
-      scored.push({ c, s, why })
-    }
-    scored.sort((a, b) => b.s - a.s)
-    const data = scored.slice(0, Number(limit) || 12).map(({ c, s, why }) => ({
-      id: c.id, ph: c.ph, pm: c.pm, cover: c.cover,
-      score: c.score, duration: c.duration, want: c.want,
-      // 演员名（yid 拆分 + cast_json 里的女优）—— _actors 是 Set，必须转数组后再过 IPC，
-      // 否则前端 Array.isArray 判定失败（2026-09-29 实测：Set 能序列化但不是数组）。
-      // 播放页推荐项展示演员名（番号、看过人数均不再展示，故不返回 watched）
-      actors: Array.from(c._actors),
-      rank: Math.round(s * 10) / 10,
-      why: why.slice(0, 2).join(' · ') || '同类影片'
-    }))
-    return { ok: true, data }
+      const taste = buildTaste(db, nowMs)
+      const cands = rowsOf(db.exec(`SELECT ${CAND_COLS} FROM movies WHERE id != ?`, [Number(id)]))
+      const scored = []
+      for (const c of cands) {
+        c._tags = new Set(splitMulti(c.bq))
+        c._actors = actorNames(c)
+        const { s, why } = scoreCandidate(cur, c, taste, nowMs)
+        scored.push({ c, s, why })
+      }
+      scored.sort((a, b) => b.s - a.s)
+      const data = scored.slice(0, Number(limit) || 12).map(({ c, s, why }) => ({
+        id: c.id, ph: c.ph, pm: c.pm, cover: c.cover,
+        score: c.score, duration: c.duration, want: c.want,
+        // 演员名（yid 拆分 + cast_json 里的女优）—— _actors 是 Set，必须转数组后再过 IPC，
+        // 否则前端 Array.isArray 判定失败（2026-09-29 实测：Set 能序列化但不是数组）。
+        // 播放页推荐项展示演员名（番号、看过人数均不再展示，故不返回 watched）
+        actors: Array.from(c._actors),
+        rank: Math.round(s * 10) / 10,
+        why: why.slice(0, 2).join(' · ') || '同类影片'
+      }))
+      return { ok: true, data }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 }
 
