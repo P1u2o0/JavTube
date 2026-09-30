@@ -135,12 +135,12 @@ const REDUCE_MOTION = ref(
   typeof window !== 'undefined'
   && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 )
-if (typeof window !== 'undefined' && window.matchMedia) {
-  try {
-    window.matchMedia('(prefers-reduced-motion: reduce)')
-      .addEventListener('change', e => { REDUCE_MOTION.value = e.matches })
-  } catch { /* 旧内核无 addEventListener：退化为启动时读一次，不影响功能 */ }
-}
+// 「动画效果」偏好变化的订阅放在生命周期里成对增删（2026-09-30 审计）：
+// 原实现写在 <script setup> 顶层，而 matchMedia 返回的 MediaQueryList 是**全局共享**对象
+// —— 每次进首页都会往同一个对象上再挂一个 change 监听且从不移除，
+// 关闭/重开首页 N 次就多 N 个监听（闭包还持有已卸载组件的 ref）。
+let reduceMotionMQL = null
+function onReduceMotionChange(e) { REDUCE_MOTION.value = e.matches }
 
 /** 当前居中的影片索引（把越界的 active 取模还原；指示点用它，避免循环瞬间无高亮） */
 const activeIndex = computed(() => {
@@ -221,7 +221,10 @@ const emptySlots = computed(() => Math.max(0, ARRIVAL_TOTAL - arrivals.value.len
 /** 加载推荐数据（轮播影片由主进程会话级缓存，本次运行内固定） */
 async function load() {
   if (!window.api?.getHomeRecommend) return
-  const r = await window.api.getHomeRecommend()
+  // .catch 兜底（2026-09-30 审计）：主进程 handler 本身有 try（返回 {ok:false}），
+  // 但 IPC 层异常（通道未注册、主进程忙）会让 invoke reject —— 不接住就是
+  // unhandled rejection，且首页停在空列表没有任何提示。
+  const r = await window.api.getHomeRecommend().catch((e) => { console.warn('[home] 首屏数据加载失败:', e); return null })
   if (r?.ok) {
     hero.value = r.data.hero || []
     categories.value = r.data.categories || []
@@ -426,9 +429,16 @@ onMounted(async () => {
   await load()
   startTimer()
   document.addEventListener('visibilitychange', onVisibilityChange)
+  // 订阅系统「动画效果」偏好变化（与下方的移除严格成对，见 REDUCE_MOTION 注释）
+  try {
+    reduceMotionMQL = window.matchMedia?.('(prefers-reduced-motion: reduce)') || null
+    reduceMotionMQL?.addEventListener?.('change', onReduceMotionChange)
+  } catch { reduceMotionMQL = null }
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  try { reduceMotionMQL?.removeEventListener?.('change', onReduceMotionChange) } catch {}
+  reduceMotionMQL = null
   stopTimer()
 })
 </script>

@@ -520,6 +520,8 @@ async function onDel() {
   const r = await window.api.deleteMovie(m.value.id).catch(() => null)
   if (!r || !r.ok) return ElMessage.error(r?.error || '删除失败')
   ElMessage.success('已删除')
+  // 删除后刷新标签库（按需加载有「已加载」守卫，否则标签栏会残留已消失的标签）
+  store.loadAllDbTags().catch(() => {})
   router.replace('/library')
 }
 

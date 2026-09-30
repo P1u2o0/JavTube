@@ -111,7 +111,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Artplayer from 'artplayer'
 import AppIcon from '@/components/AppIcon.vue'
-import { resolveMedia, resolveCover, splitTags, dataDirRef } from '@/utils/global'
+import { resolveMedia, resolveCover, splitTags, dataDirRef, favLock, favUnlock } from '@/utils/global'
 import { useMoviesStore } from '@/store/movies'
 
 const route = useRoute()
@@ -508,6 +508,9 @@ async function playExternal() {
 }
 async function toggleFav() {
   if (!m.value) return
+  // 与片库/喜欢/详情页同一套去重（2026-09-30 审计）：连点会打出两个在飞的写库请求，
+  // 后返回的那个覆盖前一个的结论（界面与数据库可能不一致）
+  if (!favLock(m.value.id)) return
   const v = m.value.cl === 'y' ? 'n' : 'y'
   const prev = m.value.cl
   m.value.cl = v
@@ -517,6 +520,8 @@ async function toggleFav() {
   } catch (e) {
     m.value.cl = prev
     ElMessage.error('操作失败：' + (e.message || '写库未响应'))
+  } finally {
+    favUnlock(m.value.id)
   }
 }
 

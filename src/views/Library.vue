@@ -235,8 +235,11 @@ onMounted(async () => {
   await tagsP
 })
 
-// 监听 store.sort.random 改变，触发刷新（随机排序切换）
-watch(() => store.sort.random, () => onRefresh())
+// 注（2026-09-30 审计）：原先这里还有一个 `watch(() => store.sort.random, () => onRefresh())`，
+// 与「StatusBar → sortChange → onSortChange(:140) → loadMovies」这条链路重复 ——
+// 点一次「随机排序」会打出两次列表请求（loadSeq 保证不串数据，但白跑一次全表查询）。
+// 排序的所有变更都经过 SortDropdown → StatusBar.onSortChange（写 store.sort + emit sortChange），
+// 因此删掉这个 watcher 不会漏刷新；演员影片页用的是自己的本地 sort，不受影响。
 
 // 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库、或顶栏搜索跳转时自动过滤）
 watch(() => route.query, async (q) => {

@@ -103,11 +103,13 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
           // 加载设置
           if (window.api) {
             const r = await window.api.getSettings()
-            if (r.ok) {
-              this.settings = r.data || {}
-              if (r.data?.page_size) this.pageSize = Number(r.data.page_size) || 20
-              if (r.data?.cols_per_row) this.colsPerRow = Number(r.data.cols_per_row) || 5
-            }
+            // 失败必须当失败（2026-09-30 审计）：原实现只判 r.ok 就继续，然后把 inited
+            // 置 true —— 设置没拉回来也当「初始化完成」，本会话再也不会重试，用户只能
+            // 重启软件（表现为：页大小/播放设置/刮削开关全部回到默认、且没有任何提示）。
+            if (!r || !r.ok) throw new Error(r?.error || '设置加载失败')
+            this.settings = r.data || {}
+            if (r.data?.page_size) this.pageSize = Number(r.data.page_size) || 20
+            if (r.data?.cols_per_row) this.colsPerRow = Number(r.data.cols_per_row) || 5
             // 加载标签分类配置（必须为 9 类）
             const cr = await window.api.getTagCategories()
             if (cr.ok && Array.isArray(cr.data) && cr.data.length === 9) {
@@ -218,7 +220,12 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
         // IPC 抛异常时不能把异常抛给调用方（10 处调用都没包 catch，会变成
         // unhandled rejection，而且界面会静默停在旧列表）；这里记日志并保留旧数据。
         console.error('[store] loadMovies 异常:', e)
-      } finally { this.loading = false }
+      } finally {
+        // 只有「最后一次请求」才有权关掉 loading（2026-09-30 审计）：
+        // 原实现无条件置 false，于是并发时先返回的慢请求会把后发请求的 loading 提前关掉
+        // —— 快速连点翻页/切筛选时，转圈会在数据还没回来时就消失。
+        if (seq === loadSeq) this.loading = false
+      }
     },
 
     /**

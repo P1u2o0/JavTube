@@ -88,6 +88,9 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
     if (!r.ok) return ElMessage.error(r.error || '删除失败')
     store.selectedIds = []
     ElMessage.success('已删除')
+    // 标签库按需加载有「已加载」守卫（store.tagsLoaded），删除影片后某些标签可能已
+    // 从全库消失，不刷新的话标签栏会一直显示幽灵标签（2026-09-30 审计）
+    store.loadAllDbTags().catch(() => {})
     if (onRefresh) await onRefresh()
   }
 

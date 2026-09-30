@@ -73,11 +73,18 @@ export function resolveCover(cover, key) {
     // Windows 绝对路径
     abs = cover
   } else if (/^\//.test(cover)) {
-    // Unix 绝对路径
-    abs = cover.slice(1)
+    // Unix 绝对路径：原样保留（2026-09-30 审计修复：原实现 `cover.slice(1)` 会吃掉前导斜杠，
+    // 变成相对路径后被主进程按 cwd 解析，图片必然 404）
+    abs = cover
   } else if (dataDir) {
-    // 相对路径：拼到 dataDir
-    abs = (dataDir + '/' + cover).replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '')
+    // 相对路径：拼到 dataDir。
+    // ⚠️ 只做分隔符归一（反斜杠 → 正斜杠、合并重复斜杠），**不要再吃掉前导斜杠**：
+    // 数据目录可能是 UNC（\\NAS\share\data）或 Unix 绝对路径（/home/u/data），
+    // 吃掉前导斜杠会把绝对路径降级成相对路径 → 主进程 path.resolve 按 cwd 解析 → 全库封面 404。
+    let joined = (dataDir + '/' + cover).replace(/\\/g, '/')
+    const isUnc = joined.startsWith('//')     // UNC 路径开头的双斜杠必须保留
+    joined = joined.replace(/\/{2,}/g, '/')
+    abs = isUnc ? '/' + joined : joined
   } else {
     // 兜底：未知格式，原样返回（让浏览器尝试加载）
     return cover
