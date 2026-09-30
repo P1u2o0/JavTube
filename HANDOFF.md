@@ -338,6 +338,32 @@ javtube_dev/
   ⚠️ 判断掉帧必须用**同进程交替 A/B/A/B**，不能「先跑完 A 再跑 B」—— 顺序设计会把离屏窗口的
   调度/GC 噪声误判成模式差异（这条踩过，得出了相反结论）。
 
+### 5.6 ★ 播放失败的错误判定（2026-09-30 修误报，改播放页前必读）
+
+`Player.vue` 的失败面板由 `mediaErr` 控制，判定**不能只看「有没有 error 事件」**：
+
+| 事实 | 含义 |
+|---|---|
+| **`MEDIA_ERR_SRC_NOT_SUPPORTED`(4) 不等于「格式不支持」** | Chromium 把「**资源打不开**」（自定义协议返回 404/415/500、NAS/SMB 瞬时读失败、`FFmpegDemuxer: open context failed`）**也**报成 code 4。凭 code 4 断言「解码器不支持」就是原错误文案的由来 —— 而用户看到的「（MP4）不支持」其实是文件一时读不到 |
+| **ArtPlayer 自带重连** | `RECONNECT_SLEEP_TIME=1000ms` 后重设 `url`，最多 `RECONNECT_TIME_MAX=5` 次。实测错误后 **1 秒 `canplay`/`playing` 正常到来、视频照常播放** ⇒ 绝大多数「错误」是一次性的 |
+| **重连用的是 `art.option.url`，且 ArtPlayer 自己会同步它** | `url` setter 里有 `t.option.url = a`（源码级确认），所以**不会**重连回第一部影片 —— 这条曾被我误判为 bug，实测证伪 |
+| **`<track default kind="metadata" src="">` 的 error 是噪音** | ArtPlayer 的 `<video>` 里带着这么个空 track，每次新媒体加载都会由它发一次 **不冒泡**的 `error`（target=TRACK、`video.error` 为 null）。ArtPlayer 的事件转发是**非捕获**绑定 ⇒ **永远收不到它**，与失败面板无关。探针若用 `capture:true` 会抓到它，**必须同时记录 `event.target` 身份**才不会误判 |
+
+**现行判据**（`Player.vue` 的 `onMediaError` / `recheckMediaErr` / `onMediaRecovered`）：
+
+1. `video:error` **不立刻上报**，先给 `ERR_GRACE_MS`(1800ms) 宽限；
+2. 宽限到点**只看元素状态**：`mediaHealthy()`（`error == null && readyState >= 2`）→ 当瞬时故障放过；
+   若「仍在加载中」（`error == null && networkState === 2`，即 ArtPlayer 重连正在跑 / NAS 首包慢）→ 再延长一次；
+   两者都不是 → 上报（并顺手解除 `switchSuppress`，否则记账会静默失效）；
+3. `video:canplay` / `video:playing` 一到就**撤销**面板 ⇒ 偶尔的短暂显示能自愈；
+4. ⚠️ **判据不要写成「累计 N 次错误」**：ArtPlayer 的重连只有 5 次，用完就不再重载，
+   「点重试仍失败」时只会产生 **1 次**错误 → 按次数判断会出现「面板消失后再也不回来」的死角
+   （V3 就是这么暴露的，真踩过）。
+5. **重试必须用 `art.url = url`**，不能用 `switchUrl(url)` —— 后者对同一地址会提前 `return`，等于没重试。
+
+> 取证脚本：`tmp/probe-switch-media-error{,2,3}.js`（根因）、
+> `tmp/verify-media-error-fix.js`（修复四段验证：不误报 / 不漏报 / 重试 / 换片恢复）。
+
 ---
 
 ## 6. 已知坑（勿重蹈）
@@ -404,6 +430,16 @@ javtube_dev/
 21. **★ 发布包特征字符串探针的取法**：先在源码 grep 出真实标识符，再
     `git grep -c <串> HEAD` 确认它在**上一版不存在**。已在 HEAD 里存在的串（如 `加载影片列表失败`）
     只能当回归守卫，**不能当「本版代码已打进包」的证据**。
+22. **★★ 抓媒体事件必须 `capture:true`，并且必须记录 `event.target` 的身份**（2026-09-30 实测）：
+    媒体元素的 `error` **不冒泡**，而 ArtPlayer 的转发是非捕获绑定 —— 用非捕获监听会**漏掉**
+    子元素发出的错误，用捕获监听又会**多收**到它们。不记 target 就会出现「探针看到 error、
+    产品代码却收不到」的诡异矛盾，白查半天。判据写成
+    `target === video ? '元素自身' : target.tagName`，一眼可辨（浏览器原生媒体事件同理）。
+23. **★★ 修「误报类」缺陷必须两个方向都验证**（2026-09-30 实测，同一轮里 V3 就翻过车）：
+    只证明「不再误报」是不够的，**「真故障仍然要报」是另一半需求**，否则等于把 bug 换成静默失败。
+    四段最小验证：① 瞬时错误 → 不报（且视频自行恢复）；② 真不可用 → 必须报（文案/错误码齐备）；
+    ③ **手动重试** → 面板先清零、仍失败要再报（这条最容易漏：自动重试的预算可能已耗尽，
+    手工重试只会产生一次错误，「按次数判定」的死角就在这里）；④ 换成可播的 → 面板消失且正常起播。
 
 ---
 

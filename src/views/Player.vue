@@ -26,15 +26,18 @@
 
       <div class="player-box" ref="boxRef"></div>
 
-      <!-- 视频无法播放（容器/编码不支持，如 avi/wmv）-->
+      <!-- 视频确实放不出来时的兜底面板。
+           注意（2026-09-30 修复）：这里**不能**断言「解码器不支持」—— Chromium 把
+           「资源打不开」（协议层 404/415/500、NAS/SMB 瞬时读失败、demuxer 打不开）也报成
+           MEDIA_ERR_SRC_NOT_SUPPORTED(4)，与真正的「编码不支持」同一个码。
+           文案按错误码分化，并附真实错误码/信息，用户回报时能直接定位。 -->
       <div v-if="mediaErr" class="media-error">
         <div class="me-title">该视频无法在软件内播放</div>
-        <div class="me-desc">
-          当前格式（{{ ext }}）浏览器的解码器不支持。可以用外部播放器打开，
-          或到「详情页」检查文件是否完好。
-        </div>
+        <div class="me-desc">{{ mediaErrText }}</div>
+        <div class="me-hint" v-if="mediaErrDetail">{{ mediaErrDetail }}</div>
         <div class="me-actions">
-          <el-button type="primary" @click="playExternal">用外部播放器打开</el-button>
+          <el-button type="primary" @click="retryPlay">重试</el-button>
+          <el-button @click="playExternal">用外部播放器打开</el-button>
           <el-button @click="goDetail">查看详情</el-button>
         </div>
       </div>
@@ -127,6 +130,9 @@ const recs = ref([])           // 相关推荐列表
 const recLoading = ref(false)
 const recVersion = ref(0)      // 推荐结果版本号：自增即触发右侧列表淡入过渡
 const mediaErr = ref(false)
+const mediaErrKind = ref('')   // '' = 无错误；'media' = 播放失败；'nopath' = 这部影片没有视频路径
+const mediaErrCode = ref(0)    // 最近一次 MediaError.code（0 = 未知）；见 mediaErrText 的分化文案
+const mediaErrRaw = ref('')    // 原始错误信息（Chromium 原文，回报问题时最有价值）
 let art = null                 // ArtPlayer 实例（非响应式）
 let playingId = null           // art 实例当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
 let switchSuppress = false     // 换片进行中：挡住 pause/timeupdate 的进度记账（此时 art 里还是旧片的时间）
@@ -379,12 +385,110 @@ function saveProgress(force = false) {
   window.api?.savePlayProgress({ id: playingId, pos: pendingPos, dur: pendingDur }).catch(() => {})
 }
 
+// ====== 播放错误：确认、自愈、文案 ======
+// 背景（2026-09-30 修复用户报告的「切换影片时误报解码器不支持」）：
+//   ① Chromium 把「资源打不开」（协议层 404/415/500、NAS/SMB 瞬时读失败、demuxer 打不开）
+//      一律报成 MEDIA_ERR_SRC_NOT_SUPPORTED(4)，与真正的「编码不支持」**同码** ——
+//      凭一个 code 4 就断言格式问题，就是原来那句错误文案的由来。
+//   ② ArtPlayer 自带重连：错误后等 RECONNECT_SLEEP_TIME(1000ms) 重设 url，最多 5 次。
+//      实测（tmp/probe-switch-media-error3.js）错误后 1 秒 canplay/playing 正常到来、
+//      视频照常播放 —— 绝大多数「错误」是一次性的，播放器自己就恢复了。
+//   ③ 旧实现在 video:error 上直接永久置 mediaErr，而清错只有 loadMovie() 开头一处
+//      ⇒ 视频明明在播，面板却一直挂着「解码器不支持」，直到用户再切一次片。
+// 现在的策略：错误先不自证，给自愈留 ERR_GRACE_MS 宽限；宽限结束时**只看元素状态** ——
+//             能播（无 error 且已有元数据）当瞬时故障放过，仍不能播才上报；
+//             上报后 canplay/playing 一到还会撤销，所以偶尔的「短暂显示」也能自愈。
+//             ⚠️ 判据不要写成「累计 N 次错误」：ArtPlayer 的重连只有 5 次
+//             （RECONNECT_TIME_MAX），次数用完后它就不再重载了，「点重试仍失败」时
+//             只会产生 1 次错误，按次数判断会出现「面板消失后再也不回来」的死角
+//             （2026-09-30 实测 tmp/verify-media-error-fix.js V3 就是这么暴露出来的）。
+const ERR_GRACE_MS = 1800
+let errTimer = null        // 宽限定时器：等待 ArtPlayer 自愈
+
+/** 元素当前是否处于「可播的健康态」：没有挂错误 且 已拿到元数据 */
+function mediaHealthy() {
+  const v = art?.template?.$video
+  return !!v && v.error == null && v.readyState >= 2
+}
+
+/** 清空错误态（换片 / 重试 / 恢复播放时调用） */
+function resetMediaErr() {
+  if (errTimer) { clearTimeout(errTimer); errTimer = null }
+  mediaErr.value = false
+  mediaErrKind.value = ''
+  mediaErrCode.value = 0
+  mediaErrRaw.value = ''
+}
+
+function onMediaError() {
+  const v = art?.template?.$video
+  const e = v && v.error
+  if (e) { mediaErrCode.value = e.code; mediaErrRaw.value = String(e.message || '') }
+  if (errTimer) return                 // 已在宽限窗口内，等它到点统一复核
+  errTimer = setTimeout(() => recheckMediaErr(false), ERR_GRACE_MS)
+}
+
+/**
+ * 宽限到点后的复核。
+ * @param {boolean} extended 是否已经延长过一次（只延长一次，避免无限等待）
+ */
+function recheckMediaErr(extended) {
+  errTimer = null
+  if (mediaHealthy()) return           // 已自愈：当作瞬时故障，不上报
+  const v = art?.template?.$video
+  // 仍在加载中（ArtPlayer 的重连正在进行、NAS/SMB 首包慢）→ 再给一次机会。
+  // 这一支只在「真在加载」时命中：文件确实打不开时元素是 networkState=NO_SOURCE，不走这里。
+  if (!extended && v && v.error == null && v.networkState === 2) {
+    errTimer = setTimeout(() => recheckMediaErr(true), ERR_GRACE_MS)
+    return
+  }
+  mediaErrKind.value = 'media'
+  mediaErr.value = true
+  // 换片失败时 switchSuppress 会一直挂着（它只由 loadedmetadata 解除），
+  // 那会让进度记账从此静默失效 —— 在这里补一次解除。
+  switchSuppress = false
+}
+
+/** canplay / playing：只要回到可播状态就撤销错误面板（换片途中自己恢复的也算） */
+function onMediaRecovered() {
+  if (!mediaHealthy()) return
+  if (errTimer) { clearTimeout(errTimer); errTimer = null }
+  if (mediaErr.value) {
+    mediaErr.value = false
+    mediaErrKind.value = ''
+    mediaErrRaw.value = ''
+  }
+}
+
+/** 兜底面板正文：按错误码分化，不确定的绝不断言（见本段顶部注释） */
+const mediaErrText = computed(() => {
+  const f = ext.value
+  if (mediaErrKind.value === 'nopath') {
+    return '这部影片在库里没有可播放的文件路径，可能是入库时没关联到视频文件。可以到「详情页」看一眼，或用外部播放器手动打开。'
+  }
+  switch (mediaErrCode.value) {
+    case 2: return `读取中断，没能从磁盘 / 网络共享把这部影片（${f}）读完。多半是暂时性的，可以重试。`
+    case 3: return `视频数据无法解码（${f}）。文件可能没下载完整，也可能是这个编码浏览器放不了。`
+    case 4: return `打不开这个文件（${f}）：可能是磁盘 / 网络共享暂时不可用，也可能是浏览器解码器放不了它的容器或编码。可以重试，或用外部播放器打开。`
+    default: return `播放没能开始（${f}）。可以重试，或用外部播放器打开。`
+  }
+})
+
+/** 面板末尾的小字：真实错误码 + Chromium 原文，方便回报时直接定位 */
+const mediaErrDetail = computed(() => {
+  if (mediaErrKind.value === 'nopath') return ''
+  const parts = []
+  if (mediaErrCode.value) parts.push('错误码 ' + mediaErrCode.value)
+  if (mediaErrRaw.value) parts.push(mediaErrRaw.value)
+  return parts.join(' · ')
+})
+
 // ====== 数据加载 ======
 async function loadMovie(id) {
   const r = await window.api.getMovie(id).catch(() => null)
   if (!r || !r.ok) { ElMessage.error(r?.error || '影片加载失败'); router.replace('/library'); return }
   m.value = r.data
-  mediaErr.value = false
+  resetMediaErr()
 
   // 记一次播放（同一影片一次会话只记一次；进度写入不经过这里）
   if (recordedFor !== id) {
@@ -408,6 +512,7 @@ function initOrSwitchPlayer() {
       art = null
       playingId = null
     }
+    mediaErrKind.value = 'nopath'
     mediaErr.value = true
     return
   }
@@ -418,7 +523,9 @@ function initOrSwitchPlayer() {
     // 挡住换片过程中 pause / timeupdate 触发的记账（它们拿到的 art.currentTime 还是旧片的），
     // 新片 loadedmetadata 后自动恢复记账。
     switchSuppress = true
-    art.switchUrl(url)
+    // 换片失败时 ArtPlayer 会让这个 Promise 变成 rejected（内部 t.once('video:error') 分支），
+    // 不接住会变成 unhandled rejection；真正的失败判定交给 onMediaError 的宽限复核。
+    Promise.resolve(art.switchUrl(url)).catch(() => {})
     playingId = m.value.id
     return
   }
@@ -450,7 +557,10 @@ function initOrSwitchPlayer() {
   art.on('video:timeupdate', () => saveProgress(false))
   art.on('video:pause', () => saveProgress(true))
   art.on('video:ended', () => { if (playingId) { art && (art.currentTime = 0); window.api?.savePlayProgress({ id: playingId, pos: 0, dur: art?.duration || 0 }).catch(() => {}) } })
-  art.on('video:error', () => { mediaErr.value = true })
+  // 播放失败：先宽限复核再上报；canplay/playing 一到就撤销（见本文件「播放错误」段注释）
+  art.on('video:error', onMediaError)
+  art.on('video:canplay', onMediaRecovered)
+  art.on('video:playing', onMediaRecovered)
   art.on('video:volumechange', () => { try { localStorage.setItem('jt-vol', String(art.volume)) } catch {} })
   art.on('video:loadedmetadata', resumeIfNeeded)
   art.on('video:loadedmetadata', fitVideoObject)
@@ -508,6 +618,21 @@ async function playExternal() {
   if (!m.value?.py) return ElMessage.warning('未设置视频路径')
   const r = await window.api.playVideo(m.value.py).catch(() => null)
   if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
+}
+/**
+ * 重试：强制重新加载当前影片。
+ * 必须走 `art.url = url` 而不是 `switchUrl(url)` —— 后者对同一个地址会提前
+ * `return`（`if (e === t.url) void a()`），拿它重试等于什么都没做；
+ * `url` 的 setter 则是无条件 `$video.src = a`，能真正触发一次重新加载。
+ */
+function retryPlay() {
+  const url = resolveMedia(m.value?.py)
+  resetMediaErr()
+  if (!art || !url) { initOrSwitchPlayer(); return }
+  endHold()
+  switchSuppress = true          // 重新加载期间先挡住记账，loadedmetadata 后自动恢复
+  try { art.url = url } catch { switchSuppress = false }
+  playingId = m.value?.id ?? null
 }
 async function toggleFav() {
   if (!m.value) return
@@ -693,6 +818,23 @@ onBeforeUnmount(() => {
 }
 .me-title { font-size: 16px; font-weight: 600; color: var(--text); }
 .me-desc { margin: 8px 0 14px; color: var(--text-2); font-size: 13px; }
+/* 错误码 + Chromium 原文：小一号、等宽、低对比 —— 是「可回报的证据」，不该抢正文视线。
+   本文件没有 --text-3/--font-mono 令牌，用现有令牌 + 内联字体栈，不新造令牌。 */
+.me-hint {
+  margin: -6px 0 14px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, "Courier New", monospace;
+  opacity: 0.8;
+  word-break: break-word;
+}
+/* 三个按钮（重试 / 外部播放器打开 / 查看详情）：统一间距，不依赖 el-button 默认外边距 */
+.me-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
 /* 标题行：番号在前 + 片名（番号不参与截断） */
 .info-title {
