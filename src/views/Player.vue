@@ -117,12 +117,14 @@ import AppIcon from '@/components/AppIcon.vue'
 import { resolveMedia, resolveCover, splitTags, dataDirRef, favLock, favUnlock } from '@/utils/global'
 import { useMoviesStore } from '@/store/movies'
 
-// 设置面板「倍速」展开前后宽度跳变的修复（2026-09-30，实测 tmp/probe-playbackrate-size.js）：
-// ArtPlayer resize() 取「当前面板首项的 $parent.width || SETTING_WIDTH(250)」当面板宽度；
-// 根面板首项 $parent 为 undefined → 250，而内置倍速项 width = SETTING_ITEM_WIDTH(200)，
-// 于是点开倍速后整个面板从 250 缩到 200、左右各内缩 25px，选项行肉眼可见地变窄。
-// 把内置项宽度钉到与根面板回落值一致，两个视图就同宽了（也顺带覆盖之后可能启用的
-// 画面比例 / 翻转等内置 selector 项）。
+// 设置面板「倍速」宽度：两态统一 200px（2026-09-30，实测 tmp/probe-playbackrate-size.js）
+// ① 一致性：ArtPlayer resize() 取「当前面板首项的 $parent.width || SETTING_WIDTH(250)」当
+//    面板宽度。根面板首项 $parent 为 undefined → 落到 250，而内置倍速项
+//    width = SETTING_ITEM_WIDTH(200) → 点开倍速后面板 250→200、左右各内缩 25px，两态不同宽。
+// ② 收窄：250 时面板右缘正好压在视频右边框上（right=0），观感太长；收到 200 后右缘退回 25px。
+// 把两个常量一起钉到 200 —— 展开前后同宽、且不再贴着右边界。
+// （顺带覆盖之后可能启用的画面比例 / 翻转等内置 selector 项）
+Artplayer.SETTING_WIDTH = 200
 Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH
 
 const route = useRoute()
