@@ -1,6 +1,9 @@
 # JavTube 开发交接书
 
-> 面向接手本项目的开发者 / AI 会话。**本文只讲架构与命令**。
+> 面向接手本项目的开发者 / AI 会话。**本文讲环境、命令、关键机制与已知坑。**
+>
+> 👉 **第一次接手请先读 [`AGENTS.md`](AGENTS.md)**（入口文档：项目定位 + 模块地图 + 雷区），
+> 需要数据库表结构 / IPC 通道全表 / 刮削链路时读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 > 面向使用者的功能介绍见 `README.md`，许可见 `LICENSE`。
 >
 > **当前版本：v3.0.0**（2026-09-30）｜更新本文时请连同这里的版本号一起改。
@@ -60,6 +63,9 @@ npm run dev
 npx vite build
 
 # 主进程「调用但未定义」静态检查（改 electron/ 代码后必跑，见 §6 坑 9）
+#   ℹ️ 有 2 条已知误报：scraper.js 的 _l_( / _s_( 是**正则字面量**被扫描器误判；
+#      audit:wiring 报的 savePlayProgress「未被使用」也是误报（用的是可选链写法）。
+#      两条的完整说明见 AGENTS.md §6「两条已知误报」。
 npm run check:undefined
 
 # 刮削全链路冒烟（脱离 Electron 直接跑 scrapeMovie；改 scraper / net-curl 后必跑）
@@ -85,10 +91,12 @@ node scripts/devdb-diff.js [快照.bak]      # 不传参数取 tmp/_devdb 里最
 node scripts/devdb-restore.js <快照.bak>   # 逐字节回滚，自带 SQLite 头校验 + 回读比对
 
 # ★ _devdb 助手自检（改 scripts/_devdb.js 后必跑；只用 tmp 假库，绝不碰真库）
-node tmp/test-devdb.js                     # 19 项：快照独有性、拒绝写坏数据、content 被改写仍用 pristine…
+node scripts/test-devdb.js                 # 19 项：快照独有性、拒绝写坏数据、content 被改写仍用 pristine…
+                                           #（等价 npm run test:devdb）
 
 # ★ 怀疑「有进程偷偷改 dev 库」时的看门狗（每 250ms 记 sha/长度/mtime，只打变化点）
-node tmp/_watch-devdb.js                   # 另开一个终端跑测试，回来读 tmp/_watch.log
+node scripts/watch-devdb.js                # 另开一个终端跑测试，回来读 tmp/_watch.log
+                                           #（等价 npm run watch:devdb）
 
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
@@ -167,13 +175,13 @@ electron-builder 会把**整个 node_modules** 塞进 asar（实测 **85.6 MB**�
 
 1. **asar 四层比对**：`dist` 双向哈希（asar 内 ↔ 本地）、`electron/**` + `package.json` 逐文件哈希、
    **本期特征字符串探针**、产物目录卫生（**文件数基线 73** + 无 `.old-` / `.build-` / `.tmp` 残留）。
-   现成脚本：`tmp/verify-asar-290.js`（照抄后只改 `VERSION` 与特征字符串即可）。
+   现成脚本：**`scripts/release/verify-asar.js`**（每次发版只改 `VERSION` 与特征字符串即可）。
    > 特征字符串的正确取法：先在源码 grep 出**真实标识符**，再 `git grep -c <串> HEAD` 确认它在
    > **上一版不存在**。否则探针等于没测（例如 `加载影片列表失败` 在 HEAD 里已有，只能当回归守卫）。
 2. **干净环境启动**：解压到**带空格 + 中文**的路径，用**干净环境变量 + 非项目工作目录**启动。
    判据：日志出现 `[main] APP READY` / `initDb DONE` / `IPC OK` / `loadFile SUCCESS`、
    `data/` 建在 exe 同级、CDP 里 `window.api` 已注入、优雅关闭（`Browser.close`）后落盘。
-   现成脚本：`tmp/verify-clean-run-290.js`。
+   （该「干净环境启动」核验脚本是 v2.9.0 的一次性脚本，**未随项目保留**；如需复现，照上面的判据自查。）
    > 这条专门防「开发机上跑得好好的，别人机器上双击没反应」——`node_modules/electron` 就在旁边时，
    > 漏文件在本机也照样能跑。
 3. **`--check-only` 复核**（见下）。
@@ -214,12 +222,12 @@ node scripts/build-portable.js --check-only <解压后的目录>  # 复核别人
 
 ### 发版后的残留清理
 
-用 `github-release-windows` 技能里的两个常驻脚本（**别再临时手写**）：
+用 **`scripts/release/`** 下的两个常驻脚本（**别再临时手写**）：
 
 ```bash
-python <skill>/scripts/gh-releases-check.py --repo=<O/R> --out=<repo>/tmp/_remote_assets.json
-node   <skill>/scripts/cleanup-residue.js --repo=<repo> --keep-prefix=JavTube-v<版本>-          # 预演
-node   <skill>/scripts/cleanup-residue.js --repo=<repo> --keep-prefix=JavTube-v<版本>- --apply  # 执行
+python scripts/release/gh-releases-check.py                                      # → tmp/_remote_assets.json
+node   scripts/release/cleanup-residue.js --keep-prefix=JavTube-v<版本>-          # 预演
+node   scripts/release/cleanup-residue.js --keep-prefix=JavTube-v<版本>- --apply  # 执行
 ```
 
 > **删本地 zip 前必须先在远端确认同名附件 `state == 'uploaded'`**（v1.9.0 就漏传过，
@@ -232,50 +240,75 @@ node   <skill>/scripts/cleanup-residue.js --repo=<repo> --keep-prefix=JavTube-v<
 ## 4.2 目录结构
 
 ```
-javtube_dev/
-├─ HANDOFF.md  README.md  LICENSE  package.json     # 根目录只留这些
-├─ docs/                                            # 内部文档（.gitignore，仅本地保留）
-├─ dist/                                            # Vite 产物（可随时删）
-├─ release/                                         # 唯一构建输出根（可随时删，见 §4.1）
-├─ scripts/                                         # 构建与检查脚本（含 _devdb.js）
-├─ build/icon.ico                                   # 应用图标（打包时写进 exe）
+JavTube/
+├─ AGENTS.md            # ★ 入口文档：项目定位 / 模块地图 / 雷区（第一次接手先读这个）
+├─ HANDOFF.md           # 本文：环境、命令、关键机制、已知坑、调试指南
+├─ README.md  LICENSE  package.json
+├─ index.html  vite.config.mjs  start.bat            # 前端入口 / 构建配置 / 一键启动
+├─ docs/                                             # 内部文档（.gitignore，仅本地保留）
+│  ├─ ARCHITECTURE.md       # ★ 架构 / 数据库表 / IPC 通道全表 / 刮削链路
+│  ├─ PROJECT_BRIEF.md  CODE_AUDIT.md  APPLE_AUDIT.md  PERF_PLAN.md
+│  ├─ 接续工作小结.md  项目总结_20260913.md
+│  └─ audits/               # 历史审计与修复报告（性能 / UI / 头像 / 代码审查）
+├─ dist/                # Vite 产物（可随时删，但非 dev 运行要用它）
+├─ release/             # 唯一构建输出根（可随时删，见 §4.1）
+├─ screenshots/         # README 用的界面截图
+├─ build/icon.ico       # 应用图标（打包时写进 exe）
+├─ scripts/             # 构建、检查、回归、探针、dev 库善后
+│  ├─ build-portable.js     # 打包（npm run release）
+│  ├─ check-undefined.js    # 主进程「调用但未定义」静态检查
+│  ├─ audit-wiring.js       # 渲染层事件 / preload / IPC 三端接线审计
+│  ├─ _devdb.js             # ★ dev 库快照/还原助手（回归脚本必须用它）
+│  ├─ devdb-diff.js / devdb-restore.js   # 库的字段级比对 / 逐字节回滚
+│  ├─ test-*.js             # 回归：restore / persist / persist-coalesce / fill / devdb
+│  ├─ scrape-smoke.js       # 刮削全链路冒烟（脱离 Electron 直跑）
+│  ├─ probe-launch.js       # ★ 屏外启动壳（探针基座：窗口不抢焦点）
+│  ├─ verify-player-ui.js   # 播放页 UI 套件（CDP，自带快照/还原）
+│  ├─ verify-media-error-fix.js  # 播放失败提示的两向验证
+│  ├─ probe-playbackrate-size.js # 设置面板尺寸探针（改设置面板 UI 可复用）
+│  ├─ watch-devdb.js        # dev 库看门狗
+│  ├─ diag-buffer-share.js  # sql.js 就地改写 Buffer 的取证脚本
+│  └─ release/              # ★ 发版工具链（见 scripts/release/README.md）
 ├─ electron/
 │  ├─ main/
-│  │  ├─ index.js            # 主进程入口：启动序列 / 窗口 / 自定义协议注册
-│  │  ├─ constants.js        # 主进程侧常量
-│  │  ├─ ipc-utils.js        # 工具 IPC：playVideo(含文件存在校验)、扫描目录、readDuration、文件对话框
+│  │  ├─ index.js            # 主进程入口：启动时序 / 数据目录 / 窗口 / 协议注册
+│  │  ├─ constants.js        # 主进程侧常量（视频扩展名、排序白名单、标签分隔符…）
+│  │  ├─ ipc-utils.js        # 工具 IPC：playVideo、扫描目录、readDuration、系统对话框
 │  │  ├─ home.js             # 首页推荐 IPC
 │  │  ├─ scraper.js          # 在线刮削：JAVBUS / JAVDB 解析（唯一出处）
-│  │  ├─ net-curl.js         # 刮削网络层：基于系统 curl（见 §6 坑 11）
+│  │  ├─ net-curl.js         # 刮削网络层：基于系统 curl（见 §6 坑 11~14）
 │  │  ├─ video-meta.js       # 纯 Node MP4 mvhd 时长解析（AVI/MKV 返回 0）
 │  │  ├─ cover-protocol.js   # javtube-cover:// 协议实现（★ 2.9.0 加了 LRU + ETag，见 §5）
 │  │  ├─ media-protocol.js   # javtube-media:// 视频流协议（支持 Range）
 │  │  └─ db/
 │  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移 + ★ensureIndexes
-│  │     ├─ movies.js        # 影片 CRUD / 分页查询 / 批量操作
+│  │     ├─ movies.js        # 影片 CRUD / 分页查询 / 批量操作 / recordPlay
 │  │     ├─ settings.js      # 设置读写 + 批量保存 + 标签类别 JSON + 备份/恢复/清空
-│  │     ├─ actress.js       # 女优表 + ★头像待办缓存
+│  │     ├─ actress.js       # 演员表 + ★头像待办缓存 + 头像补全
 │  │     ├─ images.js        # 封面缺失扫描 / 修复（★ 分片让出事件循环）
-│  │     ├─ player.js        # 播放进度 + 口味画像推荐
-│  │     ├─ cleanup.js       # 数据清理
-│  │     └─ util.js          # persistSoon 等公共工具
-│  ├─ preload/index.js       # contextBridge 暴露 window.api（**41 个成员 / 40 条通道**）
+│  │     ├─ player.js        # 播放进度 + 播放页相关推荐
+│  │     ├─ cleanup.js       # 删记录后的本地图片清理
+│  │     └─ util.js          # rows/firstRow/nowLocal/persistSoon 等公共工具
+│  ├─ preload/index.js       # contextBridge 暴露 window.api（**唯一通信桥梁**）
 │  └─ common/ipc-channels.js # IPC 通道名常量（40 条，main / preload 共享唯一来源）
 └─ src/
+   ├─ main.js  App.vue
    ├─ router/index.js        # 静态引入全部页面（性能优化，勿改回懒加载）
-   ├─ views/                 # Library(片库) Favorite(喜欢) History(历史) Detail(详情)
-   │                         #   Actress(女优) ActorFilms(演员作品) Website(网址) Home(首页)
-   │                         #   AddMovieDialog/ 下为添加影片的子表单
-   ├─ components/            # MovieCard / MovieGrid / TagFilter / TagChip / StatusBar / TopNav /
-   │                         #   SortDropdown / AppIcon(自绘 SVG 图标库) / SettingsDialog /
-   │                         #   AddMovieDialog.vue / CoverImg.vue
-   ├─ store/                 # Pinia：movies(三视图共享) / scrape / actress / website
-   ├─ composables/           # useMovieList.js —— 列表页公共交互
-   ├─ styles/global.css      # 设计令牌（含 ★动画时长变量）+ 全局样式
-   └─ utils/global.js        # 番号解析、标签拆分、safeCall 等前端工具
+   ├─ views/                 # Home 首页 · Library 片库 · Favorite 喜欢 · History 观看记录
+   │                         #   Detail 影片详情 · Player 内置播放页 · Actresses 演员
+   │                         #   ActorFilms 演员作品
+   ├─ components/            # TopNav / MovieGrid / MovieCard / TagFilter / TagChip /
+   │                         #   SortDropdown / StatusBar / SettingsDialog / CoverImg /
+   │                         #   AppIcon(自绘 SVG 图标库) / BackButton /
+   │                         #   AddMovieDialog.vue + AddMovieDialog/{ScanDirForm,ManualForm}.vue
+   ├─ store/                 # Pinia：movies（三视图共享） / scrape（刮削进度队列）
+   ├─ composables/           # useMovieList.js（列表页公共交互） / useImageRepair.js
+   ├─ styles/global.css      # ★ 设计令牌（颜色/圆角/阴影 + 动画时长变量）+ 全局样式
+   └─ utils/                 # global.js（番号解析、标签拆分、safeCall…） / playback.js（统一播放入口）
 ```
 
-**数据目录**：运行时数据（`app.db` + `covers/`）写在应用数据目录下，**不入版本控制**。
+**数据目录**：运行时数据（`app.db` + `covers/` + `tag-categories.json`）写在应用数据目录下，
+**不入版本控制、不要手改**。
 
 ---
 
@@ -372,8 +405,10 @@ javtube_dev/
    （V3 就是这么暴露的，真踩过）。
 5. **重试必须用 `art.url = url`**，不能用 `switchUrl(url)` —— 后者对同一地址会提前 `return`，等于没重试。
 
-> 取证脚本：`tmp/probe-switch-media-error{,2,3}.js`（根因）、
-> `tmp/verify-media-error-fix.js`（修复四段验证：不误报 / 不漏报 / 重试 / 换片恢复）。
+> 取证脚本：**`scripts/verify-media-error-fix.js`**（修复四段验证：不误报 / 不漏报 / 重试 / 换片恢复；
+> 自带 dev 库快照/还原，配合 `scripts/probe-launch.js` 屏外启动壳使用——`npm run verify:media-error`）。
+> 当初定位根因用的三个 `probe-switch-media-error*.js` 属一次性历史脚本，**未随项目保留**；
+> 要复现同类排查，照本节判据 + `scripts/probe-launch.js` 的组合自己写即可。
 
 ### 5.7 设置面板展开前后的宽度一致性（2026-09-30 修）
 
@@ -383,7 +418,7 @@ ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(25
 修法（`Player.vue` 导入区）把两个常量一起钉到 200：
 `Artplayer.SETTING_WIDTH = 200; Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH` ——
 两态同宽，且 250 时面板右缘正好压在视频右边框（right=0），收到 200 后右缘退回 25px 不再贴边。
-实测探针：`tmp/probe-playbackrate-size.js`（顺带量条目矩形/截图，改设置面板 UI 时可直接复用）。
+实测探针：**`scripts/probe-playbackrate-size.js`**（顺带量条目矩形/截图，改设置面板 UI 时可直接复用）。
 
 ---
 
@@ -393,7 +428,7 @@ ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(25
 
 `new SQL.Database(buf)` 经 Emscripten 的 MEMFS `createDataFile()` **直接拿这片内存当文件的
 底层存储**，之后任何写操作（哪怕只为造测试数据的一次 UPDATE）都会写回 `buf` 本身。
-实测（`tmp/_diag-buffer-share.js`）：干净快照 sha `c1f33f19…`，仅一次
+实测（`scripts/diag-buffer-share.js`）：干净快照 sha `c1f33f19…`，仅一次
 `new SQL.Database(snap.content)` + UPDATE + `export()`，`snap.content` 就变成 `d4497e2b…`。
 
 **踩法**：`scripts/test-restore.js` 用 `snap.content` 造「带标记的备份库」，这一步把快照
@@ -405,7 +440,7 @@ ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(25
 - `scripts/_devdb.js` 已加固：`takeSnapshot` 返回的 `content` 是副本，内部另存 `pristine`
   原始字节；`restoreSnapshot` 一律以 `pristine` 为真源并校验其未被篡改（否则**拒绝写回**），
   发现调用方的 `content` 被改写会留痕提示。
-- **排查手法**：怀疑「有进程偷偷改库」时，用 `tmp/_watch-devdb.js`（每 250ms 记
+- **排查手法**：怀疑「有进程偷偷改库」时，用 `scripts/watch-devdb.js`（每 250ms 记
   sha16 + 字节数 + mtime，只打印变化点）边跑边看 —— 本次就是靠它发现「mtime 变了但 sha
   一直不变」，从而定位到「还原写回的本来就是脏内容」，而不是什么外部进程。
 - 附带教训：`test:restore` 的 ③④⑤ 曾断言写死 `movies.id=8`，而 dev 库 id 已漂移到 10..318
@@ -448,7 +483,7 @@ ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(25
 15. **回滚 / 脚本分段替换文件后必须 grep 验证 + build**——部分应用状态（残留大括号 / emits）会导致编译错误
 16. **凡涉及模块加载的改动必须跑 `npm run dev` 冒烟**——`node --check` 与 `vite build` 查不出 require 路径错误
 17. **★★ dev 库（`node_modules/electron/dist/data/app.db`）是真实数据，任何会写它的脚本都要先备份**
-    （跑 `scripts/test-*.js`、`tmp/verify_*.js`、任何起 Electron 并触发写操作的探针）。
+    （跑 `scripts/test-*.js`、`scripts/verify-*.js`、任何起 Electron 并触发写操作的探针）。
     统一用 **`scripts/_devdb.js`**：①每次运行新建**本次独有**快照（时间戳+pid，绝不复用固定文件名）
     ②落盘后 SHA-256 回读校验 ③还原前验 SQLite 文件头，坏快照**拒绝写回** ④库未变更不写盘。
     > **为什么立这条**：原三个回归脚本是「固定文件名备份 + `if(!exists) copy` 有就复用 + 结束无条件写回」，
@@ -516,11 +551,14 @@ ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(25
   **禁用 `eval` / `new Function`**（CSP `script-src 'self'`）
 - **启动前记得**：`unset ELECTRON_RUN_AS_NODE`；排查「删除失败/命令调不动」时再
   `unset NODE_OPTIONS`（见 §2）
-- ⚠️ **`tmp/verify_player_ui.js` 会写 dev 库的播放记录**（点喜欢改 `cl`、进播放页触发 `recordPlay`
-  → 写 `play_count` / `play_time` / `play_pos`）。它只还原 `cl`，**播放记录会留在库里** ——
-  实测跑一次就让 id 10/11/68 三行的 `play_count` +1、库 sha 由 `c1f33f19` 变 `a1f2e641`。
-  ⇒ **跑它之前也要先快照**（它自己不带 `_devdb`）。事后比对/回滚：
-  `node tmp/_devdb_diff2.js <快照>`（字段级差异）/ `node tmp/_devdb_restore.js <快照>`（逐字节回滚）。
+- **`scripts/verify-player-ui.js` 会写 dev 库**（点喜欢改 `cl`、进播放页触发 `recordPlay`
+  → 写 `play_count` / `play_time` / `play_pos`）。
+  ✅ **2026-09-30 已修**：原先它只还原 `cl`，播放记录会留在库里 —— 实测跑一次就让 id 10/11/68
+  三行的 `play_count` +1、库 sha 由 `c1f33f19` 变 `a1f2e641`。
+  现在改为**启动前整库快照、收尾整库还原 + 延迟复验（有界重试，还原不成功则非 0 退出）**，
+  跑完库应逐字节回到原样，不再需要手动善后。
+  真要手动比对 / 回滚时：`node scripts/devdb-diff.js <快照>`（字段级差异）/
+  `node scripts/devdb-restore.js <快照>`（逐字节回滚）。
 - Git 推送若直连超时，可为仓库单独配置代理（仅本仓库生效）：
   `git config http.proxy <代理地址> && git config https.proxy <代理地址>`
   （⚠️ 上传大文件到 `uploads.github.com` 反而**不要**走代理，直连快得多）

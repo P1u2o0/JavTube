@@ -21,7 +21,11 @@
     "test:persist": "node scripts/test-persist.js",
     "test:fill": "node scripts/test-fill-unit.mjs",
     "test:persist-coalesce": "node scripts/test-persist-coalesce.js",
-    "test:fill:e2e": "node scripts/test-fill-scrape.js"
+    "test:fill:e2e": "node scripts/test-fill-scrape.js",
+    "test:devdb": "node scripts/test-devdb.js",
+    "watch:devdb": "node scripts/watch-devdb.js",
+    "verify:player-ui": "node scripts/verify-player-ui.js",
+    "verify:media-error": "node scripts/verify-media-error-fix.js"
   },
   "dependencies": {
     "artplayer": "^5.4.0",

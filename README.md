@@ -72,6 +72,10 @@ npm run check:undefined
 npm run release
 ```
 
+> **接手开发（或让 AI 接手）从这里开始：**
+> [`AGENTS.md`](AGENTS.md) —— 入口文档：项目定位、模块地图（改什么去哪）、数据安全铁律、雷区清单。
+> 环境坑与发版流程 → [`HANDOFF.md`](HANDOFF.md)；数据库/IPC/刮削链路的全表 → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+
 ## 声明
 
 本软件仅为**本地媒体文件管理工具**，不提供、不存储、不分发任何媒体内容。刮削功能抓取的元数据来自公开网站，仅供个人整理收藏使用。请遵守所在地区的法律法规，合理使用本软件。
