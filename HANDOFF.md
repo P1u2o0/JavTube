@@ -373,7 +373,9 @@ javtube_dev/
 ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(250)`」当面板宽度：
 根面板首项 `$parent` 为 undefined → 250，而**内置 selector 项**（倍速/画面比例/翻转）的
 `width = SETTING_ITEM_WIDTH(200)` ⇒ 点开倍速后面板 250→200、左右各内缩 25px，选项行变窄。
-修法一行（`Player.vue` 导入区）：`Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH`。
+修法（`Player.vue` 导入区）把两个常量一起钉到 200：
+`Artplayer.SETTING_WIDTH = 200; Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH` ——
+两态同宽，且 250 时面板右缘正好压在视频右边框（right=0），收到 200 后右缘退回 25px 不再贴边。
 实测探针：`tmp/probe-playbackrate-size.js`（顺带量条目矩形/截图，改设置面板 UI 时可直接复用）。
 
 ---
