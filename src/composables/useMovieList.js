@@ -11,6 +11,7 @@
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { buildScrapeUpdate, bumpCover, statsFillHint } from '@/utils/global'
+import { playMovie } from '@/utils/playback'
 import { useScrapeStore } from '@/store/scrape'
 
 /**
@@ -62,11 +63,11 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
   function onDetail(m) { router.push(`/detail/${m.id}`) }
 
   /**
-   * 播放影片：2026-09-29 起统一进内置播放页（原走外部播放器）。
+   * 播放影片：按设置分发 —— 内置播放器开启进内置播放页，
+   * 关闭则交给外部播放器（见 utils/playback.js）。
    */
-  function onPlay(m) {
-    if (!m.py) return ElMessage.warning('未设置视频路径')
-    router.push(`/play/${m.id}`)
+  async function onPlay(m) {
+    await playMovie(m, store.settings, router.push)
   }
 
   /**

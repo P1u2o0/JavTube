@@ -7,8 +7,8 @@
            对话框整体固定尺寸（820px × 74vh），切换标签页大小不变；
            每个标签页固定分为左右两栏：左列选项名称（右端对齐中心线）、
            右列选项控件；选项说明小字统一放选项下方。
-           五个标签页：基础设置 / 标签设置（标签类别+标签映射）/
-           刮削设置 / 辅助设置 / 关于。
+           六个标签页：基础设置 / 播放设置（播放器与播放页快捷键）/
+           标签设置（标签类别+标签映射）/ 刮削设置 / 辅助设置 / 关于。
   ============================================================
 -->
 <template>
@@ -19,15 +19,6 @@
       <!-- ============ 基础设置 ============ -->
       <el-tab-pane label="基础设置" name="basic">
         <div class="set-grid">
-          <!-- 播放器路径（输入框与选择按钮并排） -->
-          <div class="g-label">播放器路径</div>
-          <div class="g-control">
-            <div class="player-row">
-              <el-input v-model="st.player_path" placeholder="留空使用系统默认播放器" class="player-input" />
-              <el-button @click="choosePlayer">选择</el-button>
-            </div>
-            <span class="g-tip" v-if="showTips">播放影片时优先使用此播放器</span>
-          </div>
           <!-- 点击卡片默认动作 -->
           <div class="g-label">点击卡片动作</div>
           <div class="g-control">
@@ -53,6 +44,74 @@
           <div class="g-label">显示注释</div>
           <div class="g-control">
             <el-switch v-model="st.show_tips" active-value="y" inactive-value="n" />
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- ============ 播放设置（2026-09-30：播放器路径 + 播放页快捷键合并）============ -->
+      <el-tab-pane label="播放设置" name="play">
+        <div class="set-grid">
+          <!-- 是否使用内置播放器：关闭后所有「播放」入口都交给外部播放器 -->
+          <div class="g-label">使用内置播放器</div>
+          <div class="g-control">
+            <el-switch v-model="st.use_builtin_player" active-value="y" inactive-value="n" />
+            <span class="g-tip" v-if="showTips">
+              开启：点播放进入本软件内置播放页；关闭：直接交给下方设置的外部播放器
+            </span>
+          </div>
+          <!-- 外部播放器路径（输入框与选择按钮并排；关闭内置播放器后生效） -->
+          <div class="g-label">播放器路径</div>
+          <div class="g-control">
+            <div class="player-row">
+              <el-input v-model="st.player_path" placeholder="留空使用系统默认播放器" class="player-input" />
+              <el-button @click="choosePlayer">选择</el-button>
+            </div>
+            <span class="g-tip" v-if="showTips">
+              外部播放器程序路径；关闭「使用内置播放器」后，播放影片时用它打开（留空则由系统默认程序打开）
+            </span>
+          </div>
+
+          <!-- ── 以下为内置播放页的播放行为与快捷键（2026-09-29） ── -->
+          <div class="g-label">快退 / 快进步长</div>
+          <div class="g-control">
+            <el-select v-model="hk.seekStep" style="width:140px">
+              <el-option v-for="n in [5, 10, 15, 30]" :key="n" :label="n + ' 秒'" :value="n" />
+            </el-select>
+            <span class="g-tip" v-if="showTips">播放页单击 ← / → 时的快退 / 快进秒数</span>
+          </div>
+
+          <div class="g-label">长按倍速</div>
+          <div class="g-control">
+            <el-select v-model="hk.holdSpeed" style="width:140px">
+              <el-option v-for="n in [1.5, 2, 3, 4]" :key="n" :label="n + ' 倍速'" :value="n" />
+            </el-select>
+            <span class="g-tip" v-if="showTips">长按 → 时以该倍速播放，松开恢复原速</span>
+          </div>
+
+          <div class="g-label">长按判定时间</div>
+          <div class="g-control">
+            <el-select v-model="hk.holdThresholdMs" style="width:140px">
+              <el-option v-for="n in [250, 350, 500]" :key="n" :label="n + ' 毫秒'" :value="n" />
+            </el-select>
+            <span class="g-tip" v-if="showTips">方向键按住超过该时长视为「长按」，短于则算单击（快进/退一步）</span>
+          </div>
+
+          <div class="g-label">键位绑定</div>
+          <div class="g-control">
+            <div class="hk-grid">
+              <div v-for="(label, name) in KEY_LABELS" :key="name" class="hk-row">
+                <span class="hk-name">{{ label }}</span>
+                <button type="button" class="hk-btn" :class="{ rec: recTarget === name }"
+                        @click="startRec(name)"
+                        @keydown.prevent.stop="onRecKey($event, name)"
+                        @blur="recTarget === name && (recTarget = '')">
+                  {{ recTarget === name ? '按下新按键…' : keyLabel(hk.keys[name]) }}
+                </button>
+              </div>
+            </div>
+            <span class="g-tip" v-if="showTips">
+              点击按键框后按下新按键即可改绑（Esc 取消）；一个按键只能绑定一个功能。保存后在播放页生效
+            </span>
           </div>
         </div>
       </el-tab-pane>
@@ -205,53 +264,6 @@
         </div>
       </el-tab-pane>
 
-      <!-- ============ 播放页快捷键（2026-09-29）============ -->
-      <el-tab-pane label="快捷键" name="hotkeys">
-        <div class="set-grid">
-          <div class="g-label">快退 / 快进步长</div>
-          <div class="g-control">
-            <el-select v-model="hk.seekStep" style="width:140px">
-              <el-option v-for="n in [5, 10, 15, 30]" :key="n" :label="n + ' 秒'" :value="n" />
-            </el-select>
-            <span class="g-tip" v-if="showTips">播放页单击 ← / → 时的快退 / 快进秒数</span>
-          </div>
-
-          <div class="g-label">长按倍速</div>
-          <div class="g-control">
-            <el-select v-model="hk.holdSpeed" style="width:140px">
-              <el-option v-for="n in [1.5, 2, 3, 4]" :key="n" :label="n + ' 倍速'" :value="n" />
-            </el-select>
-            <span class="g-tip" v-if="showTips">长按 → 时以该倍速播放，松开恢复原速</span>
-          </div>
-
-          <div class="g-label">长按判定时间</div>
-          <div class="g-control">
-            <el-select v-model="hk.holdThresholdMs" style="width:140px">
-              <el-option v-for="n in [250, 350, 500]" :key="n" :label="n + ' 毫秒'" :value="n" />
-            </el-select>
-            <span class="g-tip" v-if="showTips">方向键按住超过该时长视为「长按」，短于则算单击（快进/退一步）</span>
-          </div>
-
-          <div class="g-label">键位绑定</div>
-          <div class="g-control">
-            <div class="hk-grid">
-              <div v-for="(label, name) in KEY_LABELS" :key="name" class="hk-row">
-                <span class="hk-name">{{ label }}</span>
-                <button type="button" class="hk-btn" :class="{ rec: recTarget === name }"
-                        @click="startRec(name)"
-                        @keydown.prevent.stop="onRecKey($event, name)"
-                        @blur="recTarget === name && (recTarget = '')">
-                  {{ recTarget === name ? '按下新按键…' : keyLabel(hk.keys[name]) }}
-                </button>
-              </div>
-            </div>
-            <span class="g-tip" v-if="showTips">
-              点击按键框后按下新按键即可改绑（Esc 取消）；一个按键只能绑定一个功能。保存后在播放页生效
-            </span>
-          </div>
-        </div>
-      </el-tab-pane>
-
       <!-- ============ 关于 ============ -->
       <el-tab-pane label="关于" name="about">
         <div class="set-grid">
@@ -323,7 +335,8 @@ const tab = ref('basic')
 const appVersion = __APP_VERSION__
 // 基础 + 刮削设置表单（响应式；分 tab 保存）
 const st = reactive({
-  player_path: '', click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
+  player_path: '', use_builtin_player: 'y',
+  click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
   scrape_source: 'auto', scrape_previews: 'n', scrape_stats: 'y',
   proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890', javdb_cookie: '',
   show_tips: 'y',
@@ -545,7 +558,7 @@ async function saveAll() {
   st.preview_count = String(previewCountN.value)
   st.hotkeys = JSON.stringify(hk)
   const kvKeys = [
-    'player_path', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
+    'player_path', 'use_builtin_player', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
     'proxy_enabled', 'proxy_url', 'javdb_cookie', 'auto_check_images', 'hotkeys'
   ]

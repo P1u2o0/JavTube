@@ -113,6 +113,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { resolveCover, splitTags, favLock, favUnlock } from '@/utils/global'
+import { playMovie } from '@/utils/playback'
 import AppIcon from '@/components/AppIcon.vue'
 import MovieCard from '@/components/MovieCard.vue'
 import TagChip from '@/components/TagChip.vue'
@@ -314,11 +315,11 @@ function onCardClick(m) {
   router.push(`/detail/${m.id}`)
 }
 /**
- * 播放：2026-09-29 起统一进内置播放页（与 useMovieList.onPlay / Detail.onPlay 一致）。
+ * 播放：按设置分发 —— 内置播放器开启进内置播放页，关闭则交给外部播放器
+ * （与 useMovieList.onPlay / Detail.onPlay 走同一个入口）。
  */
-function onPlay(m) {
-  if (!m?.py) return ElMessage.warning('未设置视频路径')
-  router.push(`/play/${m.id}`)
+async function onPlay(m) {
+  await playMovie(m, store.settings, router.push)
 }
 /** 切换喜欢（乐观更新 + 失败回滚）
  *  原实现的写库调用同样因为 safeCall 传函数而从未执行 —— 界面已变红、库里却没变，

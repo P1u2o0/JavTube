@@ -188,6 +188,7 @@ import CoverImg from '@/components/CoverImg.vue'
 import BackButton from '@/components/BackButton.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
 import { resolveCover, buildScrapeUpdate, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint, favLock, favUnlock } from '@/utils/global'
+import { playMovie } from '@/utils/playback'
 
 // 路由与 store 实例
 const route = useRoute()
@@ -476,11 +477,12 @@ async function load(id) {
 }
 
 /**
- * 播放影片（2026-09-29 起进内置播放页；外部播放器入口保留在播放页的信息栏）
+ * 播放影片：按设置分发 —— 内置播放器开启进内置播放页，关闭则交给外部播放器
+ * （外部播放器入口在播放页的信息栏仍保留，可随时手动切换）
  */
-function onPlay() {
-  if (!m.value?.py) return ElMessage.warning('未设置视频路径')
-  router.push(`/play/${m.value.id}`)
+async function onPlay() {
+  if (!m.value) return
+  await playMovie(m.value, store.settings, router.push)
 }
 
 /**

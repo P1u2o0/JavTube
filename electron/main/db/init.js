@@ -305,7 +305,9 @@ async function initDb(dataDir) {
 
   // 写入默认设置项（仅在不存在时插入）
   const defaults = [
-    ['player_path',''],      // 自定义播放器路径
+    ['player_path',''],      // 自定义（外部）播放器路径
+    ['use_builtin_player','y'], // 是否使用内置播放器 (y/n)：y=点播放进内置播放页，
+                                //   n=直接交给 player_path 指定的外部播放器（2026-09-30 新增）
     ['page_size','20'],      // 每页显示数量
     ['theme','light'],       // 主题
     ['video_paths','[]'],    // 视频文件路径列表（JSON 数组）
