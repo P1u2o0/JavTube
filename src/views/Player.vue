@@ -128,6 +128,8 @@ const recLoading = ref(false)
 const recVersion = ref(0)      // 推荐结果版本号：自增即触发右侧列表淡入过渡
 const mediaErr = ref(false)
 let art = null                 // ArtPlayer 实例（非响应式）
+let playingId = null           // art 实例当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
+let switchSuppress = false     // 换片进行中：挡住 pause/timeupdate 的进度记账（此时 art 里还是旧片的时间）
 let recordedFor = null         // recordPlay 去重：同一部影片一次会话只记一次
 let lastSaveTs = 0             // 进度节流
 let pendingPos = 0             // 最新播放位置（切页兜底保存用）
@@ -360,14 +362,18 @@ function fitRecRows() {
 }
 
 // ====== 进度记忆 ======
+// 记账 id 必须用 playingId（art 实例真正在播的那部），不能用 m.value：
+// 换片流程是「先改 m.value（新片）→ 再 switchUrl」，而 ArtPlayer 的 switchUrl
+// 内部第一件事就是 pause() —— pause 事件异步触发时若按 m.value 记账，
+// 就会把旧片的播放位置写到新片的 play_pos 上（新片下次进入会直接跳到旧片的位置）。
 function saveProgress(force = false) {
-  if (!art || !m.value) return
+  if (!art || !playingId || switchSuppress) return
   const now = Date.now()
   if (!force && now - lastSaveTs < 5000) return
   lastSaveTs = now
   pendingPos = art.currentTime || 0
   pendingDur = art.duration || 0
-  window.api?.savePlayProgress({ id: m.value.id, pos: pendingPos, dur: pendingDur }).catch(() => {})
+  window.api?.savePlayProgress({ id: playingId, pos: pendingPos, dur: pendingDur }).catch(() => {})
 }
 
 // ====== 数据加载 ======
@@ -390,10 +396,27 @@ async function loadMovie(id) {
 
 function initOrSwitchPlayer() {
   const url = resolveMedia(m.value?.py)
-  if (!url) { mediaErr.value = true; return }
+  if (!url) {
+    // 新片没有视频路径：旧播放器必须先停掉并销毁。
+    // 否则上一部的画面/声音会继续播，而标题、标签已经切成了新片（2026-09-30 审计 P1）。
+    if (art) {
+      endHold()
+      try { art.destroy(false) } catch {}
+      art = null
+      playingId = null
+    }
+    mediaErr.value = true
+    return
+  }
   if (art) {
     endHold()
+    // 换片前先把旧片的最后进度落库（此刻 playingId 仍指向旧片，记的是旧片的账）
+    saveProgress(true)
+    // 挡住换片过程中 pause / timeupdate 触发的记账（它们拿到的 art.currentTime 还是旧片的），
+    // 新片 loadedmetadata 后自动恢复记账。
+    switchSuppress = true
     art.switchUrl(url)
+    playingId = m.value.id
     return
   }
   if (!boxRef.value) return
@@ -418,10 +441,12 @@ function initOrSwitchPlayer() {
     hotkey: false,          // 内置键盘关闭：方向键长按/单击语义由本页面接管
     moreVideoAttr: { playsInline: true }
   })
+  playingId = m.value.id        // 首次构造：art 从此刻起播的就是当前影片
+  switchSuppress = false
 
   art.on('video:timeupdate', () => saveProgress(false))
   art.on('video:pause', () => saveProgress(true))
-  art.on('video:ended', () => { if (m.value) { art && (art.currentTime = 0); window.api?.savePlayProgress({ id: m.value.id, pos: 0, dur: art?.duration || 0 }) } })
+  art.on('video:ended', () => { if (playingId) { art && (art.currentTime = 0); window.api?.savePlayProgress({ id: playingId, pos: 0, dur: art?.duration || 0 }).catch(() => {}) } })
   art.on('video:error', () => { mediaErr.value = true })
   art.on('video:volumechange', () => { try { localStorage.setItem('jt-vol', String(art.volume)) } catch {} })
   art.on('video:loadedmetadata', resumeIfNeeded)
@@ -429,6 +454,8 @@ function initOrSwitchPlayer() {
   // 换源（点右侧推荐）后自动起播：switchUrl 不保证自动播放（上一部处于暂停/播完时尤其），
   // 这里统一在元数据就绪后补一次 play；被浏览器自动播放策略拒绝时静默忽略。
   art.on('video:loadedmetadata', () => { try { art.play()?.catch?.(() => {}) } catch {} })
+  // 新片元数据就绪 = 换片完成：解除换片期的记账抑制（见 initOrSwitchPlayer 的 switchSuppress）
+  art.on('video:loadedmetadata', () => { switchSuppress = false })
   // 窗口尺寸变化会改变盒子宽高比（max-height 参与钳制时尤其），铺满方式需要重算
   window.addEventListener('resize', fitVideoObject)
 
@@ -517,9 +544,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', fitVideoObject)
   window.removeEventListener('resize', fitRecRows)
   endHold()
-  // 兜底保存进度（route 切走/关页都会走这里）
-  if (art && m.value && art.currentTime > 0) {
-    try { window.api?.savePlayProgress({ id: m.value.id, pos: art.currentTime, dur: art.duration || 0 }) } catch {}
+  // 兜底保存进度（route 切走/关页都会走这里）；记账同样以 playingId 为准（换片流程见 saveProgress 注释）
+  if (art && playingId && art.currentTime > 0) {
+    try { window.api?.savePlayProgress({ id: playingId, pos: art.currentTime, dur: art.duration || 0 }).catch(() => {}) } catch {}
   }
   try { art?.destroy(false) } catch {}
   art = null
