@@ -593,14 +593,17 @@ onBeforeUnmount(() => {
   aspect-ratio: 16 / 9;
   border-radius: var(--r-md);
   overflow: hidden;
-  background: #000;
+  /* 这里必须保持透明：圆角裁切边缘做抗锯齿时，容器自己的背景色会参与合成，
+     黑底会在浅色页底上渗出成一条贴着圆角的「黑线」（2026-09-30 平场实测
+     仅此一项下潜 9.8 灰阶）。黑色垫底职责全部收口到 <video> 自身（见下）。 */
+  background: transparent;
 }
 /* 圆角双保险：视频层是 GPU 合成层，个别驱动下父级 overflow:hidden 的圆角裁切会失效
-   （视频方角盖住圆角、四角出现黑楔）。让 ArtPlayer 根节点与 <video> 自身也带同样圆角，
+   （视频方角盖住圆角、四角出现黑楔）。让 ArtPlayer 根节点与 <video> 自身也带圆角，
    裁切在合成层内部完成。进全屏（art-fullscreen / 网页全屏）时恢复 0，避免全屏圆角。 */
 .player-box :deep(.art-video-player),
 .player-box :deep(.art-video-player video) {
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
 }
 .player-box :deep(.art-video-player.art-fullscreen),
 .player-box :deep(.art-video-player.art-fullscreen video),
@@ -613,9 +616,15 @@ onBeforeUnmount(() => {
    改这里一处即可，不会再出现「某个面板是方框」的违和。 */
 .player-box :deep(.art-video-player) {
   --art-border-radius: var(--r-sm);
+  /* ArtPlayer 自带 background:#000（消融实验实测），它压在圆角裁切边缘之下，
+     与容器黑底一起在浅色页底上渗出成角部黑线（仅容器透明时还剩 +9.8 灰阶，
+     这里也透明后归零）。全部黑底职责收口到最内层的 <video> 自身。 */
+  background: transparent;
 }
-/* 切换片源防白闪：换 src 的瞬间视频层可能还没有新帧可画，个别机器上合成器会把
-   未初始化的缓冲画成白色。给 <video> 自身垫黑底后，空帧期间显示的是黑色而不是白闪。 */
+/* 唯一保留的黑底：<video> 自身。
+   ① 换片源瞬间还没有新帧可画时垫黑，避免个别机器合成器把未初始化缓冲画成白闪；
+   ② object-fit: contain 的左右黑边也由它提供。
+   它是最内层、被画面内容完全覆盖，不参与圆角边缘的抗锯齿合成，不会产生黑线。 */
 .player-box :deep(.art-video-player video) {
   background: #000;
 }

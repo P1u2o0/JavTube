@@ -31,6 +31,8 @@
 <script setup>
 // 引入顶部导航栏组件
 import TopNav from '@/components/TopNav.vue'
+// 空闲预热内置播放器用（详见文件末尾 prewarmPlayer 注释）
+import Artplayer from 'artplayer'
 // 引入 Vue 的 onMounted 生命周期钩子
 import { onMounted } from 'vue'
 // 引入影片状态管理 Store
@@ -42,6 +44,39 @@ import { useImageRepair } from '@/composables/useImageRepair'
 
 // 创建影片状态管理实例
 const store = useMoviesStore()
+
+// ====== 空闲预热内置播放器（2026-09-30）======
+// 背景（CDP 实测，相对「路由切到播放页」的增量）：
+//   路由切换 → Player.vue setup 3ms → onMounted 4ms → new Artplayer() 首轮 129ms / 热态 3ms
+//   → video 元素出现 137ms → loadedmetadata 239ms → 首帧 241ms
+// 也就是说「首次」点播放时，Artplayer 的构造独占约一半耗时：它的一次性开销是
+// 注入内置样式表 + 构建控制条 DOM + 首次布局，之后再构造任何实例都只要 3ms。
+// 这里在启动流程跑完后的空闲时段构造一个离屏实例并立即销毁，把这份一次性开销
+// 提前到「用户还在首页浏览」的时候 —— 首次点播放时构造就是热态的 3ms。
+// 注：只是提前付账，不增加总量；放在空闲回调里，且延迟 1.5s 起跑，避免和首屏抢主线程。
+let playerPrewarmed = false
+function prewarmPlayer() {
+  if (playerPrewarmed) return
+  // 关闭了内置播放器（设置→播放设置→使用内置播放器=关）就没有预热的意义
+  if ((store.settings?.use_builtin_player ?? 'y') === 'n') return
+  playerPrewarmed = true
+  let box = null
+  let art = null
+  try {
+    box = document.createElement('div')
+    box.dataset.jtPrewarm = '1'
+    // 离屏 + 不参与交互：不会被看到，也不会挡住/接收任何事件
+    box.style.cssText = 'position:fixed;left:-10000px;top:0;width:640px;height:360px;pointer-events:none;'
+    document.body.appendChild(box)
+    // 不给 url：只做 UI 初始化，不触发任何媒体加载
+    art = new Artplayer({ container: box, autoplay: false, muted: true, hotkey: false })
+  } catch {
+    // 预热失败不影响任何功能：首次进播放页照原样付那 129ms
+  } finally {
+    try { art?.destroy(false) } catch {}
+    try { box?.remove() } catch {}
+  }
+}
 
 // 组件挂载后的初始化逻辑
 onMounted(async () => {
@@ -100,6 +135,13 @@ onMounted(async () => {
       useImageRepair().checkAndRepair({ silent: true }).catch(() => {})
     }, 4000)
   }
+
+  // 空闲预热内置播放器（见上方 prewarmPlayer 注释）：延后 1.5s 再登记空闲回调，
+  // 避开首屏渲染 + 首屏图片解码的高峰；requestIdleCallback 不可用时退化为定时器。
+  const onIdle = window.requestIdleCallback
+    ? (cb) => window.requestIdleCallback(cb, { timeout: 3000 })
+    : (cb) => window.setTimeout(cb, 1000)
+  if (settingsLoaded) window.setTimeout(() => onIdle(prewarmPlayer), 1500)
 })
 </script>
 
