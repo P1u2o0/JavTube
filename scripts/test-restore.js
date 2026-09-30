@@ -40,7 +40,11 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
 
   // 本次运行独有的快照（原实现「有就复用」固定文件名 → 会拿陈旧快照覆盖真库，见 _devdb.js）
   const snap = devdb.takeSnapshot('restore-test', LIVE)
-  try { TID = new SQL.Database(snap.content).exec('SELECT MIN(id) FROM movies')[0].values[0][0] } catch { }
+  // ⚠️ 一定要传副本给 sql.js：`new SQL.Database(buf)` 会经 Emscripten MEMFS 直接拿这片
+  // 内存当文件底层存储，UPDATE 会**就地改写**传入的 Buffer（2026-09-30 实测，
+  // 详见 tmp/_diag-buffer-share.js）。`_devdb` 现在虽已内部保留 pristine 兜底，
+  // 这里仍显式传副本 —— 免得再写出「快照被自己改脏」这类隐蔽事故。
+  try { TID = new SQL.Database(Buffer.from(snap.content)).exec('SELECT MIN(id) FROM movies')[0].values[0][0] } catch { }
   if (TID == null) {
     console.log('❌ 快照库里查不到任何影片行，无法定位断言目标 → 跳过（dev 库不写盘）')
     devdb.restoreSnapshot(snap)
@@ -51,7 +55,7 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
   let child = null, ws = null
   try {
     // ① 带标记的备份库
-    const mk = new SQL.Database(snap.content)
+    const mk = new SQL.Database(Buffer.from(snap.content))   // 副本！见上方 TID 处的说明
     mk.run('UPDATE movies SET pm=? WHERE id=?', [MARKER, TID])
     const markedPath = path.join(ROOT, 'tmp', '_marked-backup.db')
     fs.writeFileSync(markedPath, Buffer.from(mk.export()))
@@ -124,10 +128,25 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
     ok('⑤ 关窗后恢复内容仍在（修复生效）', readPm(LIVE) === MARKER, String(readPm(LIVE)).slice(0, 30))
   } finally {
     try { child && child.kill() } catch { }
-    // 无论成败都还原 dev 库（校验 + 拒绝写坏数据 + 未变更则不写盘，见 _devdb.js）
-    devdb.restoreSnapshot(snap)
+    // ⚠️ 先等「应用收尾落盘」沉降再还原：⑤ 断言的是「标记仍在」，而带上标记的落盘同样
+    // 满足它 —— 该断言分不清「被拦住没写」和「写了同样的内容」（2026-09-30 实测）。
+    // 还原后延迟复验，保证最后写进盘的确实是快照；不一致就有界重试。
+    await sleep(1500)
+    let restored = false
+    for (let i = 0; i < 3 && !restored; i++) {
+      devdb.restoreSnapshot(snap)
+      await sleep(1200)
+      restored = devdb.sha256(fs.readFileSync(LIVE)) === snap.sha
+      if (!restored) console.error(`   ⚠️ 第 ${i + 1} 次还原后被改写，重试…`)
+    }
+    if (restored) console.log('   延迟复验: 还原内容未再被改写 ✅')
+    else {
+      console.error('❌ dev 库未能还原到快照内容，请手工恢复: ' + snap.path)
+      process.exitCode = 1
+    }
     try { fs.rmSync(path.join(ROOT, 'tmp', '_marked-backup.db'), { force: true }) } catch { }
   }
   console.log('==== 结果: 通过 ' + pass + ' / 失败 ' + fail + ' ====')
-  process.exit(fail ? 1 : 0)
+  // 还原失败也要以非 0 退出（finally 里设的 exitCode 不能被这里覆盖掉）
+  process.exit(fail || process.exitCode ? 1 : 0)
 })();

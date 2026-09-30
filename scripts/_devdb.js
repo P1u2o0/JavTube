@@ -27,6 +27,21 @@
  *   ④ 若本次运行的真实库内容与快照完全一致（说明测试没改到库），则**不写盘** ——
  *      避免无谓地改 mtime、白白触发杀软扫描与文件索引。
  *
+ * ── ★ 第五条（2026-09-30 血案后补）：对外给的 content 必须是副本 ──────────────
+ * **`new SQL.Database(buf)` 会就地改写传入的那片内存。** sql.js 经 Emscripten 的
+ * MEMFS `createDataFile()` 直接把该 Uint8Array 当作文件的底层存储，之后任何写操作
+ * （包括只是为了造测试数据的一次 UPDATE）都会写回这个 Buffer。
+ *
+ * 实测（tmp/_diag-buffer-share.js）：干净快照 sha `c1f33f19…`，仅
+ * `new SQL.Database(snap.content)` + 一条 UPDATE + `export()`，
+ * `snap.content` 的 sha 就变成 `d4497e2b…`。
+ *
+ * 后果极严重且**静默**：test-restore.js 里「造一份带标记的备份库」这一步就把快照自己
+ * 改成了带测试标记的版本，收尾还原时把**测试数据写回了真库**；而还原函数内部的
+ * 「写回后回读比对」用的是同一个被污染的 buffer，所以照样报「OK（字节一致）」。
+ * → 因此 `takeSnapshot` 返回的 `content` 是**独立副本**，还原用的是内部 `pristine`，
+ *    两边永不共享内存。调用方可以放心把 `content` 交给 sql.js。
+ *
  * 用法：
  *     const devdb = require('./_devdb.js')
  *     const snap = devdb.takeSnapshot('persist-test', LIVE)   // 一定会抛错而不是静默降级
@@ -58,7 +73,8 @@ function backupDir() {
  *
  * @param {string} label   用途名（persist-test / restore-test / fill-scrape …）
  * @param {string} livePath 真实库路径
- * @returns {{path:string, content:Buffer, sha:string, livePath:string}}
+ * @returns {{path:string, content:Buffer, pristine:Buffer, sha:string, livePath:string}}
+ *          `content` 是交给调用方随意使用的**副本**；`pristine` 只给 restoreSnapshot 用。
  */
 function takeSnapshot(label, livePath) {
   if (!fs.existsSync(livePath)) throw new Error('dev 库不存在，拒绝运行: ' + livePath)
@@ -80,33 +96,46 @@ function takeSnapshot(label, livePath) {
   prune(label, dest)
   console.log(`已快照 dev 库（本次独有）→ ${dest}`)
   console.log(`  ${content.length} 字节  sha256=${sha.slice(0, 16)}…`)
-  return { path: dest, content, sha, livePath }
+  // ★ content 与 pristine 必须是两片独立内存：content 给调用方（可能被 sql.js 就地改写），
+  //   pristine 留给还原用。共用一片就会出现「还原时把测试数据写回真库」那条血案。
+  return { path: dest, content: Buffer.from(content), pristine: Buffer.from(content), sha, livePath }
 }
 
 /**
  * 还原：把快照写回真实库。
- * @param {{path:string, content:Buffer, sha:string, livePath:string}} snap
+ *
+ * ⚠️ 用的是 `snap.pristine`（快照时的原始字节），**不是** `snap.content`
+ * —— 后者可能已被调用方（尤其 sql.js）就地改写。旧对象没有 pristine 字段时回落用 content。
+ *
+ * @param {{path:string, content:Buffer, pristine?:Buffer, sha:string, livePath:string}} snap
  * @returns {boolean} 是否处于「库已等于快照」的状态
  */
 function restoreSnapshot(snap) {
   const live = snap.livePath
+  const src = snap.pristine || snap.content
   const cur = fs.existsSync(live) ? fs.readFileSync(live) : Buffer.alloc(0)
 
+  // ★ 若调用方把 content 交给过 sql.js，这里能察觉（不阻断，但要留痕）
+  if (snap.pristine && sha256(snap.content) !== snap.sha) {
+    console.log('\nℹ️  调用方持有的 snap.content 已被就地改写（典型原因：交给了 sql.js）；')
+    console.log('   本次还原使用的是内部原始副本，结果不受影响。')
+  }
+
   // ④ 内容没变就别写盘
-  if (cur.length === snap.content.length && sha256(cur) === snap.sha) {
+  if (cur.length === src.length && sha256(cur) === snap.sha) {
     console.log('\ndev 库未被本次运行改动，保持原文件不写盘 ✅')
     return true
   }
 
   // ③ 快照有效性校验：宁可留着被改过的库并报警，也不写回一份坏数据
-  if (!isSqlite(snap.content)) {
-    console.error('\n❌ 快照不是有效的 SQLite 文件，**拒绝写回真实库**（现场保持原样）')
+  if (!isSqlite(src) || sha256(src) !== snap.sha) {
+    console.error('\n❌ 快照副本不是有效/未篡改的 SQLite 内容，**拒绝写回真实库**（现场保持原样）')
     console.error('   快照:', snap.path)
     return false
   }
 
-  fs.writeFileSync(live, snap.content)
-  const okNow = fs.readFileSync(live).compare(snap.content) === 0
+  fs.writeFileSync(live, src)
+  const okNow = fs.readFileSync(live).compare(src) === 0
   console.log('\ndev 库已还原:', okNow ? 'OK（字节一致）' : '❌ 失败')
   if (!okNow) console.error('   请人工用这份快照恢复:', snap.path)
   else console.log('   快照留存:', snap.path)
