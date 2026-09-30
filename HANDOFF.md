@@ -2,6 +2,8 @@
 
 > 面向接手本项目的开发者 / AI 会话。**本文只讲架构与命令**。
 > 面向使用者的功能介绍见 `README.md`，许可见 `LICENSE`。
+>
+> **当前版本：v2.9.0**（2026-09-30）｜更新本文时请连同这里的版本号一起改。
 
 ---
 
@@ -32,6 +34,19 @@ npm install
 unset ELECTRON_RUN_AS_NODE      # ← 关键，否则 Electron 变纯 Node 启动失败
 npm run dev
 ```
+
+### ⚠️ 同时留意 `NODE_OPTIONS`：它注入的 fs shim 会让「报错内容本身失真」
+
+受管会话还会注入 `NODE_OPTIONS=--require .../shim/node-language-shim.cjs`。它 hook 了 `fs`
+与 `child_process`，后果是**报错信息不可信**（不是功能坏了，是错误来源被替换了）：
+
+| 现象 | 真相 | 正确做法 |
+|---|---|---|
+| `fs.rmSync` 报 `[safe-delete] ... Error during a 'trash' operation` | 看着像「文件被句柄锁死」，其实只是该 shim 把删除劫持去走回收站失败 | **`unset NODE_OPTIONS` 后重跑**，才会看到真实的 `EBUSY` / `EPERM` |
+| `spawnSync` / `execFileSync` 取输出必 `EBUSY` | 该 shim 打断了管道式 stdio | 用 `stdio: ['ignore', fd, 'inherit']`（打包脚本已封装成 `execFileCapture()`） |
+
+**判断 gating**：排查任何「删不掉 / 调不动外部命令」的问题，**先确认 `NODE_OPTIONS` 是否为空**，
+再决定是不是真故障。写临时脚本时可在开头加自愈重跑（见 `scripts/` 之外的参考实现）。
 
 ---
 
@@ -75,7 +90,8 @@ npm run clean
 ```
 
 **脚本一览**：`scripts/check-undefined.js`（未定义引用静态检查）、`scripts/scrape-smoke.js`（刮削冒烟）、
-`scripts/build-portable.js`（打包，见 §4.1）、`scripts/clean.js`（清理产物）。
+`scripts/build-portable.js`（打包，见 §4.1）、`scripts/clean.js`（清理产物）、
+**`scripts/_devdb.js`（★ dev 库快照/还原助手，见 §6 坑 17 —— 任何会写 dev 库的脚本都必须用它）**。
 
 ---
 
@@ -86,7 +102,7 @@ npm run clean
 
 解压即用、免安装，数据在 exe 同级的 `data/`，升级只需覆盖文件（别覆盖 `data/`）。
 
-一条命令做完这些事：清理历史残留 → `vite build` → `electron-builder --dir` →
+一条命令做完这些事（**6 步**）：清理历史残留 → `vite build` → `electron-builder --dir` →
 瘦身 `app.asar` → 整理目录 + 写 `使用说明.txt` → **写 exe 图标与版本信息** → 自检 → 打 zip。
 
 ### ⚠️ exe 图标：改打包配置前必读
@@ -115,20 +131,48 @@ rcedit 不在仓库里，`embedIcon()` 按此顺序找：electron-builder 缓存
 
 ### ⚠️ app.asar 会瘦身，别以为打错了
 
-electron-builder 会把**整个 node_modules** 塞进 asar（实测 84.9 MB，连它自己的 devDeps 都在内），
+electron-builder 会把**整个 node_modules** 塞进 asar（实测 **85.6 MB**，连它自己的 devDeps 都在内），
 但运行时主进程只 `require('sql.js')`，渲染层已被 Vite 打进 `dist/`。
 脚本用 `@electron/asar` 重打，只留 `dist/ + electron/ + package.json + sql.js 的两个文件`：
 
-**84.9 MB → 2.6 MB**（整包 339 MB → 257 MB）。
+**85.6 MB → 2.7 MB**（整包 339 MB → **257 MB**）。
 
-### ⚠️ 两个环境坑（都已在脚本里绕过）
+### ⚠️ 三个环境坑（前两个已在脚本里绕过）
 
 1. **`app.asar` 会被句柄占住** —— 复用同一个输出目录时，electron-builder 删不掉上次的
    `app.asar`，直接报 `The process cannot access the file because it is being used by another process`
-   并失败。**脚本改为每次用带时间戳的唯一临时目录**（`.tmp-build-<ts>`）绕开。
+   并失败。**脚本改为每次用带时间戳的唯一临时目录 `release/.build-<ts>`** 绕开。
    被占住的旧目录删不掉也没关系，重启后可清。
 2. **`rm -rf` 在受管环境会被安全删除层拦截**（路由到回收站失败即整体失败）。
    脚本统一用 Node `fs.rmSync` + 重试；**先递归删文件、再删目录**成功率最高。
+   排查这类问题时先读 §2 的 `NODE_OPTIONS` 说明 —— **报错文本可能本身是假象**。
+3. **★「改名 → 复制合并」降级是常态，且危害是静默的**（v2.7.0 / v2.8.0 / v2.9.0 **连续三版**都撞上）：
+   第 4 步 `remove(OUT_DIR)` 删不掉 `release/JavTube` 时改用 rename，而 rename 也可能 5/5 `EPERM`
+   （日志：`rename 第 5/5 次失败：EPERM` + `改用复制（源目录请稍后手动清理）`）。
+   **降级后 zip 照样生成、自检照过**，理论上会残留上一版独有的文件。
+   ⇒ **不能只看「打包成功」**，必须做下面的独立核验。
+
+### ★ 打包后必做：独立核验（三步，缺一不可）
+
+1. **asar 四层比对**：`dist` 双向哈希（asar 内 ↔ 本地）、`electron/**` + `package.json` 逐文件哈希、
+   **本期特征字符串探针**、产物目录卫生（**文件数基线 73** + 无 `.old-` / `.build-` / `.tmp` 残留）。
+   现成脚本：`tmp/verify-asar-290.js`（照抄后只改 `VERSION` 与特征字符串即可）。
+   > 特征字符串的正确取法：先在源码 grep 出**真实标识符**，再 `git grep -c <串> HEAD` 确认它在
+   > **上一版不存在**。否则探针等于没测（例如 `加载影片列表失败` 在 HEAD 里已有，只能当回归守卫）。
+2. **干净环境启动**：解压到**带空格 + 中文**的路径，用**干净环境变量 + 非项目工作目录**启动。
+   判据：日志出现 `[main] APP READY` / `initDb DONE` / `IPC OK` / `loadFile SUCCESS`、
+   `data/` 建在 exe 同级、CDP 里 `window.api` 已注入、优雅关闭（`Browser.close`）后落盘。
+   现成脚本：`tmp/verify-clean-run-290.js`。
+   > 这条专门防「开发机上跑得好好的，别人机器上双击没反应」——`node_modules/electron` 就在旁边时，
+   > 漏文件在本机也照样能跑。
+3. **`--check-only` 复核**（见下）。
+
+**独立复核任意一版（不构建）**：
+
+```bash
+node scripts/build-portable.js --check-only              # 默认复核 release/JavTube
+node scripts/build-portable.js --check-only <解压后的目录>  # 复核别人给的包
+```
 
 ### 产物自检（含「解压即用」自包含性）
 
@@ -144,15 +188,6 @@ electron-builder 会把**整个 node_modules** 塞进 asar（实测 84.9 MB，�
 - exe 版本信息已写入（`ProductName` 回读校验）
 - 开发机绝对路径泄漏检查（asar 内出现项目路径 → 警告）
 
-**独立复核任意一版（不构建）**：
-
-```bash
-node scripts/build-portable.js --check-only              # 默认复核 release/JavTube
-node scripts/build-portable.js --check-only <解压后的目录>  # 复核别人给的包
-```
-
-**发版前另外手动跑一次**：解压 zip → 双击 exe → 确认窗口能开、`data/` 在同级生成。
-
 ### 外部依赖（已实测：新电脑无需下载任何东西）
 
 | 依赖 | 是否随包 | 说明 |
@@ -166,6 +201,21 @@ node scripts/build-portable.js --check-only <解压后的目录>  # 复核别人
 系统要求写进了包内 `使用说明.txt`（Win10 1803+、避开 `C:\Program Files` 解压、
 首启 SmartScreen 提示）。
 
+### 发版后的残留清理
+
+用 `github-release-windows` 技能里的两个常驻脚本（**别再临时手写**）：
+
+```bash
+python <skill>/scripts/gh-releases-check.py --repo=<O/R> --out=<repo>/tmp/_remote_assets.json
+node   <skill>/scripts/cleanup-residue.js --repo=<repo> --keep-prefix=JavTube-v<版本>-          # 预演
+node   <skill>/scripts/cleanup-residue.js --repo=<repo> --keep-prefix=JavTube-v<版本>- --apply  # 执行
+```
+
+> **删本地 zip 前必须先在远端确认同名附件 `state == 'uploaded'`**（v1.9.0 就漏传过，
+> 本地那份是唯一副本）。脚本把这个判据做成了硬断言。
+> 另：`release/` 下的 `.build-*` 常被句柄锁死删不掉（`EBUSY` / `EPERM`），**无害**
+> —— 打包脚本开头会自愈扫掉，且 `makeZip()` 的残留检查只扫 `release/JavTube`，不会进 zip。
+
 ---
 
 ## 4.2 目录结构
@@ -176,24 +226,30 @@ javtube_dev/
 ├─ docs/                                            # 内部文档（.gitignore，仅本地保留）
 ├─ dist/                                            # Vite 产物（可随时删）
 ├─ release/                                         # 唯一构建输出根（可随时删，见 §4.1）
-├─ scripts/                                         # 构建与检查脚本
+├─ scripts/                                         # 构建与检查脚本（含 _devdb.js）
 ├─ build/icon.ico                                   # 应用图标（打包时写进 exe）
 ├─ electron/
 │  ├─ main/
-│  │  ├─ index.js            # 主进程入口：启动序列 / 窗口 / javtube-cover 封面协议注册
-│  │  ├─ ipc-utils.js        # 工具 IPC：playVideo(含文件存在校验)、扫描目录、readDuration 等
+│  │  ├─ index.js            # 主进程入口：启动序列 / 窗口 / 自定义协议注册
+│  │  ├─ constants.js        # 主进程侧常量
+│  │  ├─ ipc-utils.js        # 工具 IPC：playVideo(含文件存在校验)、扫描目录、readDuration、文件对话框
+│  │  ├─ home.js             # 首页推荐 IPC
 │  │  ├─ scraper.js          # 在线刮削：JAVBUS / JAVDB 解析（唯一出处）
 │  │  ├─ net-curl.js         # 刮削网络层：基于系统 curl（见 §6 坑 11）
 │  │  ├─ video-meta.js       # 纯 Node MP4 mvhd 时长解析（AVI/MKV 返回 0）
+│  │  ├─ cover-protocol.js   # javtube-cover:// 协议实现（★ 2.9.0 加了 LRU + ETag，见 §5）
+│  │  ├─ media-protocol.js   # javtube-media:// 视频流协议（支持 Range）
 │  │  └─ db/
-│  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移（movies / actress / websites / settings）
+│  │     ├─ init.js          # sql.js 初始化 + WASM 定位 + 建库/迁移 + ★ensureIndexes
 │  │     ├─ movies.js        # 影片 CRUD / 分页查询 / 批量操作
-│  │     ├─ settings.js      # 设置读写 + 批量保存 + 标签类别 JSON
-│  │     ├─ actress.js       # 女优表
-│  │     ├─ websites.js      # 网址表
+│  │     ├─ settings.js      # 设置读写 + 批量保存 + 标签类别 JSON + 备份/恢复/清空
+│  │     ├─ actress.js       # 女优表 + ★头像待办缓存
+│  │     ├─ images.js        # 封面缺失扫描 / 修复（★ 分片让出事件循环）
+│  │     ├─ player.js        # 播放进度 + 口味画像推荐
+│  │     ├─ cleanup.js       # 数据清理
 │  │     └─ util.js          # persistSoon 等公共工具
-│  ├─ preload/index.js       # contextBridge 暴露 window.api（40 个通道，与 main 一一配对）
-│  └─ common/ipc-channels.js # IPC 通道名常量（main / preload 共享唯一来源）
+│  ├─ preload/index.js       # contextBridge 暴露 window.api（**41 个成员 / 40 条通道**）
+│  └─ common/ipc-channels.js # IPC 通道名常量（40 条，main / preload 共享唯一来源）
 └─ src/
    ├─ router/index.js        # 静态引入全部页面（性能优化，勿改回懒加载）
    ├─ views/                 # Library(片库) Favorite(喜欢) History(历史) Detail(详情)
@@ -201,11 +257,11 @@ javtube_dev/
    │                         #   AddMovieDialog/ 下为添加影片的子表单
    ├─ components/            # MovieCard / MovieGrid / TagFilter / TagChip / StatusBar / TopNav /
    │                         #   SortDropdown / AppIcon(自绘 SVG 图标库) / SettingsDialog /
-   │                         #   AddMovieDialog.vue
+   │                         #   AddMovieDialog.vue / CoverImg.vue
    ├─ store/                 # Pinia：movies(三视图共享) / scrape / actress / website
    ├─ composables/           # useMovieList.js —— 列表页公共交互
-   ├─ styles/global.css      # 设计令牌 + 全局样式
-   └─ utils/global.js        # 番号解析、标签拆分等前端工具
+   ├─ styles/global.css      # 设计令牌（含 ★动画时长变量）+ 全局样式
+   └─ utils/global.js        # 番号解析、标签拆分、safeCall 等前端工具
 ```
 
 **数据目录**：运行时数据（`app.db` + `covers/`）写在应用数据目录下，**不入版本控制**。
@@ -214,24 +270,73 @@ javtube_dev/
 
 ## 5. 关键机制（改代码前必读）
 
+### 5.1 数据与并发
+
 | 机制 | 说明 |
 |---|---|
 | **persistSoon** | sql.js 的 `persist` 是整库同步导出（阻塞主进程）。**三个 db 模块**（movies / settings / actress）的写操作统一用 `persistSoon(db)`（定义于 `db/util.js`）。**新增写操作必须用它** |
-| **★ 落盘合并窗口** | `persistSoon` 是「前缘节流」：距上次落盘 >120ms 时**立即**落盘（单次写延迟不变），窗口内的后续写合并成窗口末尾的一次。实测同 tick 20 次写从 **20 次整库导出降到 2 次**。改这里务必跑 `npm run test:persist-coalesce` |
-| **★ 接线审计** | 「按钮点了没反应」这类问题一律先跑 `npm run audit:wiring`（检查 ①`window.api.X` 是否暴露 ②接口→通道→`ipcMain.handle` 三方对齐 ③组件 emit 是否有人监听 ④`safeCall` 用法）。改事件/接口后必跑 |
-| **稳定分页** | 所有 `ORDER BY` 必须追加唯一 tie-breaker（`, id DESC`），否则同值行跨 LIMIT/OFFSET 查询顺序不保证 → 影片在页间跳动 |
-| **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
-| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。当前 38/38 配对，返回格式 `{ ok, data?, error? }` |
-| **★ 数据库恢复需重启** | `settings:restore` 只替换磁盘文件，内存里仍是旧库 → 恢复后置 `db._blockPersist = true`，**一切落盘被 `saveDbToDisk` 拦截**（否则关窗的 `_forceSave`／10s 定时／`persistSoon` 会把刚恢复的文件覆盖回去，恢复白做）。前端弹「立即重启」→ `app:relaunch`（`app.relaunch()+exit`）。**改动这段务必跑 `npm run test:restore`** |
-| **★ 刮削来源「补全字段」** | `scrape_source='fill'`：照常走自动刮削，但落库前用 `buildScrapeUpdate(d, current, { fillOnly:true })`（`src/utils/global.js`）**只写当前为空/为 0 的字段**，已有值一律跳过；无缺失时不写库并提示「字段已完整」。0 与 `'[]'` 都算空（评分/想看/看过在库里以 0 表示无数据）。**统计字段只来自 JAVDB**：Cookie 过期或 Cloudflare 403 时会静默拿不到，故 `statsFillHint()` 会显式提示「未取到（检查 Cookie 与代理）」。单部（Detail）与批量（Library）共用同一套逻辑；补全时传 `skipPreviews` 避免重复下载已有预览图 |
+| **★ 落盘合并窗口** | `persistSoon` 是「前缘节流」：距上次落盘 >120ms 时**立即**落盘（单次写延迟不变），窗口内的后续写合并成窗口末尾的一次。<br>⚠️ **合并窗口的时间戳必须在落盘完成后（`finally`）才更新**：若在落盘**之前**打点，落盘自身耗时会污染下一次判断，窗口永远不成立（v2.9.0 修的就是这个，改前 30 次连写 = 30 次整库导出）。实测：**30 次连写从 30 次导出降到 2 次（降 93%）**。改这里务必跑 `npm run test:persist-coalesce` |
+| **★ 索引** | `db/init.js` 的 `ensureIndexes(db)` 建 5 条索引（`fl` / `cl` / `play_time` / `tjrq` / `fxrq`），幂等。<br>⚠️ 调用点必须在「拦截 `db.run` 打 dirty」**之前**：只读启动不该因建索引而把库标脏、触发一次多余落盘。<br>规模注：308 部时收益是**亚毫秒**，价值要等库更大才体现 |
 | **落盘失败会重试** | `saveDbToDisk` 返回布尔值；定时器与 `force` **仅在成功时清 `dirty`** → 一次写盘失败（磁盘满/占用）不会丢标记，下一轮还会重试 |
+| **★ 数据库恢复需重启** | `settings:restore` 只替换磁盘文件，内存里仍是旧库 → 恢复后置 `db._blockPersist = true`，**一切落盘被 `saveDbToDisk` 拦截**（否则关窗的 `_forceSave`／10s 定时／`persistSoon` 会把刚恢复的文件覆盖回去，恢复白做）。前端弹「立即重启」→ `app:relaunch`（`app.relaunch()+exit`）。**改动这段务必跑 `npm run test:restore`** |
+| **★ 启动期长任务必须分片让出** | `images.js` 的封面缺失扫描会遍历全库，纯同步会长时间占住主进程（实测阻塞峰值 **1771ms**）。现改为每 24 张 `await setImmediate` 让出一次 → 峰值降到 **≤43ms**。**任何启动期遍历都要照此办理** |
+| **稳定分页** | 所有 `ORDER BY` 必须追加唯一 tie-breaker（`, id DESC`），否则同值行跨 LIMIT/OFFSET 查询顺序不保证 → 影片在页间跳动 |
+| **★ 分页参数要有上界** | `movies.js` 的 `pageSize` 用 `Math.min(200, Math.max(1, Number(pageSize) || 20))` 夹住。否则异常参数会触发一次超大查询把界面卡死 |
+
+### 5.2 IPC 与前端数据流
+
+| 机制 | 说明 |
+|---|---|
+| **★ 接线审计** | 「按钮点了没反应」这类问题一律先跑 `npm run audit:wiring`（检查 ①`window.api.X` 是否暴露 ②接口→通道→`ipcMain.handle` 三方对齐 ③组件 emit 是否有人监听 ④`safeCall` 用法）。改事件/接口后必跑 |
+| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。**当前 40 条常量 ↔ 40 个 handler 一一配对（双向无孤儿）**，返回格式 `{ ok, data?, error? }` |
+| **★ `loadMovies` 的返回契约** | `store/movies.js` 的 `loadMovies` 返回 `{ ok, total?, stale?, error? }`，三个出口语义不同：<br>· `ok:true` 结果已写入 store；<br>· `ok:false, stale:true` = **被更晚发出的请求取代**（静默，调用方**不要**据此提示用户）；<br>· `ok:false, error` = **最新请求但失败**（弹一次提示）。<br>越界重试的递归分支**必须透传**内层返回值，否则失败被吞掉（v2.9.0 前就是这样，界面「点不动」且无任何提示） |
+| **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
 | **三视图共享 store** | 片库 / 喜欢 / 历史共用 `store.movies`——各视图挂载时必须重新加载自己视图的全量语义（片库=全量、喜欢=onlyFavorite、历史=historyOnly） |
+| **★ 列表页不要在模板里调函数** | 模板里 `resolveCover(m)` 这类调用会在每次重渲染时重新解析（3 处实测）。改为在 `computed` 里**预解析**成 `avatarSrc` / `coverSrc` 字段。URL 字符串必须逐字符不变，避免缓存失效 |
+
+### 5.3 刮削
+
+| 机制 | 说明 |
+|---|---|
+| **★ 刮削来源「补全字段」** | `scrape_source='fill'`：照常走自动刮削，但落库前用 `buildScrapeUpdate(d, current, { fillOnly:true })`（`src/utils/global.js`）**只写当前为空/为 0 的字段**，已有值一律跳过；无缺失时不写库并提示「字段已完整」。0 与 `'[]'` 都算空（评分/想看/看过在库里以 0 表示无数据）。**统计字段只来自 JAVDB**：Cookie 过期或 Cloudflare 403 时会静默拿不到，故 `statsFillHint()` 会显式提示「未取到（检查 Cookie 与代理）」。单部（Detail）与批量（Library）共用同一套逻辑；补全时传 `skipPreviews` 避免重复下载已有预览图 |
+| **刮削网络层** | 走系统 curl（`net-curl.js`）：页面请求按设置走代理并携带用户 Cookie；图片按域名决定代理/直连优先级；**不加 `-L`**（见 §6 坑 12） |
+| **★ 头像 / 封面按需算 + 缓存** | `actress.js` 的 `avatarTodoOf`（`computeAvatarTodo` + 缓存包装）是 O(影片数) 的 cast_json 解析 + O(女优数) 次文件存在性检查。缓存指纹 = `moviesKey(db) + '|' + dataDir`，TTL 60s；**`invalidateActorCaches()` 必须一并清掉它**（否则补全头像后要等 60s 才生效）。实测冷 61.6ms → 热 0.14ms |
 | **刮削进度** | 顶栏铃铛按钮（`useScrapeStore`：enqueue / begin / done / clear），红色角标=待刮削数量；单个与批量刮削都接入 |
+
+### 5.4 媒体协议与视图
+
+| 机制 | 说明 |
+|---|---|
+| **★ 封面协议 `javtube-cover://`** | `electron/main/index.js` 注册 privileged scheme，`cover-protocol.js` 解析。2.9.0 起加了 **内存 LRU**（200 项 / 32MB / 单张 4MB，超限走流式）+ **ETag（size-mtime）校验**；文件被覆盖写（重刮 / 修失效图都是**写回原路径**）时 mtime 变 → ETag 变 → 自动失效。取文件用 `fs.promises.readFile`，`ENOENT`/`EISDIR` → **404**（让 `<img>` 回落占位图，而不是等超时） |
+| **⚠️ CSP 约束** | `index.html` 的 `connect-src` **不含** `javtube-cover:` → 渲染层 `fetch('javtube-cover:...')` 会被拦截；`img-src` 已放行，`<img>` 正常。**测这个协议必须走真实 `<img>` 路径**，用 fetch 测出来的「0ms 失败」是 CSP 造成的假象 |
+| **⚠️ 写缓存头的坑** | 协议 handler 里 `u.pathname.split('/')` **忽略 query**，所以可以给同一文件挂 `?cb=<i>` 强制缓存未命中（探针常用）。另外**不要**给封面响应加 `cache-control: max-age=...`：文件会被原地覆盖写，长缓存会拿到旧图 |
+| **媒体协议 `javtube-media://`** | 视频流，支持 Range |
 | **灯箱查看器** | 详情页点击预览小图 → `<Teleport to="body">` 全屏遮罩 + 滚轮缩放 0.5-5x + 左右按钮/方向键循环 + Esc 关闭 |
 | **详情页海报区** | 框尺寸 JS 计算：`min((视口高-300px)/海报高, 视口宽×0.56/海报宽)`，小分辨率海报强制放大；窗口 resize 重算 |
-| **封面协议** | `javtube-cover://0/<base64url>` 自定义 privileged scheme（`electron/main/index.js` 注册，`cover-protocol.js` 解析） |
-| **刮削网络层** | 走系统 curl（`net-curl.js`）：页面请求按设置走代理并携带用户 Cookie；图片按域名决定代理/直连优先级；**不加 `-L`**（见 §6 坑 12） |
 | **乐观更新（仅部分路径）** | `store.toggleFav` **不是**乐观更新：先 await IPC 写库、成功后才改状态（本地 sql.js 毫秒级，无需乐观）。其余写库已延迟落盘，UI 侧可乐观翻转、失败回滚 —— 改之前先确认具体函数实现，别照抄注释 |
+
+### 5.5 ★ 动效时序（2.9.0 起有明确预算，改动画前必读）
+
+| 令牌 / 类 | 值 | 用途 |
+|---|---|---|
+| `--dur-route` | **120ms** | 路由容器淡入。它**直接等于「点击后屏幕空白」的时长**，必须极短 |
+| `--dur-enter` | **160ms** | 卡片 / 元素浮现 |
+| `--dur-base` | 220ms | 通用过渡（**不要**再用在路由/入场这类「挡住内容」的地方） |
+
+- **入场动画都带位移**（`.route-anim` / `.swap-in` 从 `translateY(6px)`、`card-in` 从 `translateY(14px)`）
+  → **自动化读几何时必须先等动画结束**，否则会读到「差 6px」这种中间态
+  （表现是断言间歇性失败、失败读数恰好 6.00px）。
+- **错峰动画必须有固定预算**：`MovieGrid.vue` 的 `staggerDelay()` 是
+  `step = clamp(round(160 / n), 2, 14)`，`delay = min(i*step, 160)`。
+  **不要**改成「固定步长 × 卡片数」（卡片多时总时长线性膨胀，用户能明显感到越来越慢）。
+- **重播抑制窗口** = 最大错峰 + 动画时长 + 余量 → 取 **420ms**。它必须**大于**错峰+动画之和，
+  否则动画播到一半被 `animation: none` 打断会「啪」地跳到终态。
+- **`prefers-reduced-motion`**：压缩 `animation-duration` 的同时**必须一起压 `animation-delay`**，
+  否则「减少动画」下卡片仍然延迟出现（2.9.0 修的）。
+- **`will-change` 要收敛**：常驻 `will-change` 会把元素提升到独立合成层，25 个以上反而拖慢。
+  现按「可见卡片数」有条件开启（`Home.vue` 用 `rawAbs <= 4`）。
+  ⚠️ 判断掉帧必须用**同进程交替 A/B/A/B**，不能「先跑完 A 再跑 B」—— 顺序设计会把离屏窗口的
+  调度/GC 噪声误判成模式差异（这条踩过，得出了相反结论）。
 
 ---
 
@@ -273,6 +378,32 @@ javtube_dev/
     `downloadImage` 按域名决定优先顺序、另一种兜底
 15. **回滚 / 脚本分段替换文件后必须 grep 验证 + build**——部分应用状态（残留大括号 / emits）会导致编译错误
 16. **凡涉及模块加载的改动必须跑 `npm run dev` 冒烟**——`node --check` 与 `vite build` 查不出 require 路径错误
+17. **★★ dev 库（`node_modules/electron/dist/data/app.db`）是真实数据，任何会写它的脚本都要先备份**
+    （跑 `scripts/test-*.js`、`tmp/verify_*.js`、任何起 Electron 并触发写操作的探针）。
+    统一用 **`scripts/_devdb.js`**：①每次运行新建**本次独有**快照（时间戳+pid，绝不复用固定文件名）
+    ②落盘后 SHA-256 回读校验 ③还原前验 SQLite 文件头，坏快照**拒绝写回** ④库未变更不写盘。
+    > **为什么立这条**：原三个回归脚本是「固定文件名备份 + `if(!exists) copy` 有就复用 + 结束无条件写回」，
+    > 备份一旦陈旧，之后每次运行都会把**陈旧快照写回真库**（实测旧备份 45KB / 9 天前 vs 真库 610KB），
+    > 真的因此丢过库里新建的 500 条测试影片。**禁止**手工 `cp` 覆盖 dev 库、`git checkout`/`stash` 碰它。
+18. **★ 自动化断言「间歇性失败」时先怀疑探针口径，别先怀疑产品**：
+    ① 读几何前要等动画结束（入场动画带位移，见 §5.5）；
+    ② 等动画不要用「所有动画都不在 running」——`bp-pulse` 是 `infinite`，永远等不到，要按**具体选择器**等；
+    ③ 用同一份 dist 复跑确认是「稳定失败」还是「抖动」。
+19. **★ `check-undefined` 的行号曾整体偏移 117 行（2026-09-30 已修）**：
+    `stripCommentsAndStrings()` 删块注释/模板字符串时把换行一起删了，而脚本后面是拿
+    `src.split('\n')` 的**下标当行号**输出 → 之后所有行号前移。
+    **改动任何「先清洗源码再报行号」的工具，都要保证行数不变**（删内容时保留换行）。
+    另：`scraper.js` 的两个 `_l_(` / `_s_(` 提示是**误报** —— 那是解析 JAVBUS 预览图 URL 的
+    正则字面量（`_l_` = 原图 / `_s_` = 120×90 小图），不是函数调用。**当前 `check:undefined` 全绿（仅这 2 条已知误报）**。
+20. **★★ 做体检/清理类操作时，`FAIL` 不等于什么都没发生**（2026-09-30 实测）：
+    同一次清理里，3 个 256.7 MB 的目录被判为删除失败，事后实测只剩 **7 个文件 / 15 MB** ——
+    删除动作在报失败之前**已经把大部分内容删掉了**（`release/` 由 990 MB 降到 414 MB，实际回收 576 MB）。
+    ⇒ ① **报告回收体积必须事后 `du` 实测**，不能拿「失败条数」当结论；
+    ② 反过来，**「删失败了 ⇒ 数据完好」是不成立的推断** —— 这正是「删 zip 前先在远端确认」
+    「更新本地正式版前先备份」这两条铁律必须硬执行的理由。
+21. **★ 发布包特征字符串探针的取法**：先在源码 grep 出真实标识符，再
+    `git grep -c <串> HEAD` 确认它在**上一版不存在**。已在 HEAD 里存在的串（如 `加载影片列表失败`）
+    只能当回归守卫，**不能当「本版代码已打进包」的证据**。
 
 ---
 
@@ -286,6 +417,8 @@ javtube_dev/
 4. **多值字段用中文逗号「，」分隔**（标签字段约定）
 5. **数据库是 sql.js，不是 better-sqlite3**：SQL 全走主进程异步 IPC
 6. **提交信息不得出现账号、token、Cookie 等凭据，也不得出现本机绝对路径**
+7. **动画时长一律用 §5.5 的令牌**，不要在组件里写魔法数字；新增动画先问「它是在挡内容吗」，
+   是就必须短（≤120ms）
 
 ---
 
@@ -296,6 +429,14 @@ javtube_dev/
 - GPU 驱动异常：先 `set JAVTUBE_DISABLE_GPU=1 && npm run dev` 排除
 - 数据清空测试：设置弹窗 → 关于 → 清空数据库（二次确认）
 - 交互卡顿排查顺序：① 是否新写操作没走 `persistSoon` ② 是否同步 persist 残留
-  （`grep -n "persist(db)" electron/main/`）
+  （`grep -n "persist(db)" electron/main/`）③ 是否有启动期长任务没分片让出（§5.1）
+- **离屏窗口跑探针**（不抢焦点）：`setBounds({x:-3200,y:-3200})` + `setSkipTaskbar` + `blur` +
+  `setFocusable(false)`，并屏蔽 `focus` / `moveTop` / `setAlwaysOnTop`；
+  只杀自己 spawn 的 PID 树（`taskkill /F /T /PID`）
+- **探针铁律**：注入脚本自包含、`awaitPromise:true`、末尾 `process.exit()`；
+  **禁用 `eval` / `new Function`**（CSP `script-src 'self'`）
+- **启动前记得**：`unset ELECTRON_RUN_AS_NODE`；排查「删除失败/命令调不动」时再
+  `unset NODE_OPTIONS`（见 §2）
 - Git 推送若直连超时，可为仓库单独配置代理（仅本仓库生效）：
   `git config http.proxy <代理地址> && git config https.proxy <代理地址>`
+  （⚠️ 上传大文件到 `uploads.github.com` 反而**不要**走代理，直连快得多）
