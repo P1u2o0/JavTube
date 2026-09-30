@@ -368,6 +368,14 @@ javtube_dev/
 > 取证脚本：`tmp/probe-switch-media-error{,2,3}.js`（根因）、
 > `tmp/verify-media-error-fix.js`（修复四段验证：不误报 / 不漏报 / 重试 / 换片恢复）。
 
+### 5.7 设置面板展开前后的宽度一致性（2026-09-30 修）
+
+ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(250)`」当面板宽度：
+根面板首项 `$parent` 为 undefined → 250，而**内置 selector 项**（倍速/画面比例/翻转）的
+`width = SETTING_ITEM_WIDTH(200)` ⇒ 点开倍速后面板 250→200、左右各内缩 25px，选项行变窄。
+修法一行（`Player.vue` 导入区）：`Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH`。
+实测探针：`tmp/probe-playbackrate-size.js`（顺带量条目矩形/截图，改设置面板 UI 时可直接复用）。
+
 ---
 
 ## 6. 已知坑（勿重蹈）
