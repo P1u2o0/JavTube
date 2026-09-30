@@ -144,6 +144,25 @@ function imageReferer(url, fallback = '') {
 }
 
 /**
+ * 为一个「目标文件」生成本次下载专用的临时文件名。
+ *
+ * 背景（2026-09-30 审计）：此前临时文件名固定为 `<目标路径>.tmp`，而封面/预览图的
+ * 目标路径只由番号决定 —— 同一番号若有两个刮削流程同时在跑（例如批量刮削进行中
+ * 又手动点了同一部的刮削），两个 curl 会写同一个临时文件，互相覆盖/交叉写入，
+ * 最终 rename 出去的可能是半旧半新的坏图（魔数校验只认文件头，放行得了）。
+ * 加进程号 + 时间戳 + 自增序号后，各次下载各自持有独立临时文件，互不干扰。
+ * 文件名形如 `<目标名>.<唯一串>.tmp`（仍以 `.tmp` 结尾，保持「临时文件」语义，
+ * 便于人工识别与将来做清理）。
+ * @param {string} targetAbs - 目标文件的绝对路径
+ * @returns {string} 临时文件绝对路径
+ */
+let _tmpSeq = 0
+function tmpPathFor(targetAbs) {
+  const token = `${process.pid.toString(36)}${Date.now().toString(36)}${(++_tmpSeq).toString(36)}`
+  return `${targetAbs}.${token}.tmp`
+}
+
+/**
  * 下载图片并保存到本地文件（经系统 curl，默认直连不走代理）。
  *
  * 实测：DMM 图床（awsimgsrc/pics.dmm.co.jp）直连 200、经代理连接失败；
@@ -192,8 +211,8 @@ async function downloadPreviewList(list, { cleanPh, dataDir, coverDir, referer, 
     const pExt = String(list[i]).match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
     const relPath = path.join(coverDir || COVER_DIR, 'previews', `${cleanPh}-${i + 1}${pExt}`)
     const abs = path.join(dataDir, relPath)
-    // 先下到 .tmp、校验通过再改名：下载失败/内容无效时，不会破坏这个位置原有的好图
-    const tmp = abs + '.tmp'
+    // 先下到唯一临时文件、校验通过再改名：下载失败/内容无效时，不会破坏这个位置原有的好图
+    const tmp = tmpPathFor(abs)
     try {
       // Referer 按本条 URL 的 host 决定（JAVBUS→JAVDB 补全来的图要带 JAVDB 的 Referer）
       await downloadImage(list[i], tmp, imageReferer(list[i], referer), proxy)
@@ -484,26 +503,61 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 遍历搜索结果项，查找匹配的影片
   const items = resultsHtml.split('<div class="item">')
   let detailUrl = ''
-  for (const item of items) {
-    if (type === '欧美') {
-      // 欧美番号格式特殊（如 XX.01.01.01），需特殊匹配逻辑
-      const pattern = /\d{2}\.\d{2}\.\d{2}/
-      const tPh = ph.replace(/ /g, '')
-      const match = tPh.match(pattern)
-      if (match) {
-        const nStr = match[0].replace(/\./g, '-')
-        const sStr = tPh.split('.' + match[0]).join('')
-        // 同时匹配日期部分和前缀部分
+  // 番号归一：忽略大小写与空格/连字符差异（"ipx 247" / "IPX_247" 等价于 "IPX-247"）
+  const normCode = (s) => String(s || '').toUpperCase().replace(/[\s_\-–—]/g, '')
+  const hrefOf = (item) => inteHandler(item, '<a href="', '"', [0, 0, 0])
+  if (type === '欧美') {
+    // 欧美番号格式特殊（如 XX.01.01.01），需特殊匹配逻辑
+    const pattern = /\d{2}\.\d{2}\.\d{2}/
+    const tPh = ph.replace(/ /g, '')
+    const match = tPh.match(pattern)
+    if (match) {
+      const nStr = match[0].replace(/\./g, '-')
+      const sStr = tPh.split('.' + match[0]).join('')
+      // 同时匹配日期部分和前缀部分
+      for (const item of items) {
         if (item.toUpperCase().includes(nStr.toUpperCase()) && item.toUpperCase().includes(sStr.toUpperCase())) {
-          detailUrl = inteHandler(item, '<a href="', '"', [0, 0, 0])
+          detailUrl = hrefOf(item)
           break
         }
       }
-    } else {
-      // 非欧美番号直接匹配
-      if (item.toUpperCase().includes(ph.toUpperCase())) {
-        detailUrl = inteHandler(item, '<a href="', '"', [0, 0, 0])
-        break
+    }
+  } else {
+    // ★ 2026-09-30 审计修复：原实现直接对**整块结果项 HTML** 做子串匹配
+    // （item.includes(ph)），只要标题/标签里出现过该番号就会命中 ——
+    // 于是「IPX-247」可能选中一部标题里带 IPX-247 的合集/合辑片，把合集的封面、
+    // 标签、演员写进这一部（实测 JAVDB 搜索的首条常常不是目标番号）。
+    // 改为三级：① 结果项自己的番号字段（<strong>IPX-247</strong>）全等 —— 最可靠；
+    //          ② 番号字段子串（兼容站点把番号写成带后缀的形态）；
+    //          ③ 整块子串（保持原有召回，作为结构与写法都变化时的兜底）。
+    // 只提精度、不减召回：命中①时不再可能被更靠前的「假命中」抢走。
+    const target = normCode(ph)
+    // 取出结果项里**所有** <strong> 文本：JAVDB 把番号放在第一个 <strong>（video-title 里），
+    // 但只看第一个太脆 —— 站点一旦在番号前插别的 <strong>（角标/标签）就会失配，
+    // 改成「任意一个 strong 成立即命中」。
+    const strongCodes = (item) => {
+      const out = []
+      const re = /<strong>([\s\S]*?)<\/strong>/g
+      let m
+      while ((m = re.exec(item))) out.push(normCode(m[1]))
+      return out
+    }
+    // ① ② 必须要求 target 非空：调用方传空番号进来时 '' 与任何空字段都「相等」，
+    // 会把搜索结果的**首条**当命中（静默抓错片子）。此时直接落到 ③，行为与原实现一致。
+    if (target) {
+      for (const item of items) {
+        if (strongCodes(item).includes(target)) { detailUrl = hrefOf(item); break }
+      }
+      if (!detailUrl) {
+        for (const item of items) {
+          if (strongCodes(item).some(c => c && c.includes(target))) { detailUrl = hrefOf(item); break }
+        }
+      }
+    }
+    if (!detailUrl) {
+      const up = ph.toUpperCase()
+      for (const item of items) {
+        if (item.toUpperCase().includes(up)) { detailUrl = hrefOf(item); break }
       }
     }
   }
@@ -838,7 +892,7 @@ async function scrapeMovie(ph, {
             // 先下到 .tmp、校验通过再改名（2026-09-27）：
             // 校验失败时**绝不能删掉这个位置原有的好封面** —— 直接覆盖目标路径再删，
             // 会把用户库里本来正常的封面弄丢（开发中实测踩过）。
-            const tmpSave = savePath + '.tmp'
+            const tmpSave = tmpPathFor(savePath)
             await downloadImage(result.cover, tmpSave, imageReferer(result.cover, imgReferer), proxy)
             // 内容校验：curl 拿到 200 也可能写出坏文件 —— 截断成全零
             // （实测 SONE-929 是 158KB 全零）、或把图床的错误页当图片存下来。
@@ -859,6 +913,10 @@ async function scrapeMovie(ph, {
             // movies.cover —— 之后离线时封面直接空白，且 db/images.js 会把它当相对路径
             // path.join(dataDir,'https://…')，永远判定「坏封面」、每次启动白修一次。
             result.cover = ''
+            // ★ 2026-09-30 审计补：抛异常时下载可能已经写出半截临时文件（curl 进程被杀、
+            // 图床中途断开），此前只有「内容校验不通过」那条路径删临时文件，异常路径漏了
+            // —— 会在 covers/ 里留下永久垃圾。这里补删。
+            try { if (fs.existsSync(tmpSave)) fs.unlinkSync(tmpSave) } catch {}
             console.warn(`[scrape] ${cleanPh} 封面下载失败，已丢弃远程地址: ${e.message}`)
           }
         }
@@ -889,7 +947,7 @@ async function scrapeMovie(ph, {
             // 原实现直接写 abs —— 而该路径通常已有上次下载的好头像，且头像在 cast_json 里
             // 是**跨影片共享**的：本次下载失败/中断会把好头像写坏或 unlink 掉，导致该女优
             // 所有影片的头像一起变破图。（封面/预览图此前已改成 .tmp，只有头像漏了。）
-            const tmpAvatar = abs + '.tmp'
+            const tmpAvatar = tmpPathFor(abs)
             try {
               await downloadImage(c.avatar, tmpAvatar, imageReferer(c.avatar, imgReferer), proxy)
               // 内容校验：下载到坏文件（截断/全零、错误页）时不留破图，一律当作「无头像」，
@@ -953,4 +1011,4 @@ async function scrapeMovie(ph, {
   return { ok: false, error: lastError || '未找到该番号的信息' }
 }
 
-module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile, isGifRenamed, inspectImage }
+module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile, isGifRenamed, inspectImage, tmpPathFor }

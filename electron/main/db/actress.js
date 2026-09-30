@@ -22,7 +22,7 @@ const { COVER_DIR } = require('../constants')
 // 头像来源（JAVDB 演员页）+ 图片下载/内容校验（含主站图床走代理的判断）
 // isGifRenamed 统一放在 scraper.js（与 isImageFile 同处，图片判定只此一份）：
 // 女优头像与封面/预览图共用同一条「GIF 伪装成 .jpg」判据，避免两处口径漂移。
-const { fetchActorAvatar, downloadImage, isImageFile, isGifRenamed } = require('../scraper')
+const { fetchActorAvatar, downloadImage, isImageFile, isGifRenamed, tmpPathFor } = require('../scraper')
 
 /**
  * 热度分档（演员页火焰配色）：按「前 X%」从热到冷。
@@ -511,8 +511,9 @@ function registerActressIpc(ipcMain, db, dataDir) {
       const rel = cur && cur.toLowerCase().endsWith(ext) ? cur : `${COVER_DIR}/actress/${got.id}_${gender}${ext}`
       const abs = path.join(dataDir, rel)
       fs.mkdirSync(path.dirname(abs), { recursive: true })
-      // 先下到 .tmp、校验后再改名：中途失败不会破坏已有头像
-      const tmp = abs + '.tmp'
+      // 先下到唯一临时文件、校验后再改名：中途失败不会破坏已有头像；
+      // 唯一名避免「同一女优并发补全」时两个 curl 写同一个临时文件（2026-09-30 审计）
+      const tmp = tmpPathFor(abs)
       await downloadImage(got.url, tmp, `https://javdb.com/actors/${got.id}`, proxy)
       if (!isImageFile(tmp)) {
         try { fs.unlinkSync(tmp) } catch {}
