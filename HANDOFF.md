@@ -67,6 +67,7 @@ npm run scrape:test                 # 可传番号：npm run scrape:test -- <番
 
 # ★ 数据库恢复回归（改 settings:restore / init.js 落盘逻辑后必跑；约 40s，自带备份还原）
 npm run test:restore                # 断言：恢复后关窗不会被内存旧库覆盖
+                                    # 跑完会「延迟复验 + 有界重试」确认 dev 库确实等于快照，不通过则非 0 退出
 npm run test:persist                # 断言：普通会话的定时/关窗落盘没被误伤
 
 # ★ 补全字段逻辑（改 buildScrapeUpdate / 刮削来源相关代码后必跑）
@@ -82,6 +83,12 @@ npm run test:persist-coalesce
 # ★ dev 库善后（跑完探针/回归后，看「到底写了什么」/ 精确回滚；见 §8）
 node scripts/devdb-diff.js [快照.bak]      # 不传参数取 tmp/_devdb 里最新一份；只报字段级差异
 node scripts/devdb-restore.js <快照.bak>   # 逐字节回滚，自带 SQLite 头校验 + 回读比对
+
+# ★ _devdb 助手自检（改 scripts/_devdb.js 后必跑；只用 tmp 假库，绝不碰真库）
+node tmp/test-devdb.js                     # 19 项：快照独有性、拒绝写坏数据、content 被改写仍用 pristine…
+
+# ★ 怀疑「有进程偷偷改 dev 库」时的看门狗（每 250ms 记 sha/长度/mtime，只打变化点）
+node tmp/_watch-devdb.js                   # 另开一个终端跑测试，回来读 tmp/_watch.log
 
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
@@ -381,6 +388,28 @@ ArtPlayer `resize()` 取「当前面板首项 `$parent.width || SETTING_WIDTH(25
 ---
 
 ## 6. 已知坑（勿重蹈）
+
+### ★★ sql.js 会**就地改写**你传给它的那个 Buffer（2026-09-30 血案）
+
+`new SQL.Database(buf)` 经 Emscripten 的 MEMFS `createDataFile()` **直接拿这片内存当文件的
+底层存储**，之后任何写操作（哪怕只为造测试数据的一次 UPDATE）都会写回 `buf` 本身。
+实测（`tmp/_diag-buffer-share.js`）：干净快照 sha `c1f33f19…`，仅一次
+`new SQL.Database(snap.content)` + UPDATE + `export()`，`snap.content` 就变成 `d4497e2b…`。
+
+**踩法**：`scripts/test-restore.js` 用 `snap.content` 造「带标记的备份库」，这一步把快照
+自己改成了带标记的版本 → 收尾还原时**把测试数据写回了真库**，而还原函数内部的
+「写回后回读比对」用的还是同一个脏 buffer，所以照样报「OK（字节一致）」。
+
+- **规矩**：凡是把 `Buffer` 交给 sql.js（`new SQL.Database` / `db.run` 前的输入），
+  一律传 `Buffer.from(x)` 副本。**读也只读副本**。
+- `scripts/_devdb.js` 已加固：`takeSnapshot` 返回的 `content` 是副本，内部另存 `pristine`
+  原始字节；`restoreSnapshot` 一律以 `pristine` 为真源并校验其未被篡改（否则**拒绝写回**），
+  发现调用方的 `content` 被改写会留痕提示。
+- **排查手法**：怀疑「有进程偷偷改库」时，用 `tmp/_watch-devdb.js`（每 250ms 记
+  sha16 + 字节数 + mtime，只打印变化点）边跑边看 —— 本次就是靠它发现「mtime 变了但 sha
+  一直不变」，从而定位到「还原写回的本来就是脏内容」，而不是什么外部进程。
+- 附带教训：`test:restore` 的 ③④⑤ 曾断言写死 `movies.id=8`，而 dev 库 id 已漂移到 10..318
+  → 标记写不进任何行，三条断言**永远是假失败**（跑了很久都没人发现）。**回归脚本里不要写死 id**。
 
 ### safeCall 只吃 Promise（2026-09-21 修）
 
