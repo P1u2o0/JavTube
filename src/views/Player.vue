@@ -839,10 +839,9 @@ onBeforeUnmount(() => {
   padding-right: 8px;
 }
 .rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
-/* 最大化：右列不显示滚动条（布局为正好 6 条铺满；滚轮仍可滚动查看更多推荐）。
-   窗口化（非 .maximized）保持系统滚动条——显示不全时提示还有内容可滚。 */
-.player-page.maximized .rec-list { scrollbar-width: none; }
-.player-page.maximized .rec-list::-webkit-scrollbar { width: 0; height: 0; }
+/* 最大化：右列正好 6 条，不显示滚动条、也不允许滚动（滚轮滚不动，内容不会跑）。
+   要看第 7 条以后的推荐就还原窗口 —— 窗口化时是正常滚动列表（overflow auto + 滚动条）。 */
+.player-page.maximized .rec-list { overflow: hidden; }
 .rec-item {
   display: flex;
   gap: 10px;
