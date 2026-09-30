@@ -117,6 +117,14 @@ import AppIcon from '@/components/AppIcon.vue'
 import { resolveMedia, resolveCover, splitTags, dataDirRef, favLock, favUnlock } from '@/utils/global'
 import { useMoviesStore } from '@/store/movies'
 
+// 设置面板「倍速」展开前后宽度跳变的修复（2026-09-30，实测 tmp/probe-playbackrate-size.js）：
+// ArtPlayer resize() 取「当前面板首项的 $parent.width || SETTING_WIDTH(250)」当面板宽度；
+// 根面板首项 $parent 为 undefined → 250，而内置倍速项 width = SETTING_ITEM_WIDTH(200)，
+// 于是点开倍速后整个面板从 250 缩到 200、左右各内缩 25px，选项行肉眼可见地变窄。
+// 把内置项宽度钉到与根面板回落值一致，两个视图就同宽了（也顺带覆盖之后可能启用的
+// 画面比例 / 翻转等内置 selector 项）。
+Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH
+
 const route = useRoute()
 const router = useRouter()
 const store = useMoviesStore()
