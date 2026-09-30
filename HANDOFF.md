@@ -79,6 +79,10 @@ npm run audit:wiring                # 死按钮、死事件、未暴露接口、
 # ★ 落盘合并窗口单测（改 db/util.js persistSoon 后必跑）
 npm run test:persist-coalesce
 
+# ★ dev 库善后（跑完探针/回归后，看「到底写了什么」/ 精确回滚；见 §8）
+node scripts/devdb-diff.js [快照.bak]      # 不传参数取 tmp/_devdb 里最新一份；只报字段级差异
+node scripts/devdb-restore.js <快照.bak>   # 逐字节回滚，自带 SQLite 头校验 + 回读比对
+
 # 主进程语法检查（批量）
 for f in electron/main/*.js electron/main/db/*.js; do node --check "$f"; done
 
@@ -473,6 +477,11 @@ javtube_dev/
   **禁用 `eval` / `new Function`**（CSP `script-src 'self'`）
 - **启动前记得**：`unset ELECTRON_RUN_AS_NODE`；排查「删除失败/命令调不动」时再
   `unset NODE_OPTIONS`（见 §2）
+- ⚠️ **`tmp/verify_player_ui.js` 会写 dev 库的播放记录**（点喜欢改 `cl`、进播放页触发 `recordPlay`
+  → 写 `play_count` / `play_time` / `play_pos`）。它只还原 `cl`，**播放记录会留在库里** ——
+  实测跑一次就让 id 10/11/68 三行的 `play_count` +1、库 sha 由 `c1f33f19` 变 `a1f2e641`。
+  ⇒ **跑它之前也要先快照**（它自己不带 `_devdb`）。事后比对/回滚：
+  `node tmp/_devdb_diff2.js <快照>`（字段级差异）/ `node tmp/_devdb_restore.js <快照>`（逐字节回滚）。
 - Git 推送若直连超时，可为仓库单独配置代理（仅本仓库生效）：
   `git config http.proxy <代理地址> && git config https.proxy <代理地址>`
   （⚠️ 上传大文件到 `uploads.github.com` 反而**不要**走代理，直连快得多）
