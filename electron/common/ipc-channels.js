@@ -53,11 +53,6 @@ module.exports = {
   // 立即重启应用（恢复数据库后需要重启才能加载新数据，见 settings:restore）
   APP_RELAUNCH: 'app:relaunch',
 
-  // === 窗口 ===
-  // 最大化状态：播放页右列在最大化时切换为「正好 6 条 + 隐藏滚动条」布局
-  WIN_IS_MAXIMIZED: 'window:isMaximized',
-  WIN_MAXIMIZED_CHANGED: 'window:maximizedChanged',
-
   // === 工具 ===
   UTILS_PLAY_VIDEO: 'utils:playVideo',
   UTILS_SCAN_DIR: 'utils:scanDir',

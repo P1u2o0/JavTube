@@ -303,24 +303,5 @@ contextBridge.exposeInMainWorld('api', {
    * 必须重启才能加载恢复后的数据（重启前主进程已禁止落盘，不会覆盖恢复结果）。
    * @returns {Promise<{ok: boolean}>}
    */
-  relaunchApp: () => ipcRenderer.invoke(IPC.APP_RELAUNCH),
-
-  // === 窗口接口 ===
-
-  /**
-   * 查询主窗口是否处于最大化
-   * @returns {Promise<boolean>}
-   */
-  isWindowMaximized: () => ipcRenderer.invoke(IPC.WIN_IS_MAXIMIZED),
-
-  /**
-   * 订阅窗口最大化状态变化（主进程在 maximize / unmaximize / 页面加载完成时推送）
-   * @param {(maximized: boolean) => void} cb - 状态回调
-   * @returns {() => void} 取消订阅函数（组件卸载时调用，防泄漏）
-   */
-  onWindowMaximized: (cb) => {
-    const handler = (_e, maximized) => cb(maximized)
-    ipcRenderer.on(IPC.WIN_MAXIMIZED_CHANGED, handler)
-    return () => ipcRenderer.removeListener(IPC.WIN_MAXIMIZED_CHANGED, handler)
-  }
+  relaunchApp: () => ipcRenderer.invoke(IPC.APP_RELAUNCH)
 })

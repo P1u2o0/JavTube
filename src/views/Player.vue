@@ -12,7 +12,7 @@
 -->
 
 <template>
-  <div class="player-page" :class="{ maximized: isMaximized }" tabindex="-1">
+  <div class="player-page" tabindex="-1">
     <!-- ============ 左列：标题 + 播放器 + 女优信息 ============ -->
     <div class="main-col">
       <!-- 标题行（播放器上方）：番号 + 片名。
@@ -81,8 +81,10 @@
     <!-- ============ 右列：相关推荐 ============ -->
     <aside ref="recColRef" class="rec-col">
       <div class="rec-head">相关推荐</div>
-      <!-- recVersion：每次推荐结果更新自增 → 列表整体淡入（切换影片时丝滑过渡） -->
-      <div class="rec-list swap-in" :key="'recs-' + recVersion">
+      <!-- recVersion：每次推荐结果更新自增 → 列表整体淡入（切换影片时丝滑过渡）。
+           注意：key 变化会重建整个列表元素，所以 --rec-gap 必须用响应式绑定下发，
+           不能靠在 onMounted 里对元素写行内样式（重建后会丢）。 -->
+      <div class="rec-list swap-in" :key="'recs-' + recVersion" :style="{ '--rec-gap': recGap }">
         <div v-if="!recs.length && !recLoading" class="rec-empty">暂无推荐</div>
         <div v-for="r in recs" :key="r.id" class="rec-item" @click="goMovie(r.id)">
           <div class="thumb">
@@ -118,10 +120,9 @@ const store = useMoviesStore()
 
 // ====== 状态 ======
 const boxRef = ref(null)
-const recColRef = ref(null)    // 右列容器：最大化模式下按可用高度反算单条尺寸
+const recColRef = ref(null)    // 右列容器：整条布局按列表可用高反算条目间距
+const recGap = ref('0px')      // 条目间距（fitRecRows 反算）→ :style 绑给 .rec-list
 const m = ref(null)            // 当前影片行（movies 表）
-const isMaximized = ref(false) // 窗口是否最大化（决定右列布局：6 条无滚动条 vs 滚动列表）
-let offMaximized = null        // 取消订阅窗口最大化状态变化
 const recs = ref([])           // 相关推荐列表
 const recLoading = ref(false)
 const recVersion = ref(0)      // 推荐结果版本号：自增即触发右侧列表淡入过渡
@@ -334,23 +335,29 @@ function fitVideoObject() {
   v.style.objectFit = off <= 0.08 ? 'cover' : 'contain'
 }
 
-// ====== 最大化下的右列布局：正好 6 条铺满 + 无滚动条 ======
-// 1080p 最大化时右列列表可用高 ~870px，6 条标称尺寸（149.5px/条）需 897px 放不下，
-// 等比缩小单条（海报高度约 -3%，肉眼无感）让 6 条正好占满；滚动条隐藏（CSS），
-// 滚轮仍可滚动查看第 7 条以后的推荐。还原窗口后清除覆盖，恢复标称尺寸 + 正常滚动条。
+// ====== 右列整条布局：可见区域只放「完整的条」，零头摊进条目间距 ======
+// 列表可用高几乎不可能被 149.5px 的整条高度整除：直接铺会裁出半张海报，
+// 锁整条又会在底部留空白（两种都做过，用户都不满意）。
+// 这里按可用高反算能放下几整条 k，把零头 (listH - k*整条高) 均摊成条目间额外
+// 间距写进 --rec-gap：可见区域 = k 条完整海报、底边无空白，第 k+1 条正好从列表
+// 底边之下开始（滚动能看，折叠处不露半截）。
+// 注意：条目是 border-box，height 显式钉死为整条高，首条的 padding-top:0 不会
+// 缩小盒高，所以每条占位恒为 nominal，零头就是 listH % nominal。
+// 推荐最多 10 条（加载处截断），窗口化/最大化行为一致：都是可滚动列表。
 function fitRecRows() {
-  const col = recColRef.value
-  if (!col) return
-  if (!isMaximized.value) { col.style.removeProperty('--rec-thumb-h'); return }
-  const list = col.querySelector('.rec-list')
+  const list = recColRef.value?.querySelector?.('.rec-list')
   if (!list) return
-  const cs = getComputedStyle(col)
+  const cs = getComputedStyle(recColRef.value)
   const pad = parseFloat(cs.getPropertyValue('--rec-pad')) || 6
-  const nominal = parseFloat(cs.getPropertyValue('--rec-thumb-h')) || 137.5
-  const h = Math.min(nominal, list.clientHeight / 6 - pad * 2)
-  if (h > 40) col.style.setProperty('--rec-thumb-h', h.toFixed(2) + 'px')
+  const nominal = parseFloat(cs.getPropertyValue('--rec-thumb-h')) + pad * 2   // 整条高（= 每条占位）
+  if (!(nominal > 0)) return
+  const listH = list.clientHeight
+  if (!(listH > 0)) return
+  const k = Math.max(1, Math.floor(listH / nominal))          // 可见的完整条数
+  const gap = k > 1 ? (listH - k * nominal) / (k - 1) : 0     // 零头均摊进 k-1 个间隙
+  // 写成响应式 ref：列表带 :key 会随推荐结果重建，行内样式会丢，必须走 :style 绑定
+  recGap.value = Math.max(0, gap).toFixed(2) + 'px'
 }
-watch(isMaximized, () => nextTick(fitRecRows))
 
 // ====== 进度记忆 ======
 function saveProgress(force = false) {
@@ -449,11 +456,14 @@ function fmtPos(sec) {
 async function loadRecommendations(id) {
   recLoading.value = true
   try {
-    const r = await window.api.getRecommendations(id, 14)
-    recs.value = r?.ok ? (r.data || []) : []
+    const r = await window.api.getRecommendations(id, 10)
+    recs.value = r?.ok ? (r.data || []).slice(0, 10) : []
   } catch { recs.value = [] }
   recLoading.value = false
   recVersion.value++      // 列表整体淡入（切换影片后新推荐丝滑登场）
+  // 列表元素因 :key 变化被重建，等 DOM 落地后重新反算间距（否则整条布局丢一次）
+  await nextTick()
+  fitRecRows()
 }
 
 // ====== 操作 ======
@@ -496,11 +506,7 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
   window.addEventListener('resize', fitRecRows)
-  // 窗口最大化状态：先查一次初值，再订阅后续变化（maximize/unmaximize 推送）
-  window.api?.isWindowMaximized?.()
-    .then(v => { isMaximized.value = !!v })
-    .catch(() => {})
-  offMaximized = window.api?.onWindowMaximized?.(v => { isMaximized.value = !!v }) || null
+  fitRecRows()
   if (dataDirRef.value) window.__dataDir = dataDirRef.value
   loadMovie(Number(route.params.id))
 })
@@ -510,7 +516,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onKeyUp, true)
   window.removeEventListener('resize', fitVideoObject)
   window.removeEventListener('resize', fitRecRows)
-  offMaximized?.(); offMaximized = null
   endHold()
   // 兜底保存进度（route 切走/关页都会走这里）
   if (art && m.value && art.currentTime > 0) {
@@ -542,11 +547,11 @@ onBeforeUnmount(() => {
   gap: 14px;
   align-items: flex-start;
   min-height: calc(100vh - var(--nav-h) - 24px);
-  /* 下内边距吃满 main-content 的 24px 底部内边距（左右上只吃 12px）：
-     否则页面比内容区高出几像素，最大化时 main-content 会常驻一条纵向滚动条，
-     整个内容区被挤窄 8px（背景同色，视觉无差别，滚动条却实实在在占宽）。 */
+  /* 底部内边距吃满 main-content 的 24px（左右上只吃 12px）：播放页贴到窗口底边，
+     右列推荐列表下方不会再留出一条空白（此前 main-content 自带 24px 底部内边距，
+     右列只能到「窗口底 - 24px」，下面那条就什么都不显示）。 */
   margin: -12px -12px -24px;
-  padding: 12px;
+  padding: 12px 12px 0;
   background: var(--bg);
   color: var(--text);
   outline: none;
@@ -798,19 +803,17 @@ onBeforeUnmount(() => {
      列越窄 → 左列越宽 → 播放器越大。440 → 400 让播放器加宽 44px（+4.3%）。 */
   width: 400px;
   flex-shrink: 0;
-  /* 推荐项尺寸令牌：海报 220×137.5（16:10）。
-     --rec-thumb-h 是单一事实来源（宽度由高度按 16:10 推导）；
-     最大化时 fitRecRows() 会写内联值把它等比缩小到「正好 6 条铺满」。 */
+  /* 推荐项尺寸令牌：海报 220×137.5（16:10），整条高 = 137.5 + 6×2 = 149.5px。
+     --rec-thumb-h 必须是固定像素值：fitRecRows() 要 parseFloat 它参与间距反算。 */
   --rec-thumb-w: 220px;
-  --rec-thumb-h: calc(var(--rec-thumb-w) * 10 / 16);   /* 海报 16:10 */
+  --rec-thumb-h: 137.5px;
   --rec-pad: 6px;                                      /* .rec-item 上下内边距 */
   display: flex;
   flex-direction: column;        /* 标题固定、列表独立滚动 */
-  /* 高度钉死为「页面内容区」的可用高：视口 - 导航 48 - main-content 上下内边距 36。
-     必须精确到不出滚动条的程度 —— 高 1px 就会把 main-content 撑出一条纵向滚动条
-     （内容区被挤窄 8px），矮一截列表下方又空出一片没有内容的区域（用户两次反馈的空白）。
-     列表条目多时在列内滚动，条目少时 space-between 均摊，两种情况底边都不留空白。 */
-  height: calc(100vh - var(--nav-h) - 36px);
+  /* 高度钉死为「顶到窗口底边」：视口 - 导航 48 - 页面上内边距 12。
+     页面底部内边距已归零（见 .player-page），右列底边 = 窗口底边，
+     列表下方不会再有空白条。 */
+  height: calc(100vh - var(--nav-h) - 12px);
   /* 贴到窗口最右：负外边距吃掉 player-page(12) + main-content(12) 的右侧内边距，
      这样列表滚动条与其它页面一样落在窗口右边缘 */
   margin-right: -24px;
@@ -827,21 +830,16 @@ onBeforeUnmount(() => {
 .rec-list {
   flex: 1;
   min-height: 0;
-  /* 铺满右列剩余高度，不再锁「正好 N 整条」——锁死的高度凑不出整数条时会在列表
-     下方留下一条没有任何内容的空白（用户两次反馈的「底部一片区域不显示内容」）。
-     现在的行为：列表永远铺到右列底边（= 左列底边），条目多时自然滚动、
-     最后一条可能被裁一点（滚动列表的正常表现，也提示「下面还有」）；
-     条目少于一屏时用 space-between 均摊，同样不留空白。 */
+  /* 可见区域只放「完整条目」：--rec-gap 由 fitRecRows() 按列表可用高反算，
+     把凑不成整条的零头摊进条目间距 —— 第 k+1 条正好从列表底边之下开始，
+     折叠处不露半截海报、可见底边也不留空白。条目超出可见数的部分滚轮下翻可见。 */
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: var(--rec-gap, 0px);
   overflow-y: auto;
   padding-right: 8px;
 }
 .rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
-/* 最大化：右列正好 6 条，不显示滚动条、也不允许滚动（滚轮滚不动，内容不会跑）。
-   要看第 7 条以后的推荐就还原窗口 —— 窗口化时是正常滚动列表（overflow auto + 滚动条）。 */
-.player-page.maximized .rec-list { overflow: hidden; }
 .rec-item {
   display: flex;
   gap: 10px;

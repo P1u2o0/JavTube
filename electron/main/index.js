@@ -23,8 +23,6 @@ const { registerImageIpc } = require('./db/images')
 const { registerSettingsIpc, applyProxySettings } = require('./db/settings')
 // 工具类 / 对话框 / 刮削 IPC（自本文件拆出）
 const { registerUtilsIpc } = require('./ipc-utils')
-// IPC 通道名常量（窗口最大化推送用）
-const IPC = require('../common/ipc-channels')
 // 首页推荐数据（轮播 / 类别按钮 / 近期上新）
 const { registerHomeIpc } = require('./home')
 // 播放页 IPC（进度记忆 + 相关推荐）
@@ -221,18 +219,6 @@ function createWindow() {
     })
     // 窗口关闭时清理引用
     mainWindow.on('closed', () => { console.log('[main] window closed'); mainWindow = null })
-
-    // 最大化状态推送到渲染层：播放页右列在最大化时切换为「正好 6 条 + 隐藏滚动条」布局
-    const sendMaximized = () => {
-      try {
-        const v = mainWindow.isMaximized()
-        console.log('[main] maximize state →', v)
-        mainWindow.webContents.send(IPC.WIN_MAXIMIZED_CHANGED, v)
-      } catch { }
-    }
-    mainWindow.on('maximize', sendMaximized)
-    mainWindow.on('unmaximize', sendMaximized)
-    mainWindow.webContents.on('did-finish-load', sendMaximized)
 
     // 监听渲染进程的 console 消息，转发到主进程控制台（方便调试）
     mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
