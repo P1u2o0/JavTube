@@ -25,6 +25,45 @@ const { app, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
+// ===== 封面字节的内存缓存（2026-09-30 性能审计新增）=====
+// 为什么需要：实测演员页每次进入/回访都会发起 **113 次**封面请求，而卡片重建后
+// Chromium 的内存缓存对同批大图经常已淘汰 → 又走一遍「stat + 读文件 + 跨进程回传」。
+// 实测单次固有成本仅 ~1ms（串行零排队），但 113 并发下 handler 内部耗时被拉到
+// avg 86ms / p90 145ms（86× 放大，全是排队）。进程内缓存把这 113 次里**重复的那部分**
+// 直接降为内存拷贝，不再碰磁盘与网络栈。
+//
+// 缓存键 = 「解析后的绝对路径」，并用 ETag（size-mtime）做值校验：
+// 文件被覆盖写入（重新刮削 / 修复失效图都是**写回原路径**）时 mtime 变 → ETag 变 → 自动失效，
+// 因此不会出现「换了封面还显示旧图」。这一点必须保住 —— 见下方 cache-control 的注释。
+const CACHE_MAX_ENTRIES = 200
+const CACHE_MAX_BYTES = 32 * 1024 * 1024      // 32MB 上限，避免占着内存不放
+const CACHE_SINGLE_MAX = 4 * 1024 * 1024      // 单张超过 4MB 不入缓存（省得一张吃光额度）
+/** 超过这个大小就直接走 net.fetch 流式回传，不整块读进内存 */
+const STREAM_THRESHOLD = 6 * 1024 * 1024
+const cache = new Map()                        // absPath -> { etag, contentType, buf }
+let cacheBytes = 0
+
+/** 命中即返回（并把该键移到队尾实现 LRU）；ETag 不匹配视为未命中 */
+function cacheGet(key, etag) {
+  const e = cache.get(key)
+  if (!e || e.etag !== etag) return null
+  cache.delete(key); cache.set(key, e)
+  return e
+}
+function cacheSet(key, etag, contentType, buf) {
+  if (buf.length > CACHE_SINGLE_MAX) return
+  const old = cache.get(key)
+  if (old) { cacheBytes -= old.buf.length; cache.delete(key) }
+  cache.set(key, { etag, contentType, buf })
+  cacheBytes += buf.length
+  while (cache.size > CACHE_MAX_ENTRIES || cacheBytes > CACHE_MAX_BYTES) {
+    const k = cache.keys().next().value
+    if (k === undefined) break
+    cacheBytes -= cache.get(k).buf.length
+    cache.delete(k)
+  }
+}
+
 /**
  * 将 javtube-cover 注册为 privileged scheme。
  * 必须在 app ready 之前调用（index.js 顶层），否则 protocol.handle 不生效。
@@ -99,6 +138,14 @@ function setupCoverProtocol(dataDir) {
       // （写回同一路径）」在重启后看到的还是修之前那张。
       // 改成 ETag 条件请求：文件没动 → 304（只 stat 一次，不读文件、不解码）；
       // 文件变了 → 200 新内容。既保留翻页命中缓存的收益，又不会再返旧图。
+      //
+      // ★ 2026-09-30 性能审计：**故意不改用 max-age**（审计报告曾建议 private, max-age=300）。
+      //   否决理由：max-age 会让 Chromium 在窗口期内**完全跳过回源校验**，而上一条注释描述的
+      //   「版本号只在内存里、重启后退回旧 URL」这个前提依然成立 —— 一旦用户在重启后 5 分钟内
+      //   查看刚修好的封面，看到的仍是旧图，等于把 2026-09-28 特意修好的问题重新引入。
+      //   收益侧也不需要它：重复请求已由上面的进程内缓存吸收（内存拷贝 <0.1ms），
+      //   且请求总数本身由前端「按需加载」压掉（见 MovieCard.vue）。
+      //   结论：保留 no-cache + ETag —— 每次使用前回源校验，但校验本身很便宜（一次 stat）。
       const etag = `"${stat.size}-${Math.floor(stat.mtimeMs)}"`
       const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' }
       const contentType = MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream'
@@ -106,15 +153,41 @@ function setupCoverProtocol(dataDir) {
       if (inm && inm === etag) {
         return new Response(null, { status: 304, headers: { etag, 'cache-control': 'no-cache' } })
       }
-      // 用 net.fetch 走本地文件协议交给 Electron 处理，返回标准 Response
-      // URL 用 pathToFileURL 来正确编码（处理中文、空格、# 等字符）
-      const fileUrl = require('url').pathToFileURL(resolved).href
-      const res = await net.fetch(fileUrl)
-      const headers = new Headers(res.headers)
-      headers.set('content-type', contentType)
-      headers.set('etag', etag)
-      headers.set('cache-control', 'no-cache')   // 可缓存，但每次使用前必须回源校验
-      return new Response(res.body, { status: res.status, headers })
+      // 进程内缓存命中：直接回内存字节，不再碰磁盘与网络栈（见文件顶部的缓存说明）
+      const hit = cacheGet(resolved, etag)
+      if (hit) {
+        return new Response(hit.buf, {
+          status: 200,
+          headers: { 'content-type': hit.contentType, 'content-length': String(hit.buf.length), etag, 'cache-control': 'no-cache' }
+        })
+      }
+      const baseHeaders = { 'content-type': contentType, etag, 'cache-control': 'no-cache' }
+      // 超大图仍走 net.fetch 流式回传（Electron 的 network 栈本身也是流式的，避免整块进内存）
+      if (stat.size > STREAM_THRESHOLD) {
+        const fileUrl = require('url').pathToFileURL(resolved).href
+        const res = await net.fetch(fileUrl)
+        const headers = new Headers(res.headers)
+        for (const [k, v] of Object.entries(baseHeaders)) headers.set(k, v)
+        return new Response(res.body, { status: res.status, headers })
+      }
+      // 常规图片：直接读盘（原来是 await net.fetch(file://)，要跨进程走一遍网络栈，
+      // 网络栈自己又 stat+open 一次 —— 每张图 2 次 stat/open）。这里已经 stat 过了，直接读即可。
+      let buf
+      try {
+        buf = await fs.promises.readFile(resolved)
+      } catch (e) {
+        // stat 与 read 之间文件被删除/替换（刮削、清理孤儿图都可能发生）——
+        // 按「不存在」回 404，而不是掉进外层 catch 回 500（语义更准，也少一条误导性日志）
+        if (e && (e.code === 'ENOENT' || e.code === 'EISDIR')) {
+          return new Response('not found', { status: 404 })
+        }
+        throw e
+      }
+      cacheSet(resolved, etag, contentType, buf)
+      return new Response(buf, {
+        status: 200,
+        headers: { ...baseHeaders, 'content-length': String(buf.length) }
+      })
     } catch (e) {
       console.warn('[cover-protocol] err:', e.message)
       return new Response('error: ' + e.message, { status: 500 })

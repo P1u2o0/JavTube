@@ -8,11 +8,11 @@
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
+const devdb = require('./_devdb.js');
 
 const ROOT = process.cwd();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const LIVE = path.join(ROOT, 'node_modules', 'electron', 'dist', 'data', 'app.db');
-const BAK = path.join(ROOT, 'tmp', '_dev-app.db.fill-test.bak');
 const TARGET_ID = 2
 let pass = 0, fail = 0
 const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d ? '  ' + d : '')) } else { fail++; console.log('  [FAIL] ' + l + (d ? '  ' + d : '')) } }
@@ -28,8 +28,8 @@ const WATCH = ['pm', 'fl', 'fxrq', 'yid', 'dy', 'ps', 'fx', 'xl', 'bq', 'cover',
     r.columns.forEach((c, i) => { o[c] = r.values[0][i] })
     return o
   }
-  if (!fs.existsSync(BAK)) fs.copyFileSync(LIVE, BAK)
-  const backupContent = fs.readFileSync(BAK)
+  // 本次运行独有的快照（原实现复用固定文件名 → 会拿陈旧快照覆盖真库，见 _devdb.js）
+  const snapFile = devdb.takeSnapshot('fill-scrape', LIVE)
 
   // 预置：① 刮削来源=fill ② 人为制造「字段不全」+ 放一个哨兵片名
   // 哨兵片名用于验证「已有值不会被源站数据覆盖」（源站有这个番号的真实片名）
@@ -155,8 +155,7 @@ const WATCH = ['pm', 'fl', 'fxrq', 'yid', 'dy', 'ps', 'fx', 'xl', 'bq', 'cover',
     await exited
   } finally {
     try { child && child.kill() } catch { }
-    fs.writeFileSync(LIVE, backupContent)
-    console.log('\ndev 库已还原:', Buffer.compare(fs.readFileSync(LIVE), backupContent) === 0 ? 'OK（字节一致）' : '❌ 失败')
+    devdb.restoreSnapshot(snapFile)
   }
   console.log(`==== 结果: 通过 ${pass} / 失败 ${fail} ====`)
   process.exit(fail ? 1 : 0)

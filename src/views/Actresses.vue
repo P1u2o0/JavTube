@@ -36,11 +36,15 @@
 
     <!-- ① 头像墙：作品数量降序 -->
     <div v-if="view === 'grid'" class="avatar-wall">
-      <button v-for="a in list" :key="a.name" class="a-card" @click="goActor(a.name)" :title="a.name">
+      <button v-for="a in wallList" :key="a.name" class="a-card" @click="goActor(a.name)" :title="a.name">
         <span class="a-avatar">
-          <img v-if="a.avatar && !brokenAvatars[a.name]" :src="resolveCover(a.avatar)" :alt="a.name" loading="lazy"
-               @error="brokenAvatars[a.name] = true" />
-          <img v-else :src="DEFAULT_AVATAR.f" :alt="a.name" />
+          <!-- 头像用 CoverImg（2026-09-30 性能审计 / P1-7）：
+               失败标记由 CoverImg 自己持有（局部 ref），一张头像失败只重渲染它自己，
+               不再改动父视图状态 → 不再整墙重渲染。回落剪影走 #fallback 插槽，
+               外观与原来的 <img v-else> 完全一致（同处 .a-avatar 内，CSS 照样命中）。 -->
+          <CoverImg :src="a.avatarSrc" :alt="a.name">
+            <template #fallback><img :src="DEFAULT_AVATAR.f" :alt="a.name" /></template>
+          </CoverImg>
         </span>
         <span class="a-name">{{ a.name }}</span>
         <span class="a-count">{{ a.count }} 部作品</span>
@@ -55,9 +59,10 @@
            :class="{ hl: a.name === highlight }" :data-name="a.name">
         <span class="r-no">{{ a.rank ?? '—' }}</span>
         <button class="r-avatar" @click="goActor(a.name)" :title="'查看 ' + a.name + ' 的全部影片'">
-          <img v-if="a.avatar && !brokenAvatars[a.name]" :src="resolveCover(a.avatar)" :alt="a.name" loading="lazy"
-               @error="brokenAvatars[a.name] = true" />
-          <img v-else :src="DEFAULT_AVATAR.f" :alt="a.name" />
+          <!-- 同上（P1-7）：失败标记下推到 CoverImg 局部状态 -->
+          <CoverImg :src="a.avatarSrc" :alt="a.name">
+            <template #fallback><img :src="DEFAULT_AVATAR.f" :alt="a.name" /></template>
+          </CoverImg>
         </button>
         <div class="r-main">
           <div class="r-name">{{ a.name }}</div>
@@ -71,7 +76,7 @@
         <div class="r-movies">
           <button v-for="mv in a.top" :key="mv.id" class="r-mv"
                   @click="goDetail(mv.id)" :title="(mv.pm || mv.ph) + '（想看 ' + mv.want.toLocaleString('zh-CN') + '）'">
-            <CoverImg v-if="mv.cover" :src="resolveCover(mv.cover)" :alt="mv.ph" />
+            <CoverImg v-if="mv.cover" :src="mv.coverSrc" :alt="mv.ph" />
             <span v-else class="r-mv-ph">{{ mv.ph }}</span>
             <span class="r-mv-cap">
               <span class="r-mv-ph2">{{ mv.ph }}</span>
@@ -102,11 +107,16 @@ const router = useRouter()
 /** 默认女优剪影（与演员影片页一致，BASE_URL 相对路径防打包 404） */
 const DEFAULT_AVATAR = { f: import.meta.env.BASE_URL + 'actor-female.svg' }
 
-/**
- * 头像加载失败的演员（文件缺失/损坏）→ 回落到本地剪影。
- * 统一显示原则：没有可用的真实照片就显示剪影，绝不留破图。
+/*
+ * 「头像加载失败」的标记**不再放在本组件**（2026-09-30 性能审计 / P1-7）。
+ *
+ * 原实现把它放在根组件的响应式状态里（`brokenAvatars[a.name]`），而头像墙是一个
+ * 大 v-for——整墙共用一个 render effect。任何一张头像 @error 都会写这个状态，
+ * 从而触发**整个视图**重新渲染（数百张卡片、上万 DOM 节点全走一遍 diff）。
+ *
+ * 现在改由 CoverImg 自己持有失败标记（组件内局部 ref），一张失败只重渲染那一张。
+ * 统一显示原则不变：没有可用的真实照片就显示剪影，绝不留破图。
  */
-const brokenAvatars = ref({})
 
 /** 视图状态：grid=头像墙（默认）/ rank=热度排行；支持 ?view= 直达 */
 const view = ref(route.query.view === 'rank' ? 'rank' : 'grid')
@@ -117,9 +127,24 @@ const loadError = ref('')
 /** 高亮的演员名（?hl=，从演员影片页的热度区跳过来时定位用） */
 const highlight = ref(String(route.query.hl || ''))
 
-/** 排行视图顺序：名次升序（无名次即无人数数据，排最后按名字） */
+/**
+ * 头像墙数据：进入模板前先把封面 URL 解析好（2026-09-30 性能审计 / P2-2）。
+ *
+ * 原来模板里直接写 `resolveCover(a.avatar)`（共 3 处），每次渲染都会对全部条目重算——
+ * 实测该函数只要 1.1µs/次、不是卡顿来源，但「模板不调函数」是项目惯例，改 computed 后
+ * 既保留了「数据目录后到也能自动重算」的响应性（resolveCover 内部读 dataDirRef），
+ * 又不再随渲染次数重复计算。
+ */
+const wallList = computed(() => list.value.map(a => ({
+  ...a,
+  avatarSrc: a.avatar ? resolveCover(a.avatar) : ''
+})))
+
+/** 排行视图顺序：名次升序（无名次即无人数数据，排最后按名字）；影片封面同样预解析 */
 const rankList = computed(() =>
-  [...list.value].sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity) || a.name.localeCompare(b.name, 'zh')))
+  [...wallList.value]
+    .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity) || a.name.localeCompare(b.name, 'zh'))
+    .map(a => ({ ...a, top: (a.top || []).map(mv => ({ ...mv, coverSrc: mv.cover ? resolveCover(mv.cover) : '' })) })))
 
 function switchView(v) { view.value = v }
 
@@ -130,7 +155,8 @@ function goDetail(id) { router.push('/detail/' + id) }
 async function load() {
   if (!window.api?.getActressOverview) { loading.value = false; return }
   loading.value = true
-  brokenAvatars.value = {}      // 重新给所有头像一次加载机会（补全过 / 文件被修好时能恢复）
+  // 头像失败标记现在由 CoverImg 自己持有，重新加载列表时组件会按 :key（演员名）复用/
+  // 重建，CoverImg 内部 watch(src) 也会在 URL 变化时自动复位错误态 → 无需在这里清状态。
   const r = await window.api.getActressOverview().catch(() => null)
   list.value = r?.ok ? (r.data || []) : []
   // 区分「加载失败」与「库里确实没有女优」（2026-09-28 审计）：

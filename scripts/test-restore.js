@@ -14,12 +14,12 @@
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
+const devdb = require('./_devdb.js');
 
 const ROOT = process.cwd();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const DATA_DIR = path.join(ROOT, 'node_modules', 'electron', 'dist', 'data');
 const LIVE = path.join(DATA_DIR, 'app.db');
-const BAK = path.join(ROOT, 'tmp', '_dev-app.db.restore-test.bak');
 const MARKER = 'RESTORED-MARKER-' + Date.now();
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d ? '  ' + d : '')) } else { fail++; console.log('  [FAIL] ' + l + (d ? '  ' + d : '')) } };
@@ -32,15 +32,13 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
     catch (e) { return '(读取失败)' }
   }
 
-  // 备份 dev 库（保留最早的备份，便于人工兜底）
-  if (!fs.existsSync(BAK)) fs.copyFileSync(LIVE, BAK)
-  const backupContent = fs.readFileSync(BAK)
-  console.log('已备份 dev 库 →', BAK)
+  // 本次运行独有的快照（原实现「有就复用」固定文件名 → 会拿陈旧快照覆盖真库，见 _devdb.js）
+  const snap = devdb.takeSnapshot('restore-test', LIVE)
 
   let child = null, ws = null
   try {
     // ① 带标记的备份库
-    const mk = new SQL.Database(fs.readFileSync(BAK))
+    const mk = new SQL.Database(snap.content)
     mk.run('UPDATE movies SET pm=? WHERE id=8', [MARKER])
     const markedPath = path.join(ROOT, 'tmp', '_marked-backup.db')
     fs.writeFileSync(markedPath, Buffer.from(mk.export()))
@@ -113,10 +111,8 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
     ok('⑤ 关窗后恢复内容仍在（修复生效）', readPm(LIVE) === MARKER, String(readPm(LIVE)).slice(0, 30))
   } finally {
     try { child && child.kill() } catch { }
-    // 无论成败都还原 dev 库
-    fs.writeFileSync(LIVE, backupContent)
-    const restored = Buffer.compare(fs.readFileSync(LIVE), backupContent) === 0
-    console.log('\ndev 库已还原:', restored ? 'OK（字节一致）' : '❌ 失败，请用 ' + BAK)
+    // 无论成败都还原 dev 库（校验 + 拒绝写坏数据 + 未变更则不写盘，见 _devdb.js）
+    devdb.restoreSnapshot(snap)
     try { fs.rmSync(path.join(ROOT, 'tmp', '_marked-backup.db'), { force: true }) } catch { }
   }
   console.log('==== 结果: 通过 ' + pass + ' / 失败 ' + fail + ' ====')

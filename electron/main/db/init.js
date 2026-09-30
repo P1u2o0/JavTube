@@ -129,6 +129,51 @@ function saveDbToDisk(db, dbPath) {
 }
 
 /**
+ * 为 movies 表创建查询所需的索引（2026-09-30 性能审计 P1-5）。
+ *
+ * 背景：原实现只有 CREATE TABLE，**全库零索引** —— 列表页的 WHERE 等式与 ORDER BY
+ * 全部退化成全表扫 + 全表排序。本函数只给「确实出现在 WHERE 等式 / ORDER BY」里的
+ * 列建索引；索引会增大 db 文件并拖慢写入，故**刻意不覆盖 SORTABLE_COLUMNS 的全部列**
+ * （例如 play_count 在每次 recordPlay 都要被改写，给它建索引只会拖慢这条高频写路径）。
+ *
+ * ⚠️ 前缀通配的 LIKE（`%x%`）**用不上索引**，不要把它算作已优化项：
+ *   movies:get 的 yid（`','||REPLACE(yid,'，',',')||',' LIKE '%,名字,%'`）、ps/fx/dy/xl/bq/ph/pm
+ *   模糊匹配，以及 movies:getAllTags 的 `bq != ''`，仍旧是全表扫描 —— 本函数没有、也无法
+ *   通过普通索引解决它们（这属于「改写查询/引入 FTS 或倒排表」的另一个课题）。
+ *
+ * 索引 → 服务的查询（出处均为实际代码位置）：
+ *   idx_movies_fl        movies(fl)           movies.js:124 `fl = ?`（分类页签过滤）
+ *   idx_movies_cl        movies(cl)           movies.js:126 `cl = ?`（只看收藏）
+ *   idx_movies_play_time movies(play_time)    movies.js:146 `play_time IS NOT NULL`（观看记录页签）
+ *                                             + SORTABLE_COLUMNS 的 play_time 排序
+ *   idx_movies_tjrq      movies(tjrq)         movies.js:204 默认排序 `ORDER BY tjrq DESC, id DESC`
+ *   idx_movies_fxrq      movies(fxrq)         movies.js:204 发行日期排序、actress.js:538
+ *                                             actor:films 的 `ORDER BY fxrq DESC, id DESC`（免排序全表输出）
+ * 说明：id 是 rowid（INTEGER PRIMARY KEY AUTOINCREMENT），索引项天然按 (列, rowid) 排序，
+ * 因此单列索引即可同时满足 `ORDER BY 列 DESC, id DESC`（反序扫描），无需额外把 id 列进索引。
+ * fl/cl 基数低（分类/收藏只有几个取值），只在取稀有一侧时才划算 —— 保留它们是因为这两条
+ * 条件出现在**每次列表查询**上；若统计信息显示不划算，SQLite 自己会不用它。
+ *
+ * 幂等：`CREATE INDEX IF NOT EXISTS` 在索引已存在时是空操作，可安全地在每次启动时执行。
+ * @param {Object} db - sql.js 数据库实例
+ */
+function ensureIndexes(db) {
+  const INDEXES = [
+    ['idx_movies_fl', 'movies(fl)'],
+    ['idx_movies_cl', 'movies(cl)'],
+    ['idx_movies_play_time', 'movies(play_time)'],
+    ['idx_movies_tjrq', 'movies(tjrq)'],
+    ['idx_movies_fxrq', 'movies(fxrq)']
+  ]
+  for (const [name, target] of INDEXES) {
+    // 单条失败不阻断启动：索引缺失只影响性能，不应让软件打不开
+    try { db.run(`CREATE INDEX IF NOT EXISTS ${name} ON ${target}`) } catch (e) {
+      console.warn(`[db] 创建索引 ${name} 失败（忽略，仅影响该查询性能）:`, e.message)
+    }
+  }
+}
+
+/**
  * 初始化数据库。
  * 加载或创建 SQLite 数据库，创建所有表结构，写入默认设置，并设置自动持久化机制。
  * @param {string} dataDir - 数据目录路径
@@ -331,6 +376,13 @@ async function initDb(dataDir) {
     ['gender', "TEXT DEFAULT 'f'"]
   ])
 
+  // === 建索引（2026-09-30 性能审计 P1-5）：给 movies 表补上 WHERE/ORDER BY 用到的列 ===
+  // ⚠️ 位置刻意放在下面「拦截 db.run 打 dirty 标记」**之前**：只读启动（用户只浏览、
+  //    不做任何修改）时，建索引只发生在内存里、不会打 dirty → 不会被 10 秒定时器写盘。
+  //    索引会在下一次真实写操作落盘时随整库一起持久化；此后每次启动 IF NOT EXISTS 均为空操作。
+  //    若把本段挪到 dirty 拦截之后，则每次启动都会先把库标脏、10 秒后无谓地重写整个 app.db。
+  ensureIndexes(db)
+
   // 写入默认设置项（仅在不存在时插入）
   const defaults = [
     ['player_path',''],      // 自定义（外部）播放器路径
@@ -418,4 +470,4 @@ async function initDb(dataDir) {
   return db
 }
 
-module.exports = { initDb, getSQL }
+module.exports = { initDb, getSQL, ensureIndexes }

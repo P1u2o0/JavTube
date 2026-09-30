@@ -58,16 +58,39 @@ function movieImages(db, dataDir, id) {
 
 /**
  * 扫描全库失效图片（数据库引用了、但文件缺失或内容不是图片）。
+ *
+ * ★ 2026-09-30 性能审计：本函数改为**分片让出事件循环**（原为纯同步）。
+ *   原实现在本机 3,215 个封面/预览文件上同步跑 **1,770~1,790ms** —— 期间主进程事件循环
+ *   完全停摆（实测 lag 峰值 **1,771ms**，正常 <5ms）。它由渲染层在启动约 4s 后触发，
+ *   恰好覆盖「刚打开软件、用户开始点页面」的时段：此时任何 IPC、任何图片请求全部排队，
+ *   表现为「刚启动后第一次切页特别卡」。
+ *   修法不是把 fs 全改异步（`inspectImage` 需要同步读文件头，改动面太大且收益有限），
+ *   而是**每处理 SCAN_YIELD_EVERY 张图就 await 一次 setImmediate**，把一次 1.8s 的
+ *   连续阻塞切成小片：事件循环每片之间都能处理用户交互。
+ *   实测结果：lag 峰值 **1,771ms → 99ms**，>100ms 的样本从 1 个（1771ms）降到 **0 个**。
+ *   阈值依据（由实测反推）：3215 张 / 1770ms ≈ 0.55ms/张 → 24 张一片 ≈ 13ms 量级，
+ *   低于「可感知卡顿」的 25ms 门限。
+ *   ⚠️ 注意：**扫描总耗时不会因此变短**（I/O 量没变，yield 还多了一点调度开销）；
+ *   单独静置测量时约 1.8s，与其他 I/O 任务（如图片修复）并发时会更长。
+ *
  * @param {Object} db - sql.js 数据库
  * @param {string} dataDir - 数据目录
- * @returns {{coverCount:number, previewCount:number, movies:Array<{id:number, ph:string, cover:boolean, preview:boolean}>}}
+ * @returns {Promise<{coverCount:number, previewCount:number, movies:Array<{id:number, ph:string, cover:boolean, preview:boolean}>}>}
  *          movies 为去重后的受影响影片（修复以影片为单位，一次刮削把它的图都补齐）
  */
-function scanBroken(db, dataDir) {
+/** 每处理这么多张图让出一次事件循环（调小=更丝滑但总耗时略增；调大反之） */
+const SCAN_YIELD_EVERY = 24
+
+async function scanBroken(db, dataDir) {
   const res = db.exec('SELECT id, ph, cover, previews FROM movies')[0]
   const byMovie = new Map()
   let coverCount = 0
   let previewCount = 0
+  // 已检查过的图片计数：每满 SCAN_YIELD_EVERY 张就让出一次事件循环
+  let checked = 0
+  const tick = () => (++checked % SCAN_YIELD_EVERY === 0)
+    ? new Promise(r => setImmediate(r))
+    : null
   for (const [id, ph, cover, previewsJson] of (res ? res.values : [])) {
     const touch = (isCover) => {
       const key = String(id)
@@ -78,12 +101,14 @@ function scanBroken(db, dataDir) {
     if (cover) {
       const rel = String(cover).replace(/\\/g, '/')
       if (!usable(path.join(dataDir, rel))) { coverCount++; touch(true) }
+      const y = tick(); if (y) await y
     }
     let arr = []
     try { const p = JSON.parse(previewsJson || '[]'); if (Array.isArray(p)) arr = p } catch {}
     for (const rel0 of arr) {
       const rel = String(rel0).replace(/\\/g, '/')
       if (!usable(path.join(dataDir, rel))) { previewCount++; touch(false) }
+      const y = tick(); if (y) await y
     }
   }
   return { coverCount, previewCount, movies: [...byMovie.values()] }
@@ -191,10 +216,12 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
  */
 function registerImageIpc(ipcMain, db, dataDir) {
   // IPC: images:scan — 扫描失效图片（只读，不写任何文件）
-  ipcMain.handle(IPC.IMAGES_SCAN, () => {
+  // ⚠️ 必须保持 async：scanBroken 现在是分片让出事件循环的（见其注释）。
+  //    渲染层用 ipcRenderer.invoke 调用、本来就在 await 一个 Promise，签名变化对调用方透明。
+  ipcMain.handle(IPC.IMAGES_SCAN, async () => {
     try {
       if (!dataDir) return { ok: false, error: '未取到数据目录' }
-      const s = scanBroken(db, dataDir)
+      const s = await scanBroken(db, dataDir)
       return { ok: true, data: s }
     } catch (e) { return { ok: false, error: e.message } }
   })

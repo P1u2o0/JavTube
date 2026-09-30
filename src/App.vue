@@ -148,9 +148,11 @@ onMounted(async () => {
 <!-- 路由入场动画：纯 CSS animation，挂载即播放，不阻塞渲染 -->
 <style>
 .route-anim {
-  /* 入场 220ms（--dur-base）+ 强 ease-out。此前是裸值 0.18s 加一条独立曲线，
-     与令牌体系不一致（审计：6 处动效裸值之一）→ 改用令牌，视觉差异极小 */
-  animation: route-in var(--dur-base) var(--ease-out) both;
+  /* 时长用 --dur-route（120ms）而不是 --dur-base（220ms）（2026-09-30 性能审计）：
+     容器是从 opacity:0 起步的，它的时长**直接等于「点击后屏幕上什么都没有」的时长**。
+     实测旧值 220ms 下，切页后前 200ms 可见卡片数为 0/40 —— 用户把这段空白读成"卡了"。
+     改用令牌而非裸值，保持与令牌体系一致；只允许继续调短。 */
+  animation: route-in var(--dur-route) var(--ease-out) both;
 }
 @keyframes route-in {
   from { opacity: 0; transform: translateY(6px); }

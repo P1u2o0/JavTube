@@ -204,7 +204,10 @@ function registerMovieIpc(ipcMain, db, dataDir) {
         orderSql = `ORDER BY ${col} ${dir}, id DESC`
       }
       // 分页参数计算
-      const ps = Math.max(1, Number(pageSize) || 20)  // 每页条数
+      // 上界（2026-09-30 性能审计补）：UI 只允许 10~200，但主进程此前只有下界 —— 任何
+      // 调用方（包括将来新增的）传 pageSize=100000 都会让 sql.js 一次性物化整库并跨 IPC
+      // 序列化整库，主进程被同步阻塞数秒。这里钳到 UI 的上限，行为对现有调用方零变化。
+      const ps = Math.min(200, Math.max(1, Number(pageSize) || 20))  // 每页条数
       const pg = Math.max(1, Number(page) || 1)        // 当前页码
       const off = (pg - 1) * ps                         // 偏移量
 

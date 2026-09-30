@@ -111,6 +111,13 @@
   --dur-press: 120ms;   /* 按压反馈（100-160ms） */
   --dur-fast: 160ms;    /* 小交互：hover / 颜色 */
   --dur-base: 220ms;    /* 中等：下拉 / 弹层 / 路由入场（150-250ms） */
+  /* 下面两条是「入场」专用档（2026-09-30 性能审计新增）。
+     为什么单独开档、而不是复用 --dur-base：入场的时长**等于用户盯着空屏/半成品的时间**，
+     与"弹层展开"这类可以稍慢的动效性质不同 —— 实测（逐帧采样 .movie-card 的 opacity）
+     旧值下切页后 0~200ms 屏幕上一个卡片都看不见、784ms 才全部到位，这正是用户感知的"卡"。
+     因此把入场单独拉到更短的档位，并且**今后只允许调短、不允许调长**。 */
+  --dur-route: 120ms;   /* 路由容器淡入：它直接等于"点击后屏幕空白"的时长，必须极短 */
+  --dur-enter: 160ms;   /* 卡片/元素浮现：配合错峰（见 MovieGrid 的错峰预算）使用 */
   --dur-slow: 300ms;    /* 较大：对话框 / 面板 */
   --dur-lg: 340ms;      /* 大件：整卡上浮 + 背景图缩放（同类卡片共用，避免"一个硬一个软"） */
   --dur-xl: 420ms;      /* 最大：首页封面流整幅海报的横向位移；位移接近一屏宽，需要更长插值才不像"弹射"。
@@ -515,7 +522,11 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: var(--ls-disp
 /* ====== 降级动效（Apple §14：给「更温和的等价反馈」，而不是取消反馈）======
    此前用 `* { animation-duration:0.01ms !important; transition-duration:0.01ms !important }`
    一刀切，把颜色 / 透明度这类「有助理解状态变化」的低强度反馈也一起压掉了
-   —— 本机 prefers-reduced-motion 为 true，实际效果是「整个应用零动效」（2026-09-29 实测）。
+   —— 实测该降级生效时，整个应用的动效会全部消失。
+   ⚠️ 口径更正（2026-09-30 性能审计）：原文写「本机 prefers-reduced-motion 为 true」，
+   实测本机为 **false**（系统未开启"减少动态效果"），即本媒体查询**长期未生效** ——
+   所以「零动效」现象当时并不是它造成的，而下面这个降级分支此前也从未被真正验证过
+   （正因为没生效，漏压 animation-delay 的缺陷一直藏着）。
    现在分两档：
      ① 大范围运动（位移 / 缩放 / 形变）→ 动画瞬时结束，过渡里不再包含这些属性；
      ② 低强度反馈（颜色 / 背景 / 边框 / 透明度 / 阴影）→ 保留，统一 120ms。
@@ -527,6 +538,11 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: var(--ls-disp
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    /* ⚠️ 延迟也必须一起压掉（2026-09-30 性能审计补）：此前只压了 duration，
+       于是卡片错峰（animation-delay = index × 步长）仍然生效 —— 降级模式下
+       动画时长虽为 0.01ms，但每张卡仍要等到自己的延迟时刻才「啪」地出现，
+       40 张卡依旧是一片片冒出来，降级等于没做。 */
+    animation-delay: 0ms !important;
   }
   /* ② 低强度反馈：只保留这些属性并统一短时长；
        transform / width / height / top / left 等运动属性不在列 → 过渡瞬时完成 */

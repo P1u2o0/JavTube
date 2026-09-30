@@ -4,16 +4,16 @@
  *  ① 启动 → 改一个设置项 → 等过 10 秒定时落盘
  *  ② 优雅关窗
  *  ③ 直接读磁盘库，断言设置已持久化
- * 结束时还原 dev 库。
+ * 结束时还原 dev 库（快照/还原走 _devdb.js，2026-09-30 事故后不再用固定文件名备份）。
  */
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
+const devdb = require('./_devdb.js');
 
 const ROOT = process.cwd();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const LIVE = path.join(ROOT, 'node_modules', 'electron', 'dist', 'data', 'app.db');
-const BAK = path.join(ROOT, 'tmp', '_dev-app.db.persist-test.bak');
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d ? '  ' + d : '')) } else { fail++; console.log('  [FAIL] ' + l + (d ? '  ' + d : '')) } };
 
@@ -24,8 +24,8 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
     return db.exec('SELECT value FROM settings WHERE key=?', [k])[0]?.values?.[0]?.[0] ?? '(无)';
   };
 
-  if (!fs.existsSync(BAK)) fs.copyFileSync(LIVE, BAK);
-  const backupContent = fs.readFileSync(BAK);
+  // 本次运行独有的快照（绝不复用旧文件；拿不到就抛错停跑，见 _devdb.js 说明）
+  const snap = devdb.takeSnapshot('persist-test', LIVE);
   const orig = readKey('show_tips');
   const next = orig === 'y' ? 'n' : 'y';
   console.log('show_tips 原值:', orig, '→ 目标:', next);
@@ -77,8 +77,7 @@ const ok = (l, c, d = '') => { if (c) { pass++; console.log('  [OK]   ' + l + (d
     ok('② 关窗后设置仍然保留（正常落盘未被误伤）', readKey('show_tips') === next, readKey('show_tips'))
   } finally {
     try { child && child.kill() } catch { }
-    fs.writeFileSync(LIVE, backupContent)
-    console.log('\ndev 库已还原:', Buffer.compare(fs.readFileSync(LIVE), backupContent) === 0 ? 'OK（字节一致）' : '❌ 失败')
+    devdb.restoreSnapshot(snap)
   }
   console.log('==== 结果: 通过 ' + pass + ' / 失败 ' + fail + ' ====')
   process.exit(fail ? 1 : 0)

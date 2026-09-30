@@ -320,7 +320,8 @@ function fillCastAvatars(db, castJson, yid) {
 }
 
 /**
- * 列出「需要补头像」的女优，四种情况：
+ * 计算「需要补头像」的女优（未缓存的实际计算，见下方 avatarTodoOf 的缓存包装）。
+ * 四种情况：
  *   ① avatar 为空          → '无头像'（前端显示本地剪影）
  *   ② 文件不存在            → '文件缺失'
  *   ③ 文件是来源站占位图    → '占位图'
@@ -333,7 +334,7 @@ function fillCastAvatars(db, castJson, yid) {
  *      placeholderHashes，避免清理过程中的数量变化让它失效。
  * @returns {Array<{name:string, count:number, reason:string}>} 按作品数降序
  */
-function avatarTodoOf(db, dataDir) {
+function computeAvatarTodo(db, dataDir) {
   const acc = avatarStateOf(db)
   const hashCount = new Map()   // 内容 md5 → 出现次数
   const fileHash = new Map()    // 姓名 → 内容 md5（空串表示文件缺失/读不到）
@@ -357,6 +358,42 @@ function avatarTodoOf(db, dataDir) {
   }
   todo.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh'))
   return todo
+}
+
+/**
+ * 缓存：全库「待补头像」清单（2026-09-30 性能审计 P1-3）。
+ *
+ * 为什么加：computeAvatarTodo 的代价是 O(影片数) 的 cast_json 解析 **加上 O(女优数) 次
+ * 头像文件 md5**（每次都要把 covers/actress 下的图整份读进来做哈希）。它被
+ * ACTRESS_AVATAR_TODO（用户反复打开「补头像」对话框）与 ACTRESS_AVATAR_FILL（批量补全
+ * 入口）调用，重复调用纯属浪费。
+ *
+ * 策略与同一文件里的 actorAvatarMap / heatCache / ovCache **完全一致**：
+ *   - 指纹 = moviesKey(db) + dataDir（影片条数/最大 id 变化即失效，dataDir 不同不串味）；
+ *   - 60s TTL 兜底；
+ *   - 写路径改库后调用 invalidateActorCaches() 立即失效（见该函数注释里的清单）。
+ *
+ * ⚠️ 取舍（必须知道，别当成实时值）：本函数的结论里有一半来自**文件系统**（文件是否存在、
+ *    内容是不是占位图），而这部分没有任何 DB 写路径可挂失效钩子 —— 如果用户/其它程序在
+ *    应用之外直接改动 covers/actress 下的文件（手工删图、外部覆盖、坏盘），本缓存最长 60 秒
+ *    仍返回旧结论。这是刻意接受的代价（与 actorAvatarMap 对「图被换掉」的容忍度一致）：
+ *    应用自身所有会改动头像文件的路径（刮削下载头像、补头像下载/清理、删片清理孤儿图）
+ *    都必然伴随一次 DB 写 → 都会走到 invalidateActorCaches，不会踩到这条 60s 窗口。
+ */
+const avatarTodoCache = { key: '', at: 0, list: null }
+
+/** 列出「需要补头像」的女优（带缓存；语义与返回值见 computeAvatarTodo） */
+function avatarTodoOf(db, dataDir) {
+  const key = `${moviesKey(db)}|${dataDir || ''}`
+  const now = Date.now()
+  if (avatarTodoCache.list && avatarTodoCache.key === key && now - avatarTodoCache.at < 60000) {
+    return avatarTodoCache.list
+  }
+  const list = computeAvatarTodo(db, dataDir)
+  avatarTodoCache.key = key
+  avatarTodoCache.at = now
+  avatarTodoCache.list = list
+  return list
 }
 
 /** 取该演员当前的头像相对路径（cast_json 里第一个非空），没有则空串 */
@@ -498,7 +535,10 @@ function registerActressIpc(ipcMain, db, dataDir) {
       // 2026-09-28 审计：原实现用 `cast_json LIKE '%"name":"X"%'` 预筛，演员名含 `"`/`\`
       // （JSON 转义后模式对不上）或 `%`/`_`（被当通配符）时会漏片。改为全表取回后在 JS 里
       // 逐条精确判断 —— 影片量级只有几百条（本 handler 本来也 SELECT * 这批数据），成本相近。
-      const all = rows(db.exec('SELECT * FROM movies ORDER BY fxrq DESC')[0])
+      // id DESC 次级键（2026-09-30 性能审计）：与 movies.js 的排序约定一致。fxrq 同值的影片
+      // 原本顺序不确定（SQLite 用不用 idx_movies_fxrq 会给出两种不同的同值内顺序），
+      // 补一个唯一键让顺序「与索引选择无关且可复现」。
+      const all = rows(db.exec('SELECT * FROM movies ORDER BY fxrq DESC, id DESC')[0])
       const hitYid = (y) => {
         const s = String(y || '')
         return s === nm || s.startsWith(nm + '，') || s.endsWith('，' + nm) || s.includes('，' + nm + '，')
@@ -629,9 +669,25 @@ function registerActressIpc(ipcMain, db, dataDir) {
 }
 
 /**
- * 让演员侧的三个会话缓存立即失效（热度排名 / 女优总览 / 名字→头像映射）。
+ * 让演员侧的四个会话缓存立即失效（热度排名 / 女优总览 / 名字→头像映射 / 待补头像清单）。
  * 影片的 cast_json/yid 被改写（详情页编辑演员、批量改演员、补头像等）时调用 ——
  * 缓存键只含 COUNT/MAX(id)，改字段不会自然失效，否则演员页最多 60 秒还显示旧名单/旧头像。
+ *
+ * 2026-09-30 性能审计 P1-3：avatarTodoCache 一并清掉，否则「补完头像 → 重开补头像对话框」
+ * 最长 60 秒仍列出刚补好的那些人（界面表现为「补了还在列表里」）。
+ *
+ * 全库会改动「头像归属」的写路径（均已覆盖，逐条列出以免日后新增路径时漏接钩子）：
+ *   movies.js:265  MOVIES_CREATE     —— 新片带 cast_json 入库；且 COUNT 变化 → 指纹自动失效
+ *   movies.js:286  MOVIES_UPDATE     —— 改 cast_json/yy/yid 时 movies.js:291-293 显式调用本函数
+ *   movies.js:308  MOVIES_DELETE     —— 删行 → COUNT 变化 → 指纹自动失效
+ *   movies.js:325  MOVIES_DELETE_MANY—— 同上
+ *   movies.js:257  py 回填 UPDATE    —— 不改 cast_json，无需失效
+ *   movies.js:341/369/415/461、player.js:155 —— 只改 cl/bq/play_*，不涉及头像，无需失效
+ *   actress.js:477/483 applyAvatarToCast 里的两处 UPDATE cast_json —— 补头像写库；
+ *                       两个调用方都已接本函数：actress.js:514（removeUnusableAvatar
+ *                       清空不可用头像后）与 actress.js:657（ACTRESS_AVATAR_FILL 补全成功后）
+ *   settings.js:244 清空数据库       —— DELETE FROM movies → COUNT 归 0 → 指纹自动失效
+ * 注：热/总览/映射/待补清单四者的失效都由本函数一个出口统一负责，新增写路径时只要调用它即可。
  */
 function invalidateActorCaches() {
   heatCache.key = ''
@@ -640,6 +696,8 @@ function invalidateActorCaches() {
   ovCache.at = 0
   avatarMapCache.key = ''
   avatarMapCache.at = 0
+  avatarTodoCache.key = ''
+  avatarTodoCache.at = 0
 }
 
 module.exports = { registerActressIpc, invalidateActorCaches, actorAvatarMap, fillCastAvatars }

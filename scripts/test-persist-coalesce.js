@@ -47,6 +47,29 @@ const mk = () => { const s = { n: 0 }; return { db: { _forceSave: () => { s.n++ 
     ok('爆发结束后有一次尾部落盘（最新数据已落盘）', s.n === 2, '实际 ' + s.n + ' 次')
   }
 
+  // ⑤ 「慢落盘」下的合并（2026-09-30 性能审计新增 —— 这条才是真实场景）
+  // 为什么前 4 条测不出来：它们的假 _forceSave 都是**瞬时返回**，于是
+  // (Date.now() - lastPersistAt) 在窗口内始终 ≈ 0，合并看起来是work的。
+  // 但真实 persist = db.export()（整库同步导出）+ writeFileSync + fsyncSync + 两次 rename，
+  // 随库增长到**秒级**；而旧实现是在 persist() **之前**就把 lastPersistAt 置为当前时间 →
+  // 一次落盘结束后的下一次调用，差值是「落盘耗时」这个数千毫秒的大数 → 恒 > 120ms 窗口 →
+  // 每次都命中「立即落盘」分支，合并彻底失效（实测：30 连写 = 30 次整库导出 = 主进程阻塞 4.5s）。
+  // 本用例用 150ms 的同步忙等模拟慢落盘，把这个回归永久钉住。
+  {
+    const s = { n: 0 }
+    const SLOW = 150             // 必须 > PERSIST_WINDOW_MS(120) 才能暴露旧缺陷
+    const db = {
+      _forceSave: () => { s.n++; const t = Date.now(); while (Date.now() - t < SLOW) { /* 模拟整库导出 */ } return true }
+    }
+    for (let i = 0; i < 20; i++) persistSoon(db)   // 同一 tick 20 连写
+    for (let i = 0; i < 60; i++) {                 // 等尾部合并窗口落地
+      const b = s.n
+      await new Promise(r => setTimeout(r, 50))
+      if (s.n === b && i > 6) break
+    }
+    ok('慢落盘（150ms/次）下 20 连写 → 落盘 ≤2 次（旧实现在此处为 20 次）', s.n <= 2, '实际 ' + s.n + ' 次')
+  }
+
   console.log(`\n==== 结果: 通过 ${pass} / 失败 ${fail} ====`)
   process.exit(fail ? 1 : 0)
 })()

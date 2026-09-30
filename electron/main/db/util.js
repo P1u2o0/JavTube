@@ -79,6 +79,15 @@ function persist(db) {
  * 两次 rename」，主进程被反复同步阻塞 → 界面明显卡顿。
  * 现改为「前缘节流」：距上次落盘已超过 120ms 时仍然**立即**落盘（单次写延迟不变），
  * 窗口内的后续写合并为窗口结束时的一次 —— 突发写从 N 次导出降到 1~2 次。
+ *
+ * ★ 2026-09-30 性能审计修复：合并窗口改为从「上一次落盘**结束**」开始计时。
+ *   原实现在 persist() **之前**就把 lastPersistAt 置为当前时间，而 persist 内部的
+ *   db.export() 是整库同步导出，库越大越慢（本项目实测已达秒级）。于是「上一次落盘结束之后」
+ *   再调用 persistSoon 时，`Date.now() - lastPersistAt` 已经等于「落盘耗时」这个数千毫秒的大数，
+ *   恒 > 120ms → 每次都命中「立即落盘」分支，**合并窗口在秒级写面前完全失效**。
+ *   实测后果：批量操作（批刮/批量加标签/收藏）在几百毫秒内逐部写入，每一步都触发一次
+ *   「整库导出 + writeFileSync + fsync + 两次 rename」，主进程被反复同步阻塞。
+ *   改为以「写完时刻」为基准后，同一突发从 N 次导出降到 1~2 次。
  * @param {Object} db - sql.js 数据库实例
  */
 const PERSIST_WINDOW_MS = 120
@@ -88,15 +97,13 @@ let persistTimer = null
 function persistSoon(db) {
   const wait = PERSIST_WINDOW_MS - (Date.now() - lastPersistAt)
   if (wait <= 0) {                    // 距上次落盘足够久：立即落盘，保持原有的"毫秒级"语义
-    lastPersistAt = Date.now()
-    try { persist(db) } catch {}
+    try { persist(db) } catch {} finally { lastPersistAt = Date.now() }
     return
   }
   if (persistTimer) return          // 已在合并窗口内：本次写由窗口结束时的那次落盘一并覆盖
   persistTimer = setTimeout(() => {
     persistTimer = null
-    lastPersistAt = Date.now()
-    try { persist(db) } catch {}
+    try { persist(db) } catch {} finally { lastPersistAt = Date.now() }
   }, wait)
 }
 

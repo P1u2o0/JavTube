@@ -165,10 +165,15 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      * @param {boolean} opts.append - 是否追加模式（分页加载更多时为 true）
      * @param {boolean} opts.useTags - 是否带上标签栏的选中标签（默认 true）
      * @param {boolean} opts.useSearch - 是否带上顶栏搜索词（默认 true）
-     * @returns {Promise<void>}
+     * @returns {Promise<{ok: boolean, total?: number, stale?: boolean, error?: string}>}
+     *   ok    = 本次结果**是否已写入 store**（被更晚发出的请求取代时恒为 false，见 stale）
+     *   stale = true 表示结果被取代、未写入 store（**不是失败**，调用方不应据此提示用户）
+     *   ⚠️ ok:false 不等于「已经弹过错误提示」：被取代(stale)是静默的，
+     *      只有「最新但失败」才会弹一次 ElMessage。
+     *   兼容性：改动前无返回值，现有 12 处调用点全部是裸 await（不消费返回值），故本次为纯增量。
      */
     async loadMovies({ onlyFavorite = false, extraFilter = {}, append = false, useTags = true, useSearch = true } = {}) {
-      if (!window.api) { this.movies = []; this.total = 0; return }
+      if (!window.api) { this.movies = []; this.total = 0; return { ok: false, error: 'api 不可用' } }
       // 加载序号：连续点翻页/快速切筛选时会有多个请求同时在飞，只让**最后一次**的结果生效。
       // 否则先发的慢请求后返回，会把新一页的数据覆盖回旧页（表现为「翻页跳来跳去」）。
       const seq = ++loadSeq
@@ -199,6 +204,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
             this.total = total
             this.page = Math.ceil(total / this.pageSize)
             // 重取时必须原样带上 useTags / useSearch，否则收敛后的这一页会换回全局筛选条件
+            // 返回值直接透传递归结果（递归会自行决定 ok/stale）
             return this.loadMovies({ onlyFavorite, extraFilter, append, useTags, useSearch })
           }
           if (append) {
@@ -210,16 +216,30 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
             this.movies = newMovies
           }
           this.total = total
-        } else {
-          // 失败时保留旧列表，但要明确告知（2026-09-29 审计）：原实现只有 console.warn，
-          // 界面既不刷新也无任何提示，用户会把「加载失败」误当成「当前筛选就是这些结果」。
-          console.warn('[store] loadMovies 失败:', r.error)
-          if (seq === loadSeq) ElMessage.error(r.error || '加载影片列表失败')
+          return { ok: true, total }
         }
+        // 走到这里有两种情况，必须分开对待（2026-09-30 性能审计补）：
+        //   a) 结果被更晚发出的请求取代 —— 静默，既不弹提示也不写 state（弹了会让人
+        //      误以为是「当前」这次请求失败）；
+        //   b) 本次就是最新请求但主进程返回了 ok:false —— 才是真失败，需要提示。
+        if (seq !== loadSeq) {
+          if (!r.ok) console.warn('[store] loadMovies 被取代且失败:', r.error)
+          return { ok: false, stale: true }
+        }
+        console.warn('[store] loadMovies 失败:', r.error)
+        ElMessage.error(r.error || '加载影片列表失败')
+        return { ok: false, error: r.error || '加载影片列表失败' }
       } catch (e) {
         // IPC 抛异常时不能把异常抛给调用方（10 处调用都没包 catch，会变成
         // unhandled rejection，而且界面会静默停在旧列表）；这里记日志并保留旧数据。
         console.error('[store] loadMovies 异常:', e)
+        // 被取代的请求即使抛异常也保持静默（同上：提示会归错因）
+        if (seq !== loadSeq) return { ok: false, stale: true }
+        // 补提示（2026-09-30 性能审计）：原来 catch 只有 console.error，IPC 异常导致列表
+        // 加载失败时用户完全无从感知，会误以为「当前筛选就是这些结果」。
+        // 与上面 r.ok===false 分支互斥（reject 时 r 未被赋值，不会进那条分支），不会双弹。
+        ElMessage.error('加载影片列表失败')
+        return { ok: false, error: (e && e.message) || String(e) }
       } finally {
         // 只有「最后一次请求」才有权关掉 loading（2026-09-30 审计）：
         // 原实现无条件置 false，于是并发时先返回的慢请求会把后发请求的 loading 提前关掉

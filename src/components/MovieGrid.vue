@@ -12,11 +12,11 @@
     <el-empty v-if="!movies.length && !loading" description="共找到 0 个结果" />
     <!-- 影片网格：动态设置列数 -->
     <div class="grid" v-else :class="{ 'no-anim': !animateIn }" :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }">
-      <!-- 遍历影片列表渲染卡片，注入索引驱动错峰入场动画 -->
+      <!-- 遍历影片列表渲染卡片，注入索引 + 本卡入场延迟（错峰由下方 staggerDelay 统一下发） -->
       <MovieCard
         v-for="(m, i) in movies" :key="m.id"
         :m="m"
-        :style="{ '--i': i }"
+        :style="{ '--i': i, '--d': staggerDelay(i) }"
         :selectMode="selectMode"
         :isSel="selSet.has(m.id)"
         :showPlayCount="showPlayCount"
@@ -72,13 +72,39 @@ const selSet = computed(() => new Set(props.selectedIds || []))
 // 总页数（分页器右侧展示用）
 const totalPages = computed(() => Math.max(1, Math.ceil((props.total || 0) / (props.pageSize || 1))))
 
+/**
+ * 卡片入场错峰（2026-09-30 性能审计重写）。
+ *
+ * 旧实现把步长写死 36ms、档位封顶 15（`calc(min(var(--i,0), 15) * 36ms)`）：
+ * 最后一排要等 540ms 才开始动，加 220ms 动画共 760ms 才到位。逐帧实测结果是
+ * 「切页后 0~200ms 可见 0/40，784ms 才 40/40」—— 这段拖尾就是用户感知的「切页卡顿」。
+ *
+ * 现在改为「**总错峰预算固定，步长按卡片数反推**」：
+ *   - 拖尾上限恒为 STAGGER_BUDGET_MS（不再随页数恶化：40 张和 200 张的总延迟都是同一个量级）；
+ *   - 每张卡仍有独立延迟 → 保住级联观感（不是"整墙一起蹦"）；
+ *   - 步长下限 2ms：卡片再多也不会退化成「全部同一时刻出现」。
+ * 预算取值依据：路由容器淡入 120ms（--dur-route）+ 错峰 160ms + 卡片动画 160ms（--dur-enter）
+ * ≈ 440ms，仍在「点击后一眼看到内容」的心理区间内；且旧的 800ms 重播抑制窗口已同步调小。
+ */
+const STAGGER_BUDGET_MS = 160
+const STAGGER_MIN_MS = 2
+/** 本卡入场延迟：预算内的等差错峰，超过预算的卡片统一落在预算上限 */
+function staggerDelay(i) {
+  const n = Math.max(1, (props.movies || []).length)
+  const step = Math.max(STAGGER_MIN_MS, Math.min(14, Math.round(STAGGER_BUDGET_MS / n)))
+  return Math.min(i * step, STAGGER_BUDGET_MS) + 'ms'
+}
+
 // 入场动画只在「本次进入页面」的首屏播一次。
-// 卡片是 v-for keyed 渲染，翻页会整批重建 —— 若每次都重播错峰动画（最迟 15×36ms≈540ms
-// 才轮到最后一排淡入），每次翻页都有近 1 秒的"缓入"观感，用户感知就是「翻页卡顿」。
+// 卡片是 v-for keyed 渲染，翻页会整批重建 —— 若每次都重播错峰动画
+// （旧值最迟 15×36ms≈540ms 才轮到最后一排淡入），每次翻页都有近 1 秒的"缓入"观感。
+// 2026-09-30 性能审计：错峰拖尾已压到 ≤160ms（见 staggerDelay），故本窗口从 800ms 同步调小 ——
+// 它必须**大于「最大错峰 + 动画时长」**（160+160=320ms），否则动画播到一半被 animation:none
+// 打断会「啪」地跳到终态；留出余量取 420ms。
 const animateIn = ref(true)
 onMounted(async () => {
   await nextTick()
-  setTimeout(() => { animateIn.value = false }, 800)
+  setTimeout(() => { animateIn.value = false }, 420)
 })
 
 // 定义 emit 事件：

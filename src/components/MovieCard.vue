@@ -138,9 +138,14 @@ watch(dataDirRef, () => { errd.value = false })
   position: relative;
   display: flex;
   flex-direction: column;
-  /* 错峰入场动画：--i 由 MovieGrid 按索引注入 */
-  animation: card-in var(--dur-base) var(--ease-out) both;
-  animation-delay: calc(min(var(--i, 0), 15) * 36ms);
+  /* 错峰入场动画：--d（本卡延迟）与 --i（索引）都由 MovieGrid 注入。
+     ⚠️ 不要退回「index × 固定步长 + 档位封顶」的写法（2026-09-30 性能审计）：
+     旧实现是 `calc(min(var(--i,0), 15) * 36ms)` —— 最后一排要等 540ms 才开始动、
+     760ms 才到位，实测「0~200ms 可见 0 张、784ms 才全部可见」，是切页卡顿观感的主因。
+     现在由 MovieGrid 按卡片数反推步长（总错峰预算固定），任意页数下拖尾都 ≤ 预算。
+     时长用 --dur-enter（160ms）而非 --dur-base：入场档只允许调短。 */
+  animation: card-in var(--dur-enter) var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
 }
 @keyframes card-in {
   from { opacity: 0; transform: translateY(14px); }

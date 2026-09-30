@@ -203,6 +203,7 @@ function slotStyle(pos) {
   const scale = off ? 0.3 : (abs === 0 ? 1 : abs === 1 ? 0.72 : 0.5)
   // 两侧弱化不用「半透明」，而用「纯白遮罩」（海报本体保持实色）
   const veil = abs === 0 ? 0 : abs === 1 ? 0.5 : 0.74
+  const rawAbs = Math.abs(d)
   return {
     // 纯 2D 变换（位移 + 缩放）：
     // 不再用 perspective/translateZ —— 3D 合成层在 5 张海报同时大位移时会掉帧（顿挫感来源之一），
@@ -211,7 +212,33 @@ function slotStyle(pos) {
     opacity: off ? 0 : 1,          // 静止态一律不透明；淡入淡出由切换时的 WAAPI 动画负责
     zIndex: 10 - abs,
     '--shade': off ? 0 : veil,     // 白色遮罩强度（中心 0，越外越白）
-    pointerEvents: off ? 'none' : undefined
+    pointerEvents: off ? 'none' : undefined,
+    /**
+     * will-change 按需开启（2026-09-30 性能审计 / P1-10）：只有 |d| ≤ 4 的槽位常驻，
+     * 其余给 'auto' 覆盖掉（原实现在 CSS 里对全部 5n 个槽位常驻 → 25 个槽位
+     * 各占一个 600×400 的合成层，约 25MB 显存，其中 20 个恒在屏外且 opacity:0）。
+     *
+     * ★ 为什么是 4 —— 这是由「单次交互的最大位移」推出来的，不是拍的：
+     *   本页所有**带过渡**的位移都 ≤ 2 格：
+     *     · step(dir)        —— 恒为 ±1
+     *     · go(i)            —— 指示点，取「离当前最近的那份副本」→ |δ| ≤ n/2，
+     *                           n ≥ 4 时 ≤ 2（n < 4 时副本更密，只会更小）
+     *     · onSlotClick(pos) —— 只有 |d| ≤ 2 的槽位可点（更远的 x=±900、opacity:0、
+     *                           pointerEvents:none，点不到），故 |δ| ≤ 2
+     *   而「进入视野」的门槛是 |d| ≤ 2，所以**可能一步进入视野**的槽位最多在 |d| = 4。
+     *   取阈值 4 ⇒ 这类槽位在位移发生**前一帧**就已经拿到 will-change、合成层早已建好，
+     *   不存在「开始滑的那一帧才现场提升图层」。
+     *
+     * ⚠️ 阈值 3 是不够的（实测）：2 格跳时一个原本 |d|=4 的槽位会直接落到 |d|=2 进入视野，
+     *   要在那一帧现场提升合成层 —— CDP 帧间隔采样抓到会话中**第一次 2 格跳**出现
+     *   13ms / 24.6ms 的尖峰（对照组「全部常驻」无尖峰）。
+     *   稳态（第 2 轮起）各轮单帧最大仅 5~7ms，远低于 60fps 的 16.7ms 预算。
+     *
+     * 唯一的例外是 normalizeNow()（循环越界后的静默归位）：它的位移是 n 的整数倍、
+     *   **可能 > 2 格**，但它在同一帧里把 .no-anim 打开、**禁掉了全部过渡** ——
+     *   没有动画就没有「动画首帧」，不需要 will-change 兜底（画面本来也完全一致）。
+     */
+    willChange: rawAbs <= 4 ? 'transform, opacity' : 'auto'
   }
 }
 
@@ -457,12 +484,18 @@ onBeforeUnmount(() => {
 }
 .flow {
   position: absolute; inset: 0;
-  transform-style: preserve-3d;   /* 让透视传递到 stage → slot */
+  /* 2026-09-30 性能审计（P1-10）：这里与 .stage 原本各有一条 `transform-style: preserve-3d`，
+     是早期「用 perspective/translateZ 做真 3D 纵深」方案的残留 —— 该方案已因为
+     「5 张海报同时大位移时 3D 合成层掉帧」被删除（见 slotStyle 注释），现在槽位只做
+     纯 2D 变换（translate + scale）。没有任何后代使用 3D 变换或 rotateY，
+     preserve-3d 的三维渲染上下文因此退化成一维平面绘制：**去掉后画面逐像素不变**
+     （.slot 的 backface-visibility 在没有 3D 上下文时本来就是惰性的），
+     但少了两处「声明自己是 3D 渲染上下文」的元素。 */
 }
-/* 3D 舞台：让子海报的 rotateY/translateZ 产生真实透视 */
+/* 3D 舞台：让子海报的 rotateY/translateZ 产生真实透视
+   ⚠️ 已不适用：槽位只剩 2D 变换，preserve-3d 已移除（2026-09-30 性能审计） */
 .stage {
   position: absolute; inset: 0;
-  transform-style: preserve-3d;
 }
 /* 静默归位：越界后瞬间复位，复位前后画面完全一致，
    必须禁掉过渡，否则会看到一次横跨整屏的大幅滑动。
@@ -474,8 +507,9 @@ onBeforeUnmount(() => {
      这条就要靠特异性继续赢，所以选择器不要简写。） */
 .flow-wrap.no-anim .slot,
 .flow-wrap.no-anim .shade { transition: none !important; }
-/* 槽位：基准尺寸 = 横向海报 600×400（3:2）；rotateY/translateZ/scale 由内联控制。
-   立体轮换过渡：一次平滑的三维插值（旋转+后撤+缩放+位移同步） */
+/* 槽位：基准尺寸 = 横向海报 600×400（3:2）；transform/opacity 由内联控制。
+   轮换过渡：位移 + 缩放 + 透明度三者同步插值（**纯 2D**，不再有 rotateY/translateZ，
+   见 slotStyle 与 .flow 的注释）。 */
 .slot {
   position: absolute; left: 50%; top: 50%;
   width: 600px; height: 400px;
@@ -498,7 +532,11 @@ onBeforeUnmount(() => {
      注意：`.no-anim`（静默归位）会把两者的过渡一起关掉，所以"归位要瞬时"的约束不受影响。 */
   transition: transform var(--dur-xl) var(--ease-drawer),
               opacity var(--dur-xl) var(--ease-drawer);
-  will-change: transform, opacity;
+  /* ⚠️ will-change 不在这里常驻（2026-09-30 性能审计 / P1-10）：
+     传送带共渲染 5n 个槽位（n=5 时为 25 个），其中只有 |d| ≤ 2 的 5 个可见，
+     其余 20 个恒在 x=±900、opacity:0（看不见却在给每个槽位常驻一个合成层——
+     600×400×4B ≈ 1MB，25 个 ≈ 24MB 显存）。改为由 slotStyle 内联按需开启，
+     见那里的注释。 */
 }
 .slot img {
   width: 100%; height: 100%; object-fit: cover; display: block;
