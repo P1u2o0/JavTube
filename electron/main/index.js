@@ -310,6 +310,8 @@ app.whenReady().then(async () => {
     const map = {
       bak: ['已从备份恢复数据库', 'app.db 无法读取（可能被写坏），已自动改用上一份备份 app.db.bak。\n\n损坏的文件已保留为 app.db.corrupt-*，确认数据无误后可自行删除。'],
       tmp: ['已从临时文件恢复数据库', 'app.db 缺失，已用上次未完成写入的 app.db.tmp 恢复。\n\n请核对数据是否完整。'],
+      // 2026-10-02：app.db 缺失、从遗留的 .tmp/.bak 改名恢复的常规崩溃恢复路径
+      rescue: ['已从遗留文件恢复数据库', 'app.db 缺失（上次退出时落盘未完成），已自动从临时/备份文件恢复。\n\n请核对数据是否完整。'],
       empty: ['数据库无法读取，已新建空库', 'app.db 及其备份都无法加载。\n\n原始损坏文件已保留为 app.db.corrupt-*，请勿继续录入数据，先尝试用备份文件修复。']
     }
     const [title, body] = map[db._recoveredFrom] || map.bak

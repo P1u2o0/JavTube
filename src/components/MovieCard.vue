@@ -10,8 +10,13 @@
            卡片带错峰入场动画（--i 由 MovieGrid 注入）；右上角喜欢按钮可切换喜欢。
 -->
 <template>
-  <!-- 影片卡片主体，点击时触发 click 事件 -->
-  <div class="movie-card" @click="$emit('click')">
+  <!-- 影片卡片主体，点击时触发 click 事件。
+       键盘可达（2026-10-02）：role=button + tabindex + Enter/Space —— 此前是无 tabindex 的 div，
+       键盘用户无法打开影片；内部按钮的按键由 onKeyClick 的 target 判断隔离，不会双重触发 -->
+  <div class="movie-card" role="button" tabindex="0"
+       @click="$emit('click')"
+       @keydown.enter.prevent="onKeyClick"
+       @keydown.space.prevent="onKeyClick">
     <!-- 封面区域 -->
     <div class="cover">
       <!-- 有封面 URL 且未加载出错时显示图片 -->
@@ -33,6 +38,7 @@
            事件链：MovieCard emit fav → MovieGrid 转发 → 视图 onFav → store.toggleFav（乐观更新） -->
       <button class="fav-btn" :class="{ active: isFav }"
               :title="isFav ? '取消喜欢' : '喜欢'"
+              :aria-pressed="isFav"
               @click.stop="onFavClick">
         <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="23" :sw="2.2" />
       </button>
@@ -104,6 +110,16 @@ function onFavClick(e) {
     { duration: 260, easing: 'ease-out' }
   )
   emit('fav')
+}
+
+/**
+ * 卡片自身的键盘激活（Enter / Space，见模板根节点）。
+ * 只在事件目标是卡片本身时响应：焦点在内部播放/喜欢按钮上时，浏览器会另发一次
+ * 按钮自己的 click（按钮已各自 stop 处理），这里不判断 target 会造成双重动作。
+ * @param {KeyboardEvent} e
+ */
+function onKeyClick(e) {
+  if (e.target === e.currentTarget) emit('click')
 }
 
 // 封面 URL 计算属性：出错时返回空，否则解析封面路径

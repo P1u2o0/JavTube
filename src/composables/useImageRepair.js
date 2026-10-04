@@ -56,8 +56,9 @@ export function useImageRepair() {
           fixed += r.data?.fixed || 0
           still += r.data?.still || 0
           // 让卡片换用带新版本号的图片 URL（同路径新内容，否则用的是旧缓存）
+          // 2026-10-02：删掉多余的 bumpCover(ph) —— 版本号只在 resolveCover(cover, 影片id)
+          // 里读取（全项目调用点均传 id），用番号做 key 不会被任何读取方消费
           bumpCover(movies[i].id)
-          if (movies[i].ph) bumpCover(movies[i].ph)
         } else failed++
       }
       const tail = []

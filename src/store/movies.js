@@ -139,7 +139,13 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      */
     async loadAllDbTags() {
       if (!window.api) return []
-      const r = await window.api.getAllTags()
+      // IPC reject 时保留现有标签并告警（2026-10-02）：本方法有多处「裸 await」调用方
+      // （TopNav.onCreated / onBatchAddTag 等），抛出去会变成 unhandled rejection
+      let r = null
+      try { r = await window.api.getAllTags() } catch (e) {
+        console.warn('[store] loadAllDbTags 失败:', e)
+        return this.allDbTags
+      }
       if (r.ok) {
         this.allDbTags = r.tags || []
         this.tagCounts = r.counts || {}
@@ -300,6 +306,9 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
       this.page = 1
       this.sort = { by: 'tjrq', order: 'DESC', random: false }
       this.selectedIds = []
+      // 批量模式也要退出（2026-10-02）：只清 selectedIds 不清 selectMode 的话，
+      // 顶栏点「片库」后状态栏的批量按钮区仍然挂着（历史/喜欢页挂载时都会显式退出，此处漏了）
+      this.selectMode = false
       this.searchQ = ''
     },
 

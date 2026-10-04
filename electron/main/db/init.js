@@ -185,6 +185,9 @@ async function initDb(dataDir) {
   const bakPath = dbPath + '.bak'
   const tmpPath = dbPath + '.tmp'
   let db
+  // 数据库恢复来源（rescue/bak/tmp/empty）：非空时由 main/index.js 弹窗告知用户，
+  // 用户在「数据被悄悄换过」的情况下必须知情
+  let recoveredFrom = ''
 
   // 崩溃恢复（2026-09-24 补）：saveDbToDisk 用「双 rename」落盘（.tmp → db → .bak）。
   // 若恰好死在两次 rename 之间（断电 / 强杀 / rename 抛错后用户直接关了软件），
@@ -197,6 +200,9 @@ async function initDb(dataDir) {
     if (rescue) {
       try {
         fs.renameSync(rescue, dbPath)
+        // 2026-10-02：此分支此前只打日志、不设 recoveredFrom —— 上层弹窗不会触发，
+        // 用户不知道数据是从遗留文件恢复的。与 bak/tmp/empty 三个分支保持一致。
+        recoveredFrom = 'rescue'
         console.log(`[db] 检测到上次落盘未完成，已从 ${path.basename(rescue)} 恢复数据库`)
       } catch (e) {
         console.error('[db] 恢复遗留数据库失败:', e.message)
@@ -213,8 +219,7 @@ async function initDb(dataDir) {
   //   现在：① 损坏文件先改名保留（.corrupt-<时间戳>，可送修）；
   //        ② 依次尝试 .bak / .tmp；
   //        ③ 全都不行才建空库，并通过 _recoveredFrom = 'empty' 让上层弹窗告知用户。
-  let recoveredFrom = ''
-  /** 加载并做完整性校验；不合格直接抛错（调用方决定回退到哪一份） */
+  // 加载并做完整性校验；不合格直接抛错（调用方决定回退到哪一份）
   const tryLoadDb = (p) => {
     const buf = fs.readFileSync(p)
     // ① 文件头校验（2026-09-29 审计补）：**0 或 1 字节的文件会被 sql.js 当成「合法空库」**

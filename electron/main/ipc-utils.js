@@ -17,12 +17,20 @@ const fs = require('fs')
 const { VIDEO_EXTS, COVER_DIR } = require('./constants')
 const IPC = require('../common/ipc-channels')
 const { scrapeMovie } = require('./scraper')
-const { readMp4DurationMinutes } = require('./video-meta')
+const { readMp4DurationMinutes, readVideoSize, isVideoReadCooling, noteVideoReadResult } = require('./video-meta')
 
 // 播放时拒绝的扩展名：shell.openPath 会「用系统默认程序打开」，
 // 其中可执行/脚本类等于直接执行它（见 UTILS_PLAY_VIDEO）
 const EXEC_EXTS = ['.exe', '.bat', '.cmd', '.com', '.scr', '.pif', '.msi', '.lnk', '.reg',
   '.ps1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.hta', '.cpl', '.jar']
+
+/**
+ * 视频分辨率缓存（2026-10-04）：path → { size: {width,height}|null, ts }。
+ * 正结果一旦拿到就不再过期（文件换分辨率的情况罕见）；负结果 5 分钟 TTL，
+ * 避免 NAS 短暂离线时把「读不到」永久缓存、又避免反复重试拖慢。
+ */
+const videoSizeCache = new Map()
+const NEG_TTL_MS = 5 * 60 * 1000
 
 /**
  * 注册工具类 IPC 处理器。
@@ -48,8 +56,14 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 渲染进程 → 主进程：根据设置中的自定义播放器路径播放视频，否则用系统默认程序打开
   ipcMain.handle(IPC.UTILS_PLAY_VIDEO, async (_e, filePath) => {
     try {
-      // 先校验视频文件存在——不存在时明确报错（此前静默失败，用户以为「点击无反应」）
-      if (!filePath || !fs.existsSync(filePath)) {
+      // 先校验视频文件存在——不存在时明确报错（此前静默失败，用户以为「点击无反应」）。
+      // ⚠️ 2026-10-04：用异步 stat（原 fs.existsSync）——影片在 NAS 上，NAS 离线/慢时
+      //    同步 existsSync 会把主进程卡 ~40s（整窗口未响应）。异步只让这次调用等待。
+      if (!filePath) return { ok: false, error: '视频文件不存在，请检查影片的视频路径设置' }
+      // 存储根刚失败过（如 NAS 离线）：直接快速失败，不再发起会挂 ~40s 的 stat（2026-10-04）
+      if (isVideoReadCooling(filePath)) return { ok: false, error: '视频所在的网络存储暂时不可用，请稍后重试' }
+      try { await fs.promises.stat(filePath); noteVideoReadResult(filePath, true) } catch {
+        noteVideoReadResult(filePath, false)
         return { ok: false, error: '视频文件不存在，请检查影片的视频路径设置' }
       }
       // 只拦可执行/脚本类：正常调用都来自影片记录的 py 字段（视频文件），
@@ -133,12 +147,41 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
 
   // === 读取视频文件时长（分钟，2026-09-09 新增） ===
   // 渲染进程 → 主进程：解析 MP4/M4V/MOV 容器的 mvhd 得到时长；
-  // AVI/MKV 等容器返回 data=0（前端显示为未知）
-  ipcMain.handle(IPC.UTILS_READ_DURATION, (_e, filePath) => {
+  // AVI/MKV 等容器返回 data=0（前端显示为未知）。
+  // ⚠️ 2026-10-04：读取改为**异步**（原来是 fs.existsSync + 同步读）—— 影片在 NAS 上，
+  //    NAS 离线时同步 open 会把主进程事件循环卡 ~40s，详情页一打开整窗口就「未响应」（实测）。
+  //    异步失败也返回 data=0（语义同「无法解析」），前端只在 data 非 0 时写库。
+  ipcMain.handle(IPC.UTILS_READ_DURATION, async (_e, filePath) => {
     try {
-      if (!filePath || !fs.existsSync(filePath)) return { ok: false, error: '文件不存在' }
-      const minutes = readMp4DurationMinutes(filePath)
+      if (!filePath) return { ok: false, error: '文件不存在' }
+      const minutes = await readMp4DurationMinutes(filePath)
       return { ok: true, data: minutes || 0 }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // === 读取视频真实分辨率（2026-10-04 播放页「4K」标签） ===
+  // 渲染进程 → 主进程：批量传入 py 列表，返回 { [path]: {width,height}|null }。
+  // 影片都在 NAS/SMB 上（实测用户库 376 部全部是 UNC 路径），三条硬约束：
+  //  ① I/O 走 fs.promises（video-meta.readVideoSize）—— NAS 离线时同步 open 会把主进程
+  //     事件循环卡 ~40s（实测），异步版阻塞在 libuv 线程池，界面照常响应；
+  //  ② 结果按路径缓存（见 videoSizeCache：正结果不过期、负结果 5 分钟 TTL）；
+  //  ③ 批量上限 40，防调用方误传整库。
+  ipcMain.handle(IPC.UTILS_READ_VIDEO_SIZE, async (_e, paths) => {
+    try {
+      const list = [...new Set((Array.isArray(paths) ? paths : [paths])
+        .filter(p => typeof p === 'string' && p.trim()))].slice(0, 40)
+      const data = {}
+      for (const p of list) {
+        const hit = videoSizeCache.get(p)
+        if (hit && (hit.size !== null || Date.now() - hit.ts < NEG_TTL_MS)) {
+          data[p] = hit.size
+          continue
+        }
+        const size = await readVideoSize(p).catch(() => null)
+        videoSizeCache.set(p, { size, ts: Date.now() })
+        data[p] = size
+      }
+      return { ok: true, data }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

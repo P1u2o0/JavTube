@@ -39,7 +39,7 @@ function actorNames(row) {
 
 /** 把 sql.js 的 exec 结果 zip 成对象数组（复用 util.rows） */
 
-const CAND_COLS = `id, ph, pm, cover, fl, bq, yid, cast_json, xl, ps, fx, dy,
+const CAND_COLS = `id, ph, pm, cover, fl, bq, yid, cast_json, xl, ps, fx, dy, py,
   score, want, watched, duration, tjrq, cl, play_time, play_count`
 
 /**
@@ -184,6 +184,8 @@ function registerPlayerIpc(ipcMain, db) {
       scored.sort((a, b) => b.s - a.s)
       const data = scored.slice(0, Number(limit) || 12).map(({ c, s, why }) => ({
         id: c.id, ph: c.ph, pm: c.pm, cover: c.cover,
+        // py：播放页推荐项的文件名标签（无码破解/中文字幕/4K）与真实分辨率探测都要用它（2026-10-04）
+        py: c.py || '',
         score: c.score, duration: c.duration, want: c.want,
         // 演员名（yid 拆分 + cast_json 里的女优）—— _actors 是 Set，必须转数组后再过 IPC，
         // 否则前端 Array.isArray 判定失败（2026-09-29 实测：Set 能序列化但不是数组）。

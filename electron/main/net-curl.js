@@ -138,7 +138,13 @@ function curlDownload(url, savePath, opts = {}) {
   return throttleByHost(url).then(() => new Promise((resolve) => {
     const args = [...buildCommonArgs(opts), '-o', savePath, '-w', '%{http_code}', url]
     execFile(CURL_BIN, args, { encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, (err, stdout) => {
-      if (err) return resolve({ ok: false, error: err.message })
+      // 异常路径也要清掉目标路径（2026-10-02）：curl 被超时杀掉时已写入的是半截文件，
+      // 留着会被后续的存在性/有效性判断当成「下过的东西」（当前调用方用 .tmp 规避，
+      // 但函数契约是「直接写入 savePath」，收尾不能只靠调用方）
+      if (err) {
+        try { fs.unlinkSync(savePath) } catch {}
+        return resolve({ ok: false, error: err.message })
+      }
       const status = Number(String(stdout).trim()) || 0
       const size = fs.existsSync(savePath) ? fs.statSync(savePath).size : 0
       // 3xx 也当失败（2026-09-28 审计）：图片请求不带 -L（跟随后可能被引到验证页），

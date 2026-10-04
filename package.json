@@ -1,6 +1,6 @@
 {
   "name": "javtube",
-  "version": "3.0.0",
+  "version": "3.2.0",
   "description": "JavTube - 本地影片管理软件",
   "main": "electron/main/index.js",
   "author": "JavTube",
@@ -20,6 +20,7 @@
     "test:restore": "node scripts/test-restore.js",
     "test:persist": "node scripts/test-persist.js",
     "test:fill": "node scripts/test-fill-unit.mjs",
+    "test:vsize": "node scripts/test-video-size.js",
     "test:persist-coalesce": "node scripts/test-persist-coalesce.js",
     "test:fill:e2e": "node scripts/test-fill-scrape.js",
     "test:devdb": "node scripts/test-devdb.js",

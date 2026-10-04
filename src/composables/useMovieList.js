@@ -54,7 +54,9 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
     store.page = p
     const args = buildLoadArgs ? buildLoadArgs() : { append: false }
     await store.loadMovies(args)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    // 回顶必须滚 .main-content：全站唯一滚动容器是它（.page-container 是 100vh + overflow:hidden，
+    // body 不可滚动），对 window 调 scrollTo 是空操作 → 翻页后页面停在原位（2026-10-02 修复）
+    document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   /**
@@ -142,14 +144,26 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
 
   /**
    * 批量刮削选中的影片（片库 / 喜欢 / 观看记录三页共用）。
-   * 语义（2026-09-08 用户确认）：仅处理「当前页」内被选中的影片，跨页勾选不在数据源中属预期行为。
+   * 语义（2026-10-02 调整，与批量删除/收藏/加标签统一）：处理**跨页全部选中项** ——
+   * 状态栏的「已选 N 项」即真实处理数（此前只处理当前页，与其它批量操作不一致）。
    * 刮削来源跟随设置（此前写死 'auto'，设置里的来源选项对批量刮削不生效）；
    * 来源为 fill 时进入「补全字段」模式：只写当前为空的字段，且已有预览图时不再重复下载。
    */
   async function onBatchScrape() {
     if (!window.api) return
     const ids = [...store.selectedIds]
-    const selected = store.movies.filter(m => ids.includes(m.id))
+    if (!ids.length) return
+    // store.movies 只持有当前页：跨页选中的项按 id 补拉一次详情（本地 sql.js，毫秒级）
+    const byId = new Map(store.movies.map(m => [m.id, m]))
+    const selected = []
+    for (const id of ids) {
+      let m = byId.get(id)
+      if (!m) {
+        const r = await window.api.getMovie(id).catch(() => null)
+        m = r?.ok ? r.data : null
+      }
+      if (m) selected.push(m)   // 已被删除的残留 id 直接跳过
+    }
     if (!selected.length) return
     const scrapeStore = useScrapeStore()
     const mode = store.settings.scrape_source || 'auto'

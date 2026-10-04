@@ -103,8 +103,9 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
     try {
       // 使用 INSERT ... ON CONFLICT 实现 upsert 语义
       // 如果 key 不存在则插入，已存在则更新 value
+      // undefined 归一成空串（2026-10-02）：String(undefined) 会把字面量 "undefined" 写进库
       db.run(`INSERT INTO settings(key,value) VALUES (?,?)
-        ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value ?? '')])
       persistSoon(db)
       // 代理相关设置变更时，即时应用到 Electron session（异步执行不阻塞返回）
       if (String(key).startsWith('proxy_')) applyProxySettings(db)
@@ -126,7 +127,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       try {
         for (const [key, value] of entries) {
           db.run(`INSERT INTO settings(key,value) VALUES (?,?)
-            ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value)])
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [String(key), String(value ?? '')])
           if (String(key).startsWith('proxy_')) proxyChanged = true
         }
         db.run('COMMIT')

@@ -17,6 +17,9 @@ const path = require('path')
 const IPC = require('../../common/ipc-channels')
 const { scrapeMovie, isImageFile, isGifRenamed, inspectImage } = require('../scraper')
 const { COVER_DIR } = require('../constants')
+// covers/ 归属校验：与 cleanup.js 同一套门控（库内路径可能含 `..` 等异常值，
+// 修复要写文件/删文件，必须先确认目标在 dataDir/covers 之内）
+const { underCovers } = require('./cleanup')
 
 /**
  * 文件存在且内容是**可用图片**才算可用。
@@ -137,7 +140,9 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   const d = r.data || {}
 
   // 封面：若原路径仍坏，而本次新封面有效 → 复制过去（新封面扩展名不同时同样适用）
-  if (dbCover && !usable(path.join(dataDir, dbCover)) && d.cover) {
+  // 两侧都必须在 covers/ 内（2026-10-02 补门控，与 cleanup.js 口径一致）：库内路径异常时
+  // 不允许把文件写到 dataDir 之外、也不允许从之外读文件进 covers
+  if (dbCover && underCovers(dataDir, dbCover) && !usable(path.join(dataDir, dbCover)) && underCovers(dataDir, String(d.cover || ''))) {
     const src = path.join(dataDir, String(d.cover).replace(/\\/g, '/'))
     const dst = path.join(dataDir, dbCover)
     if (isImageFile(src)) {
@@ -147,11 +152,14 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   }
 
   // 预览图：库里每个仍坏的槽位，用本次新下载的有效图逐个填回**原路径**
+  // 同样双侧门控（目标=库内路径，来源=本次下载产物，均应在 covers/ 内）
   const fresh = (Array.isArray(d.previews) ? d.previews : [])
-    .map(p => path.join(dataDir, String(p).replace(/\\/g, '/')))
-    .filter(p => usable(p))
+    .map(p => String(p).replace(/\\/g, '/'))
+    .filter(rel => underCovers(dataDir, rel) && usable(path.join(dataDir, rel)))
+    .map(rel => path.join(dataDir, rel))
   let fi = 0
   for (const rel of dbPrevs) {
+    if (!underCovers(dataDir, rel)) continue
     const dst = path.join(dataDir, rel)
     if (usable(dst)) continue
     if (fi >= fresh.length) continue
@@ -196,7 +204,8 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   if (after) {
     const leftovers = [...(after.brokenCover ? [after.dbCover] : []), ...after.brokenPrevs]
     for (const rel of leftovers) {
-      if (!rel) continue
+      // 只删 covers/ 内的文件（2026-10-02 补门控）：库内路径异常时绝不越界删文件
+      if (!rel || !underCovers(dataDir, rel)) continue
       try { const p = path.join(dataDir, rel); if (fs.existsSync(p)) fs.unlinkSync(p) } catch {}
     }
   }

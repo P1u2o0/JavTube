@@ -85,10 +85,15 @@ async function onSortChange() {
 }
 
 /**
- * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开
+ * 切换喜欢状态（卡片右上角喜欢按钮）；取消喜欢后刷新列表使影片离开。
+ * 2026-10-02：不再走 onRefresh（它会把 page 复位到 1）—— 在第 2/3 页取消喜欢
+ * 会被弹回第 1 页。这里只重载当前页；当前页因此变空时，store 的越界守卫会自动收敛到末页。
  * @param {Object} m - 影片对象
  */
-async function onFav(m) { await store.toggleFav(m.id); onRefresh() }
+async function onFav(m) {
+  await store.toggleFav(m.id)
+  await store.loadMovies({ onlyFavorite: true, useSearch: false })
+}
 
 /**
  * 组件挂载时：初始化 store、加载标签、加载收藏影片

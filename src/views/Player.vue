@@ -42,16 +42,15 @@
         </div>
       </div>
 
-      <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：喜欢 + 详情 -->
+      <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：属性标签 + 喜欢 + 详情 -->
       <div class="tag-row swap-in" v-if="m" :key="'tags-' + m.id">
         <div class="tags">
           <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
         </div>
         <div class="row-actions">
-          <!-- 评分移到喜欢按钮左侧（原先在女优行最右） -->
-          <span v-if="m.score > 0" class="info-stats">
-            <span class="rating">★ {{ Number(m.score).toFixed(1) }}</span>
-          </span>
+          <!-- 文件名属性标签（2026-10-04）：无码破解 / 中文字幕 / 4K，位于喜欢按钮左侧。
+               原「★ 评分」显示已按用户要求移除（2026-10-04，播放页两处评分都去掉） -->
+          <span v-for="b in fileBadges" :key="b.kind" class="file-tag" :class="'ft-' + b.kind">{{ b.label }}</span>
           <button type="button" class="pill-btn fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
                   :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
             <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="16" />
@@ -64,19 +63,17 @@
         </div>
       </div>
 
-      <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页） -->
+      <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页）。
+           2026-10-04：多位女优共演时**全部平铺显示**（原先只显示首位 + "+N" 悬浮提示） -->
       <div class="actress-row swap-in" v-if="m" :key="'act-' + m.id">
-        <button v-if="leadActress" type="button" class="actress"
-                :title="`查看 ${leadActress.name} 的全部影片`"
-                @click="goActor(leadActress.name)">
+        <button v-for="(a, i) in actressesView" :key="a.name + '-' + i" type="button" class="actress"
+                :title="`查看 ${a.name} 的全部影片`"
+                @click="goActor(a.name)">
           <span class="ac-avatar">
-            <img v-if="avatarUrl" :src="avatarUrl" :alt="leadActress.name" @error="avatarBroken = true" />
-            <span v-else class="ac-fallback">{{ leadActress.name.slice(0, 1) }}</span>
+            <img v-if="a.src" :src="a.src" :alt="a.name" @error="markAvatarBroken(a.name)" />
+            <span v-else class="ac-fallback">{{ a.name.slice(0, 1) }}</span>
           </span>
-          <span class="ac-name">{{ leadActress.name }}</span>
-          <!-- +N = 本片除首位外还有 N 位女优；鼠标悬浮给出具体名字，避免这个数字看不出含义 -->
-          <span v-if="actressExtra > 0" class="ac-more"
-                :title="`本片共 ${actresses.length} 位女优，还有：${otherActresses}`">+{{ actressExtra }}</span>
+          <span class="ac-name">{{ a.name }}</span>
         </button>
       </div>
     </div>
@@ -97,10 +94,13 @@
           </div>
           <div class="rec-info">
             <div class="rec-title" :title="r.pm || r.ph">{{ r.pm || r.ph }}</div>
+            <!-- 文件名属性标签（2026-10-04）：标题下方、演员名上方。
+                 原「★ 评分」行已按用户要求移除（2026-10-04） -->
+            <div class="rec-file-tags" v-if="r._badges && r._badges.length">
+              <span v-for="b in r._badges" :key="b.kind" class="file-tag file-tag-sm" :class="'ft-' + b.kind">{{ b.label }}</span>
+            </div>
             <!-- 演员名（番号不再展示） -->
             <div class="rec-actors" v-if="recActors(r)" :title="recActors(r)">{{ recActors(r) }}</div>
-            <!-- 评分：单独一行，配色与播放页下方统计的评分同源（--star-fill） -->
-            <div class="rec-score" v-if="r.score > 0">★ {{ Number(r.score).toFixed(1) }}</div>
           </div>
         </div>
       </div>
@@ -114,7 +114,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Artplayer from 'artplayer'
 import AppIcon from '@/components/AppIcon.vue'
-import { resolveMedia, resolveCover, splitTags, dataDirRef, favLock, favUnlock } from '@/utils/global'
+import { resolveMedia, resolveCover, splitTags, dataDirRef, favLock, favUnlock, fileBadgesOf, is4kSize } from '@/utils/global'
 import { useMoviesStore } from '@/store/movies'
 
 // 设置面板「倍速」宽度：两态统一 200px（2026-09-30，实测 tmp/probe-playbackrate-size.js）
@@ -174,6 +174,39 @@ function recActors(r) {
   return splitTags(r?.yid).join('、')
 }
 
+// ====== 文件名属性标签（2026-10-04）：无码破解 / 中文字幕 / 4K ======
+// 规则：无码破解 = 文件名 -U/-UC/-破解；中文字幕 = -C/-UC（见 utils/global.js fileBadgesOf，
+// 按用户真实库命名核对）。4K 优先看文件名标记；**文件名没写时读视频真实分辨率**
+// （用户要求：部分 4K 影片文件名里没有 4K），由主进程异步批量读（utils:readVideoSize，
+// NAS 上只在首次需要时读一次，主进程按路径缓存）。
+const res4k = ref({})          // py → 是否真实 4K（undefined=尚未探测）
+const fileBadges = computed(() => fileBadgesOf(m.value?.py, { is4k: res4k.value[m.value?.py] === true }))
+
+/** 把标签挂到推荐项上（模板直接读 r._badges，避免在模板里调函数重算 —— 项目约定） */
+function applyRecBadges() {
+  for (const r of recs.value) {
+    r._badges = fileBadgesOf(r.py, { is4k: res4k.value[r.py] === true })
+  }
+}
+
+/**
+ * 异步补探真实分辨率：只探「文件名没写 4K 且尚未探测过」的影片（当前片 + 推荐项）。
+ * 结果合并进 res4k → 触发当前片标签重算 + 推荐项标签重挂；失败静默（无标签而已）。
+ * @param {string[]} paths - 候选 py 列表
+ */
+async function probeSizes(paths) {
+  if (!window.api?.readVideoSize) return
+  const need = [...new Set((paths || []).filter(p => p && res4k.value[p] === undefined))]
+    .filter(p => !fileBadgesOf(p).some(b => b.kind === 'uhd'))
+  if (!need.length) return
+  const r = await window.api.readVideoSize(need).catch(() => null)
+  if (!r || !r.ok) return
+  const next = { ...res4k.value }
+  for (const p of need) next[p] = is4kSize(r.data?.[p])
+  res4k.value = next
+  applyRecBadges()
+}
+
 function fmtDur(min) {
   const n = Number(min) || 0
   if (!n) return ''
@@ -182,7 +215,6 @@ function fmtDur(min) {
 }
 
 // ====== 女优（标题下方：圆形头像 + 名字）======
-const avatarBroken = ref(false)
 
 /**
  * 女优列表：优先取 cast_json 里 gender !== 'm' 的项。
@@ -206,16 +238,22 @@ const actresses = computed(() => {
   return splitTags(row.yid).map(name => ({ name, avatar: '' }))
 })
 
-const leadActress = computed(() => actresses.value[0] || null)
-/** 除首位外还有几位（>0 时名字右侧显示 +N） */
-const actressExtra = computed(() => Math.max(0, actresses.value.length - 1))
-/** 其余女优名字（给 +N 做悬浮提示：本片共几位、还有谁） */
-const otherActresses = computed(() => actresses.value.slice(1).map(a => a.name).join('、'))
-const avatarUrl = computed(() => {
-  const a = leadActress.value
-  if (!a || !a.avatar || avatarBroken.value) return ''
-  try { return resolveCover(a.avatar) || '' } catch { return '' }
-})
+/** 头像加载失败的演员名（失败后回落首字占位；换片时整体复位）。用新对象赋值保证响应性 */
+const brokenAvatars = ref({})
+function markAvatarBroken(name) {
+  brokenAvatars.value = { ...brokenAvatars.value, [name]: true }
+}
+/**
+ * 女优展示行数据：预解析头像 URL（模板里不调函数 —— 项目约定，避免每次重渲染重算）。
+ * 2026-10-04：多位女优共演时全部平铺展示（不再是「首位 + N」）。
+ */
+const actressesView = computed(() => actresses.value.map(a => {
+  let src = ''
+  if (a.avatar && !brokenAvatars.value[a.name]) {
+    try { src = resolveCover(a.avatar) || '' } catch { src = '' }
+  }
+  return { name: a.name, src }
+}))
 
 // ====== 标签：全部展示，其中「体型 / 行为 / 玩法」三类排到最前 ======
 const CAT_WHITELIST = ['体型', '行为', '玩法']
@@ -509,6 +547,7 @@ async function loadMovie(id) {
   await nextTick()
   initOrSwitchPlayer()
   loadRecommendations(id)
+  probeSizes([m.value?.py])   // 当前片的真实分辨率补探（文件名没写 4K 时）
 }
 
 function initOrSwitchPlayer() {
@@ -611,6 +650,9 @@ async function loadRecommendations(id) {
   } catch { recs.value = [] }
   recLoading.value = false
   recVersion.value++      // 列表整体淡入（切换影片后新推荐丝滑登场）
+  // 文件名属性标签挂到推荐项（先按文件名出标签；4K 的真实分辨率随后异步补探）
+  applyRecBadges()
+  probeSizes(recs.value.map(r => r.py))
   // 列表元素因 :key 变化被重建，等 DOM 落地后重新反算间距（否则整条布局丢一次）
   await nextTick()
   fitRecRows()
@@ -667,7 +709,7 @@ async function toggleFav() {
 watch(() => Number(route.params.id), (id) => { if (id) loadMovie(id) })
 
 /** 换影片时给新女优的头像一次加载机会（上一张的失败标记不能沿用到下一部） */
-watch(() => m.value?.id, () => { avatarBroken.value = false })
+watch(() => m.value?.id, () => { brokenAvatars.value = {} })
 
 onMounted(async () => {
   // 标签分类配置（体型/行为/玩法）来自 store；直接进播放页时可能尚未初始化
@@ -875,7 +917,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
-/* 播放器下方第一行：标签 … 最右 评分 + 喜欢 + 详情 */
+/* 播放器下方第一行：标签 … 最右 属性标签 + 喜欢 + 详情 */
 .tag-row {
   display: flex;
   align-items: center;
@@ -891,11 +933,12 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 7px 9px;
 }
-/* 第二行：女优（头像 + 名字） */
+/* 第二行：女优（头像 + 名字）。2026-10-04：多位女优共演全部平铺 → 允许换行 */
 .actress-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   margin-top: 8px;
   font-size: 13px;
   color: var(--muted);
@@ -933,7 +976,6 @@ onBeforeUnmount(() => {
 .ac-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ac-fallback { font-size: 19px; font-weight: 600; color: var(--text-2); }
 .ac-name { white-space: nowrap; }
-.ac-more { color: var(--muted); font-size: 14px; font-weight: 500; }
 
 /* 标签（展示影片全部 bq；三类排在前，纯展示不可点 → 不用 TagChip 的 pointer 语义） */
 .cat-tag {
@@ -947,16 +989,26 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-/* 评分：位于标签行最右、喜欢按钮左侧 */
-.info-stats {
+/* 文件名属性标签（2026-10-04）：位于喜欢按钮左侧 / 推荐项标题下方。
+   配色令牌见 global.css --filetag-*（中文字幕=浅紫、无码破解=浅蓝、4K=琥珀）。
+   原「★ 评分」样式已随评分显示一并移除（2026-10-04） */
+.file-tag {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  padding: 4px 12px;
+  border-radius: var(--r-tag);
+  font-size: 13px;
+  line-height: 1.6;
   white-space: nowrap;
+  user-select: none;
 }
-.info-stats .rating { color: var(--star-fill); font-size: 15px; font-variant-numeric: tabular-nums; }
+.ft-uncen { background: var(--filetag-blue-soft); color: var(--filetag-blue); }
+.ft-cnsub { background: var(--filetag-purple-soft); color: var(--filetag-purple); }
+.ft-uhd { background: var(--filetag-gold-soft); color: var(--filetag-gold); }
+/* 推荐项里的缩小版（窄列，跟随 12px 演员名层级） */
+.file-tag-sm { padding: 1px 8px; font-size: 11px; border-radius: 8px; }
 
-/* 标签行右侧的操作按钮组（评分 / 喜欢 / 详情，同一行） */
+/* 标签行右侧的操作按钮组（属性标签 / 喜欢 / 详情，同一行） */
 .row-actions {
   flex-shrink: 0;
   display: flex;
@@ -1099,12 +1151,12 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 评分：单独一行，配色与播放页下方统计的评分同源（--star-fill） */
-.rec-score {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--star-fill);
-  font-variant-numeric: tabular-nums;
+/* 文件名属性标签行（2026-10-04）：标题下方、演员名上方；原「★ 评分」行已移除 */
+.rec-file-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
 }
 
 /* 换片过渡：信息块按 m.id 重建 DOM → 动画重放（淡入 + 轻微上移）。

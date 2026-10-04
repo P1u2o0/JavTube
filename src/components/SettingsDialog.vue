@@ -482,14 +482,17 @@ function addMap() {
 const mapPreviewShow = ref(false)
 const mapApplying = ref(false)
 const mapPreview = reactive({ total: 0, changed: [] })
+// 预览时用的「编辑中的规则」快照：确认后才把它落库（取消则什么都不写）
+const previewMapping = ref([])
 
 /**
  * 把当前「标签映射」规则应用到已有影片
  *
  * 背景：映射此前只在 scrapeMovie() 刮削那一刻生效（scraper.js 里那一行是唯一应用点），
  *       改完规则不会重算已有记录，看起来像「功能没生效」。这里补一个显式入口。
- * 流程：规则先入库（后端按 settings.tag_mapping 计算，先存才能保证预览=结果）
- *      → 干跑 dryRun 拿影响预览 → 用户确认 → 落库 → 刷新。
+ * 流程（2026-10-02 修正）：用**编辑中的规则**干跑 dryRun 拿影响预览 → 用户确认 →
+ *       此时才把规则落库并按它执行。此前是「先把规则写库再预览」，用户点「取消」不会
+ *       回滚 —— 规则被静默保存并影响后续刮削，与本弹窗其它设置「保存才生效」的语义不一致。
  */
 async function applyMappingToLibrary() {
   if (!window.api) return
@@ -500,13 +503,11 @@ async function applyMappingToLibrary() {
   // 没有「原标签」的规则永远不会命中，提前拦下
   if (!mapping.some(p => p[0])) return ElMessage.warning('请先填写至少一条规则的原标签')
 
-  // 规则先落库：后端是按 settings.tag_mapping 算的，不先存会出现「预览与结果不一致」
-  const rs = await window.api.updateSetting('tag_mapping', JSON.stringify(mapping))
-  if (!rs.ok) return ElMessage.error(rs.error)
-
+  previewMapping.value = mapping
   mapApplying.value = true
   try {
-    const pre = await window.api.applyTagMap(true)   // 干跑：只预览，不写库
+    // 干跑：用编辑中的规则计算影响面，不写库（确认前不动 settings.tag_mapping）
+    const pre = await window.api.applyTagMap(true, mapping)
     if (!pre.ok) return ElMessage.error(pre.error)
     if (!pre.changed.length) {
       return ElMessage.info(`现有 ${pre.total} 部影片的标签都不匹配这 ${mapping.length} 条规则，无需改动`)
@@ -528,12 +529,15 @@ async function applyMappingToLibrary() {
 }
 
 /**
- * 确认应用：真正写库并刷新
+ * 确认应用：规则落库 → 真正执行 → 刷新
  */
 async function confirmApplyMap() {
   if (!window.api) return
   mapApplying.value = true
   try {
+    // 确认时才落库（预览用的就是这份规则，保证「预览 = 结果」）
+    const rs = await window.api.updateSetting('tag_mapping', JSON.stringify(previewMapping.value))
+    if (!rs.ok) return ElMessage.error(rs.error)
     const r = await window.api.applyTagMap(false)    // 真正落库
     if (!r.ok) return ElMessage.error(r.error)
     mapPreviewShow.value = false
@@ -755,7 +759,9 @@ async function clearDb() {
   padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-1, #f5f5f5);
+  /* 2026-10-02：原为 var(--bg-1, #f5f5f5)，但 --bg-1 全项目未定义 → 实际落到冷灰 #f5f5f5，
+     与暖纸白体系不符。改用「输入底」令牌 --surface-2 */
+  background: var(--surface-2);
   color: var(--text);
   font-size: var(--fs-base);
   cursor: pointer;

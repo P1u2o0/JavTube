@@ -48,7 +48,7 @@
 
 <script setup>
 // 引入影片卡片子组件
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import MovieCard from './MovieCard.vue'
 
 // 组件 props 定义
@@ -102,10 +102,13 @@ function staggerDelay(i) {
 // 它必须**大于「最大错峰 + 动画时长」**（160+160=320ms），否则动画播到一半被 animation:none
 // 打断会「啪」地跳到终态；留出余量取 420ms。
 const animateIn = ref(true)
+// 入场动画窗口定时器：卸载时清掉（2026-10-02），避免销毁后仍写 ref
+let animateTimer = null
 onMounted(async () => {
   await nextTick()
-  setTimeout(() => { animateIn.value = false }, 420)
+  animateTimer = setTimeout(() => { animateIn.value = false }, 420)
 })
+onBeforeUnmount(() => { if (animateTimer) clearTimeout(animateTimer) })
 
 // 定义 emit 事件：
 // - page: 分页切换事件，参数为目标页码

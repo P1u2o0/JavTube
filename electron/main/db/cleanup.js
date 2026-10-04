@@ -119,4 +119,4 @@ function purgeUnreferenced(db, dataDir, candidates) {
   return cleaned
 }
 
-module.exports = { collectMovieRefs, collectAllRefs, purgeUnreferenced }
+module.exports = { collectMovieRefs, collectAllRefs, purgeUnreferenced, underCovers }

@@ -45,7 +45,11 @@ const routes = [
   { path: '/actor/:name', component: ActorFilms, meta: { title: '演员' }, props: true },
 
   // 内置播放页（2026-09-29）- 左侧播放器 + 右侧相关推荐，:id 为影片 ID
-  { path: '/play/:id', component: Player, meta: { title: '播放' }, props: true }
+  { path: '/play/:id', component: Player, meta: { title: '播放' }, props: true },
+
+  // 兜底（2026-10-02）：未知 hash（手改 URL、外部链接、拼错路径）此前无匹配路由 →
+  // router-view 渲染空白页且无任何提示。统一重定向回首页。
+  { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 
 // 创建路由实例，使用 Hash 模式（Electron 应用中避免文件协议路径冲突）

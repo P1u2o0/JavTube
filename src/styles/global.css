@@ -85,6 +85,12 @@
   --heat-blue: #2f6fdb;     /* 前 51%~60% */
   --heat-cyan: #17b3c9;     /* 61% 以后 */
 
+  /* 文件名标签（2026-10-04 播放页）：从视频文件名 / 真实分辨率得到的属性标签。
+     无码破解=浅蓝、中文字幕=浅紫、4K=琥珀（soft 为底、主色为字） */
+  --filetag-blue: #2f6fdb;   --filetag-blue-soft: #e3eefb;
+  --filetag-purple: #6b4bb0; --filetag-purple-soft: #efe7fb;
+  --filetag-gold: #a26f16;   --filetag-gold-soft: #fdf1d6;
+
   /* 圆角体系（Apple 风格：整体更圆润，连续圆角观感） */
   --r-sm: 10px;             /* 小件：封面、缩略图、菜单 */
   --r-md: 16px;             /* 卡片、面板、表格（对齐 Apple 阶梯 10/16/20） */

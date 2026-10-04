@@ -13,7 +13,7 @@
     <!-- 顶部导航栏组件 -->
     <TopNav />
     <!-- 主内容区域 -->
-    <div class="main-content">
+    <div class="main-content" ref="mainRef">
       <!-- 路由出口：渲染当前匹配的路由组件 -->
       <!-- 说明：这里刻意不使用 <transition mode="out-in">。
            out-in 模式必须等待旧页面的离场动画帧回调完成后才会挂载新页面，
@@ -21,8 +21,12 @@
            一旦过渡未结束，新页面将永远不挂载，表现为「点击导航后一片空白」。
            改为纯 CSS 入场动画（见 global.css .route-anim），动画不参与渲染流程，
            因此不存在死锁风险。 -->
+      <!-- key 的两套语义（2026-10-02）：
+           · 播放页固定 'player' —— /play/1 → /play/2 只换片不重建（换片走 Player.initOrSwitchPlayer，
+             重建会绕开整套换片/记账抑制逻辑，每次点推荐都销毁再 new Artplayer）；
+           · 其它路由用 path —— 每次导航重挂载，保证入场动画照常播放。 -->
       <router-view v-slot="{ Component, route }">
-        <component :is="Component" :key="route.path" class="route-anim" />
+        <component :is="Component" :key="viewKey(route)" class="route-anim" />
       </router-view>
     </div>
   </div>
@@ -33,8 +37,10 @@
 import TopNav from '@/components/TopNav.vue'
 // 空闲预热内置播放器用（详见文件末尾 prewarmPlayer 注释）
 import Artplayer from 'artplayer'
-// 引入 Vue 的 onMounted 生命周期钩子
-import { onMounted } from 'vue'
+// 引入 Vue 的 onMounted / ref / watch 生命周期与响应式 API
+import { onMounted, ref, watch } from 'vue'
+// 引入路由实例（路由 key 与滚动复位用）
+import { useRoute } from 'vue-router'
 // 引入影片状态管理 Store
 import { useMoviesStore } from '@/store/movies'
 // 引入全局数据目录引用（用于封面图等资源的路径解析）
@@ -44,6 +50,24 @@ import { useImageRepair } from '@/composables/useImageRepair'
 
 // 创建影片状态管理实例
 const store = useMoviesStore()
+
+// ====== 路由 key 与主内容区滚动复位（2026-10-02）======
+const route = useRoute()
+const mainRef = ref(null)
+/**
+ * 路由 → 视图 key。播放页固定为 'player'（/play/1 → /play/2 复用同一实例，
+ * 换片走 Player.initOrSwitchPlayer 的 switchUrl 分支），其余路由按 path
+ * 每次重挂载以播放入场动画。两套语义详见模板里的注释。
+ */
+function viewKey(r) {
+  return r.path.startsWith('/play/') ? 'player' : r.path
+}
+// 视图真的换了（key 变化）才把主内容区滚回顶部：此前不重置，从滚到一半的
+// 片库点进详情/播放页会停在中间位置（2026-10-02 修复）。
+// 播放页之间是同一实例（换片不重建），保持当前滚动位置、不打断用户。
+watch(() => viewKey(route), () => {
+  if (mainRef.value) mainRef.value.scrollTop = 0
+})
 
 // ====== 空闲预热内置播放器（2026-09-30）======
 // 背景（CDP 实测，相对「路由切到播放页」的增量）：

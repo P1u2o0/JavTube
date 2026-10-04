@@ -10,16 +10,18 @@
  *   U6  标签全部显示；「体型/行为/玩法」三类排在最前（id=10：口交、接吻 在前）
  *   U7  未命中三类的标签跟在后面（女教师/第一人称摄影/单体作品）
  *   U8  无头像的影片（id=11）显示首字占位圆形，且不出现破图
- *   U9  统计只有评分（无分类标签、无影片时长），贴在第二行女优右侧
+ *   U9  信息区评分已移除；文件名属性标签（中文字幕等）位于喜欢按钮左侧（2026-10-04 改）
  *   U11 标题行位于播放器上方（标题底边 ≤ 播放器顶边）
  *   U12 播放器顶边 = 右侧第一张海报顶边（两列头部等高）
  *   U13 喜欢按钮：图标+文字、位于播放器下方一行最右、点击可切换状态、标题后无旧图标按钮
+ *   U14 推荐项：海报 220 / 标题 3 行 / 不再显示评分 / 属性标签位于标题与演员名之间（2026-10-04 改）
  *   U15 详情按钮：图标+文字、与喜欢按钮同款样式、位于其右侧、点击进入影片详情页
  *   U16 推荐列表滚动条贴到窗口最右（与其它页面一致）
  *   U17 换片过渡动画（swap-in）已挂载
  *   U18 点击推荐影片：自动切到播放窗口播放 + 标题等信息同步更新
  *   U19 播放器放大（右列 440→400、海报保持 220 → 播放器 ≥1062px）
  *   U20 右侧正好完整显示 5 个推荐项（列表高 741.5px，第 6 个不露半截）
+ *   U24 女优行：单女优无 +N 截断；多女优共演全部平铺显示（2026-10-04 改）
  *   U10 无未捕获页面异常
  *
  * ⚠️ 会写 dev 库：进入播放页会触发 recordPlay（写 play_count / play_time / play_pos），
@@ -40,6 +42,9 @@ const DEV_DB = path.join(ROOT, 'node_modules', 'electron', 'dist', 'data', 'app.
 const PORT = 9800 + Math.floor(Math.random() * 150)
 const ID_WITH_AVATAR = 10   // IPX-247 / 岬ななみ / cast 有 covers/actress/rsv.jpg
 const ID_NO_AVATAR = 11     // ABF-337 / 釈アリス / cast.avatar 为空
+// 多位女优共演的样本（2026-10-04 女优全显断言用）：id=140 SONE-561 cast 有 9 位女优
+const ID_MULTI_ACTRESS = 140
+const MULTI_ACTRESS_MIN = 3  // 断言下限取 3（防数据漂移；实际 9）
 // id=10 的 bq = 「第一人称摄影，女教师，口交，接吻，单体作品」
 const EXPECT_KEY_FIRST = ['口交', '接吻']                                    // 三类命中项（排最前）
 const EXPECT_ALL = ['口交', '接吻', '第一人称摄影', '女教师', '单体作品']      // 全部标签
@@ -88,7 +93,8 @@ async function pageUI() {
   const ph = q('.info-ph'), nameEl = q('.info-name'), act = q('.actress'), av = q('.ac-avatar')
   const avImg = q('.ac-avatar img')
   const cats = [...document.querySelectorAll('.cat-tag')].map(e => e.textContent.trim())
-  const stats = q('.info-stats')
+  const fileTags = [...document.querySelectorAll('.tag-row .file-tag')].map(e => e.textContent.trim())
+  const fileTagEls = [...document.querySelectorAll('.tag-row .file-tag')]
   return {
     bg: page ? getComputedStyle(page).backgroundColor : '',
     bodyBg: getComputedStyle(document.body).backgroundColor,
@@ -108,9 +114,17 @@ async function pageUI() {
     avImgSrc: avImg ? avImg.src.slice(0, 46) : '',
     fallback: q('.ac-fallback') ? q('.ac-fallback').textContent.trim() : '',
     hasImg: !!avImg,
-    more: q('.ac-more') ? q('.ac-more').textContent.trim() : '',
+    // 女优展示（2026-10-04）：全部平铺；不再有 +N 截断
+    actressCount: document.querySelectorAll('.actress-row .actress').length,
+    hasAcMore: !!q('.ac-more'),
+    // 文件名属性标签（2026-10-04）：无码破解/中文字幕/4K
+    fileTags: fileTags,
+    fileTagsInFavLeft: fileTagEls.length > 0 && !!q('.fav-btn') &&
+      fileTagEls.every(el => el.parentElement && el.parentElement.classList.contains('row-actions')) &&
+      fileTagEls[fileTagEls.length - 1].getBoundingClientRect().right <= q('.fav-btn').getBoundingClientRect().left + 1,
+    hasScore: !!q('.info-stats'),
+    recScoreExists: !!q('.rec-score'),
     cats: cats, catBox: rect(q('.cat-tag')),
-    statsText: stats ? stats.textContent.replace(/\s+/g, ' ').trim() : '', statsBox: rect(stats),
     favBox: rect(q('.fav-btn')), favText: q('.fav-btn') ? q('.fav-btn').textContent.trim() : '',
     favHasIcon: !!q('.fav-btn .app-icon'), favOn: !!(q('.fav-btn') && q('.fav-btn').classList.contains('on')),
     favIsFirst: (() => {
@@ -136,12 +150,19 @@ async function pageUI() {
     recThumbW: (() => { const t = q('.rec-item .thumb'); return t ? Math.round(t.getBoundingClientRect().width) : 0 })(),
     recTitleClamp: (() => { const t = q('.rec-item .rec-title'); return t ? (getComputedStyle(t).webkitLineClamp || '') : '' })(),
     recText: [...document.querySelectorAll('.rec-item')].slice(0, 3).map(e => e.textContent.replace(/\s+/g, ' ').trim()),
-    recScoreText: q('.rec-item .rec-score') ? q('.rec-item .rec-score').textContent.trim() : '',
-    recScoreColor: q('.rec-item .rec-score') ? getComputedStyle(q('.rec-item .rec-score')).color : '',
-    recScoreBox: rect(q('.rec-item .rec-score')),
+    // 推荐项文件名标签（2026-10-04）：数量 + 第一个带标签的项里标签行的位置
+    recFileTagCount: document.querySelectorAll('.rec-item .file-tag').length,
+    recTagsBetween: (() => {
+      const info = q('.rec-item .rec-info'); if (!info) return false
+      const kids = [...info.children].map(e => e.className)
+      const ti = kids.findIndex(c => c === 'rec-title')
+      const gi = kids.findIndex(c => c === 'rec-file-tags')
+      const ai = kids.findIndex(c => c === 'rec-actors')
+      if (gi < 0) return true   // 该项没有标签，不适用
+      return ti >= 0 && ai >= 0 && ti < gi && gi < ai
+    })(),
     recActorsBox: rect(q('.rec-item .rec-actors')),
     recWhyCount: document.querySelectorAll('.rec-item .rec-why').length,
-    infoRatingColor: q('.info-stats .rating') ? getComputedStyle(q('.info-stats .rating')).color : '',
     recActorsText: q('.rec-item .rec-actors') ? q('.rec-item .rec-actors').textContent.trim() : '',
     recHasPh: !!q('.rec-item .rec-ph'),
     recOrder: (() => {
@@ -152,7 +173,6 @@ async function pageUI() {
     recColBox: rect(q('.rec-col')),
     mainColBox: rect(q('.main-col')),
     pageBox: rect(page),
-    acMoreTitle: q('.ac-more') ? (q('.ac-more').getAttribute('title') || '') : '',
     recListOverflow: q('.rec-list') ? getComputedStyle(q('.rec-list')).overflowY : '',
     recListClient: q('.rec-list') ? q('.rec-list').clientHeight : 0,
     recItemBoxes: [...document.querySelectorAll('.rec-item')].slice(0, 7).map(e => {
@@ -267,27 +287,24 @@ async function main() {
       JSON.stringify(s.cats.slice(0, EXPECT_KEY_FIRST.length)) === JSON.stringify(EXPECT_KEY_FIRST),
       `头部=${JSON.stringify(s.cats.slice(0, EXPECT_KEY_FIRST.length))}`)
 
-    // U9 评分位于标签行右侧按钮组、喜欢按钮左侧（2026-09-29 从女优行移过来）
-    const statsInRow = s.statsBox && s.tagRowBox && s.statsBox.t >= s.tagRowBox.t - 1 && s.statsBox.b <= s.tagRowBox.b + 1
-    const leftOfFav = s.statsBox && s.favBox && s.statsBox.r <= s.favBox.l + 1
-    const onlyScore = /^★ \d+(\.\d+)?$/.test(s.statsText.trim())
-    ok('U9 评分在标签行、喜欢按钮左侧，且只有评分',
-      !!s.statsText && statsInRow && leftOfFav && onlyScore, `stats="${s.statsText}" 在标签行=${statsInRow} 喜欢左侧=${leftOfFav}`)
+    // U9 （2026-10-04 改）信息区评分已移除 → 改为文件名属性标签（id=10 的 py 是 ipx-247-C.mp4）
+    ok('U9 信息区不再显示评分；「中文字幕」属性标签位于喜欢按钮左侧',
+      !s.hasScore && s.fileTags.includes('中文字幕') && s.fileTagsInFavLeft,
+      `fileTags=${JSON.stringify(s.fileTags)} 无评分=${!s.hasScore} 在喜欢左侧=${s.fileTagsInFavLeft}`)
 
     // U14 推荐栏：海报放大 / 标题 3 行 / 评分单独一行（与下方评分同色）/ 不再显示想看
     ok('U14a 推荐海报已放大（220px）', s.recThumbW === 220, `thumbW=${s.recThumbW}`)
     ok('U14b 推荐标题最多 3 行', String(s.recTitleClamp) === '3', `line-clamp=${s.recTitleClamp}`)
-    // U14c 评分：单独一行（在演员名下方）、与播放页下方评分同色、不再显示想看
+    // U14c （2026-10-04 改）推荐项不再显示评分；文件名属性标签位于标题与演员名之间
     const noWant = !s.recText.join(' ').includes('想看')
-    ok('U14c 评分独立成行、与播放页下方评分同色，且不再显示想看',
-      s.recScoreText.startsWith('★') && s.recScoreColor === s.infoRatingColor && s.recScoreColor === 'rgb(251, 192, 45)' &&
-      s.recScoreBox && s.recActorsBox && s.recScoreBox.t >= s.recActorsBox.b - 1 && noWant && s.recWhyCount === 0,
-      `score="${s.recScoreText}" 色=${s.recScoreColor}(下方=${s.infoRatingColor}) 独立行=${s.recScoreBox && Math.round(s.recScoreBox.t)}≥${s.recActorsBox && Math.round(s.recActorsBox.b)} 无想看=${noWant}`)
+    ok('U14c 推荐项不再显示评分，属性标签位于标题与演员名之间',
+      !s.recScoreExists && s.recFileTagCount >= 1 && s.recTagsBetween && noWant && s.recWhyCount === 0,
+      `无评分=${!s.recScoreExists} 标签数=${s.recFileTagCount} 位置正确=${s.recTagsBetween} 无想看=${noWant}`)
 
-    // U14d 层级：标题 → 演员名 → 评分（番号不显示，看过人数也不显示）
-    const orderOk = s.recOrder.join(',') === 'rec-title,rec-actors,rec-score'
+    // U14d 层级：标题 →（属性标签）→ 演员名（番号不显示，看过人数也不显示；评分已移除）
+    const orderOk = ['rec-title,rec-file-tags,rec-actors', 'rec-title,rec-actors'].includes(s.recOrder.join(','))
     const noWatched = !s.recText.join(' ').includes('看过')
-    ok('U14d 推荐项：番号与看过人数都已隐藏，层级为 标题 → 演员名 → 评分',
+    ok('U14d 推荐项：番号与看过人数都已隐藏，层级为 标题 →（属性标签）→ 演员名',
       !s.recHasPh && !!s.recActorsText && orderOk && noWatched,
       `演员="${s.recActorsText}" 层级=[${s.recOrder.join(' → ')}] 番号=${s.recHasPh} 无看过=${noWatched}`)
 
@@ -308,10 +325,10 @@ async function main() {
       listFlush && pageFlush,
       `listBottom=${Math.round(s.recListBox && s.recListBox.b)} colBottom=${Math.round(s.recColBox && s.recColBox.b)} pageContentBottom=${Math.round(s.pageBox && s.pageBox.b - 12)}`)
 
-    // U24 +N 的含义可自解释（悬浮提示：本片共几位女优、还有谁）
-    ok('U24 女优 +N 带悬浮提示（说明共几位、还有谁）',
-      !s.more || /位女优/.test(s.acMoreTitle),
-      `more="${s.more}" title="${s.acMoreTitle}"`)
+    // U24 （2026-10-04 改）女优行：单女优无 +N 截断；多位共演全部平铺（U24b 在 U8 之后）
+    ok('U24a 单女优：无 +N 截断（旧的「首位 + N」展示已移除）',
+      !s.hasAcMore && s.actressCount === 1,
+      `actressCount=${s.actressCount} hasAcMore=${s.hasAcMore}`)
 
     // U21 盒子恒为严格 16:9（宽高比绝不跑偏 → 视频永远铺得满，四角不再有黑边楔）
     const ar = s.playerBox ? s.playerBox.w / s.playerBox.h : 0
@@ -328,8 +345,8 @@ async function main() {
 
     // U13 喜欢按钮形态与位置（第一行标签行的最右）
     ok('U13a 标题后旧图标按钮已移除', !s.hasIconBtns, `hasIconBtns=${s.hasIconBtns}`)
-    ok('U13b 喜欢按钮=图标+文字，位于标签行右侧按钮组（评分在其左）', s.favHasIcon && /^(喜欢|已喜欢)$/.test(s.favText) && s.favInRow &&
-      s.favBox && s.tagRowBox && s.favBox.r <= s.tagRowBox.r + 1 && s.statsBox && s.statsBox.r <= s.favBox.l + 1,
+    ok('U13b 喜欢按钮=图标+文字，位于标签行右侧按钮组', s.favHasIcon && /^(喜欢|已喜欢)$/.test(s.favText) && s.favInRow &&
+      s.favBox && s.tagRowBox && s.favBox.r <= s.tagRowBox.r + 1,
       `text="${s.favText}" icon=${s.favHasIcon} 在按钮组=${s.favInRow} favRight=${Math.round(s.favBox.r)} tagRowRight=${Math.round(s.tagRowBox.r)}`)
 
     // U15 详情按钮（样式与喜欢按钮一致，点击进详情页）
@@ -403,6 +420,18 @@ async function main() {
     console.log('无头像影片 =', JSON.stringify({ name: s2.acName, fallback: s2.fallback, hasImg: s2.hasImg, cats: s2.cats }))
     ok('U8 无头像影片显示首字占位（非破图）', !s2.hasImg && s2.fallback.length === 1 && s2.avBox && Math.abs(s2.avBox.w - s2.avBox.h) < 1,
       `fallback="${s2.fallback}" name="${s2.acName}" 圆形=${s2.avBox && Math.round(s2.avBox.w) + 'x' + Math.round(s2.avBox.h)}`)
+
+    // U24b 多位女优共演：全部平铺显示（id=140 cast 有 9 位，断言取 >=3 防数据漂移）
+    await raw('location.hash = "#/play/' + ID_MULTI_ACTRESS + '"')
+    let s3 = null
+    for (let i = 0; i < 30; i++) {
+      s3 = await runFn(pageUI)
+      if (s3.hash.indexOf('/play/' + ID_MULTI_ACTRESS) >= 0 && s3.actressCount > 0) break
+      await sleep(400)
+    }
+    ok('U24b 多位女优共演全部平铺显示（无 +N 截断）',
+      s3.actressCount >= MULTI_ACTRESS_MIN && !s3.hasAcMore,
+      `actressCount=${s3.actressCount}（≥${MULTI_ACTRESS_MIN}）hasAcMore=${s3.hasAcMore}`)
 
     ok('U10 全程无未捕获页面异常', jsErrors.length === 0, jsErrors.slice(0, 2).join(' | '))
   } catch (e) {

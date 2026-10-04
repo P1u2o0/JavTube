@@ -27,6 +27,8 @@ const { protocol } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { Readable } = require('stream')
+// 视频读取的存储根冷却（NAS 离线时快速 404，避免重试把线程池塞满；见 video-meta.js）
+const { isVideoReadCooling, noteVideoReadResult } = require('./video-meta')
 
 // 允许播放的容器扩展名。注意 Chromium 解码能力有限：
 //   mp4/m4v/webm/mov 稳定；mkv 视内部编码（H.264/AAC 通常可以）；avi/wmv/flv/rmvb 放不了。
@@ -79,11 +81,16 @@ function setupMediaProtocol() {
       if (!VIDEO_EXTS.has(path.extname(resolved).toLowerCase())) {
         return new Response('unsupported media type', { status: 415 })
       }
+      // 存储根刚失败过（如 NAS 离线）：快速 404 —— ArtPlayer 会重试多次，
+      // 不拦的话每次重试都会往 libuv 线程池塞一个挂 ~40s 的 stat（2026-10-04）
+      if (isVideoReadCooling(resolved)) return new Response('not found', { status: 404 })
       let stat
       try {
         stat = await fs.promises.stat(resolved)
         if (!stat.isFile()) return new Response('not found', { status: 404 })
+        noteVideoReadResult(resolved, true)
       } catch {
+        noteVideoReadResult(resolved, false)
         return new Response('not found', { status: 404 })
       }
 

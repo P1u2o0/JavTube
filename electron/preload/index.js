@@ -124,9 +124,10 @@ contextBridge.exposeInMainWorld('api', {
   /**
    * 把设置里的「标签映射」规则套用到已有影片
    * @param {boolean} [dryRun=true] true 只返回影响预览（不写库），false 才真正落库
+   * @param {Array} [mapping] 可选：本次使用的映射规则（预览未保存的编辑结果时传入）
    * @returns {Promise<Object>} { ok, total, changed:[{id,ph,pm,from,to}], applied }
    */
-  applyTagMap: (dryRun = true) => ipcRenderer.invoke(IPC.MOVIES_APPLY_TAG_MAP, { dryRun }),
+  applyTagMap: (dryRun = true, mapping) => ipcRenderer.invoke(IPC.MOVIES_APPLY_TAG_MAP, { dryRun, mapping }),
 
   // === 女优相关接口 ===
 
@@ -261,6 +262,13 @@ contextBridge.exposeInMainWorld('api', {
    * @returns {Promise<Object>} { ok, data }，data 为分钟数（0 表示无法解析）
    */
   readVideoDuration: (p) => ipcRenderer.invoke(IPC.UTILS_READ_DURATION, p),
+
+  /**
+   * 批量读取视频真实分辨率（2026-10-04 播放页「4K」标签）
+   * @param {string[]} paths - 视频文件绝对路径数组（自动去重、上限 40）
+   * @returns {Promise<Object>} { ok, data: { [path]: {width,height}|null } }
+   */
+  readVideoSize: (paths) => ipcRenderer.invoke(IPC.UTILS_READ_VIDEO_SIZE, paths),
 
   // === 系统对话框接口 ===
 

@@ -57,6 +57,8 @@ module.exports = {
   UTILS_PLAY_VIDEO: 'utils:playVideo',
   UTILS_SCAN_DIR: 'utils:scanDir',
   UTILS_READ_DURATION: 'utils:readDuration',
+  // 批量读取视频真实分辨率（2026-10-04 播放页「4K」标签：文件名没写 4K 的影片靠它识别）
+  UTILS_READ_VIDEO_SIZE: 'utils:readVideoSize',
 
   // === 对话框 ===
   DIALOG_OPEN_DIR: 'dialog:openDir',

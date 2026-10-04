@@ -19,6 +19,8 @@ const fs = require('fs')
 const { rows, firstRow, firstScalar, nowLocal, persistSoon } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
+// 视频文件读取的存储根冷却（NAS 离线时跳过会挂 ~40s 的真实 I/O，见 video-meta.js）
+const { isVideoReadCooling, noteVideoReadResult } = require('../video-meta')
 // 标签映射函数：直接复用刮削时用的那一个（单一事实来源，避免两处实现随时间漂移）
 // scraper.js 只依赖 net-curl / fs / path / url / constants，不反向依赖 db 层，无循环引用
 const { applyTagMapping } = require('../scraper')
@@ -145,7 +147,8 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       // 只看有播放记录的
       if (filter.historyOnly) { where.push('play_time IS NOT NULL') }
 
-      // 标签筛选：支持多组标签，所有选中的标签均按 AND 叠加过滤（精准定位目标影片）
+      // 标签筛选：支持多组标签。语义（2026-10-02 用户确认）：同类内、跨类别**一律 AND** ——
+      // 每个选中的标签都必须命中（精准定位）。此前变量名叫 ors 与实现相反，已改名对齐。
       const sel = filter.tagSelected || []
       for (let ci = 0; ci < sel.length; ci++) {
         const tags = sel[ci]
@@ -154,9 +157,9 @@ function registerMovieIpc(ipcMain, db, dataDir) {
           // 选「素人」会把打了「素人娘」「超素人」的影片也带出来，与标签栏的精确计数对不上。
           // 做法：把分隔符统一成英文逗号再前后补逗号，按 `,标签,` 匹配。
           // （REPLACE 兼容历史数据里可能存在的英文逗号分隔）
-          const ors = tags.map(() => "(','||REPLACE(bq,'，',',')||',') LIKE ? ESCAPE '\\'")
+          const conds = tags.map(() => "(','||REPLACE(bq,'，',',')||',') LIKE ? ESCAPE '\\'")
           for (const t of tags) args.push(`%,${String(t).replace(/[\\%_]/g, (m) => '\\' + m)},%`)
-          where.push('(' + ors.join(' AND ') + ')')
+          where.push('(' + conds.join(' AND ') + ')')
         }
       }
       // 关键词搜索（在番号、片名、标签中模糊匹配）
@@ -238,7 +241,7 @@ function registerMovieIpc(ipcMain, db, dataDir) {
 
   // IPC: movies:create — 渲染进程 → 主进程
   // 创建新影片记录，番号重复时跳过
-  ipcMain.handle(IPC.MOVIES_CREATE, (_e, data) => {
+  ipcMain.handle(IPC.MOVIES_CREATE, async (_e, data) => {
     try {
       const d = data || {}
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
@@ -253,7 +256,16 @@ function registerMovieIpc(ipcMain, db, dataDir) {
           const existId = Number(existRow[0])
           const oldPy = existRow[1] || ''
           const newPy = d.py || ''
-          if (newPy && (!oldPy || !fs.existsSync(oldPy))) {
+          // ⚠️ 2026-10-04：失效判断改异步 stat（原 fs.existsSync）——旧路径在 NAS 上，
+          //    同步检查在 NAS 离线/慢时会把主进程卡 ~40s（整窗口未响应）
+          let oldOk = false
+          if (oldPy) {
+            // 存储根刚失败过（NAS 离线）：跳过会挂 ~40s 的真实 stat，直接按「路径已失效」处理
+            if (!isVideoReadCooling(oldPy)) {
+              try { await fs.promises.stat(oldPy); oldOk = true; noteVideoReadResult(oldPy, true) } catch { noteVideoReadResult(oldPy, false) }
+            }
+          }
+          if (newPy && (!oldPy || !oldOk)) {
             db.run('UPDATE movies SET py=? WHERE id=?', [newPy, existId])
             persistSoon(db)
             return { ok: true, id: existId, updated: true }  // 已回填视频路径
@@ -278,8 +290,11 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       const r0 = db.exec('SELECT * FROM movies WHERE id=?', [Number(id)])
       const cur = firstRow(r0[0])
       if (!cur) return { ok: false, error: 'not found' }
-      // 合并：用传入数据覆盖现有数据
-      const d = { ...cur, ...(data||{}) }
+      // 合并：用传入数据覆盖现有数据。
+      // 显式 undefined 视为「未提供」、不参与覆盖（2026-10-02）：否则 `{...cur, ...{cover: undefined}}`
+      // 会把字段静默清空并落库
+      const patch = Object.fromEntries(Object.entries(data || {}).filter(([, v]) => v !== undefined))
+      const d = { ...cur, ...patch }
       // 标签标准化
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
       // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
@@ -386,13 +401,17 @@ function registerMovieIpc(ipcMain, db, dataDir) {
   // 复用 applyTagMapping 而非重写，保证与刮削路径的替换/删除/去重语义完全一致。
   // @param {Object}  [opts]
   // @param {boolean} [opts.dryRun=true] true 只返回影响预览（不写库）；false 才真正落库
+  // @param {Array}   [opts.mapping] 可选：本次使用的映射规则。传入时优先于 settings.tag_mapping
+  //   （2026-10-02 为「先预览、确认才落库」的弹窗流程加的：预览走编辑中未保存的规则）
   // @returns {Object} { ok, total, changed:[{id,ph,pm,from,to}], applied, empty? }
-  ipcMain.handle(IPC.MOVIES_APPLY_TAG_MAP, (_e, { dryRun = true } = {}) => {
+  ipcMain.handle(IPC.MOVIES_APPLY_TAG_MAP, (_e, { dryRun = true, mapping: pending } = {}) => {
     try {
-      // 读 settings.tag_mapping（与 ipc-utils.js 刮削入口读的是同一份配置）
-      const sRows = rows(db.exec("SELECT value FROM settings WHERE key='tag_mapping'")[0])
-      let mapping = []
-      try { mapping = JSON.parse((sRows[0] && sRows[0].value) || '[]') } catch { mapping = [] }
+      // 规则来源优先级：调用方传入（预览用）→ settings.tag_mapping（与 ipc-utils.js 刮削入口同源）
+      let mapping = Array.isArray(pending) ? pending : null
+      if (!mapping) {
+        const sRows = rows(db.exec("SELECT value FROM settings WHERE key='tag_mapping'")[0])
+        try { mapping = JSON.parse((sRows[0] && sRows[0].value) || '[]') } catch { mapping = [] }
+      }
       if (!Array.isArray(mapping)) mapping = []
       // 过滤掉「原标签为空」的无效行：否则空 key 无意义，且防御脏数据把整库标签清空
       const usable = mapping.filter(p => Array.isArray(p) && String(p[0] || '').trim())

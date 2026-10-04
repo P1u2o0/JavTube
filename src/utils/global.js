@@ -62,12 +62,16 @@ export function resolveCover(cover, key) {
   const dataDir = dataDirRef.value || window.__dataDir || ''
   let abs = ''
   if (/^file:\/\//i.test(cover)) {
-    // file:///C:/... 或 file:///home/... → 真实路径
+    // 三种形态都要还原正确（2026-10-02 修正）：
+    //   file:///C:/...（Windows 盘符）→ C:/...
+    //   file:///home/...（Unix 绝对）→ 保留前导 /（旧实现统一剥掉前导斜杠，会降级成相对路径）
+    //   file://NAS/share/...（UNC）→ //NAS/share/...（旧实现丢 host，路径必然 404）
     try {
       const u = new URL(cover)
-      abs = decodeURIComponent(u.pathname.replace(/^\//, ''))
-      // Windows: '/C:/foo' → 'C:/foo'（去掉前导 /）
-      if (/^\/[A-Za-z]:/.test(abs)) abs = abs.slice(1)
+      const p = decodeURIComponent(u.pathname)
+      if (u.host) abs = `//${u.host}${p}`
+      else if (/^\/[A-Za-z]:/.test(p)) abs = p.slice(1)
+      else abs = p
     } catch { abs = cover.replace(/^file:\/\/\//i, '') }
   } else if (/^[A-Z]:[\\/]/i.test(cover)) {
     // Windows 绝对路径
@@ -110,12 +114,15 @@ export function resolveMedia(py) {
   if (!py) return ''
   if (/^javtube-media:\/\//i.test(py)) return py
   let abs = String(py)
-  // 兼容 file:// 前缀（理论上 py 存的就是绝对路径，这里只是兜底）
-  if (/^file:\/\/\//i.test(abs)) {
+  // 兼容 file:// 前缀（理论上 py 存的就是绝对路径，这里只是兜底）。
+  // 2026-10-02：与 resolveCover 同一套还原规则（盘符/Unix 绝对/UNC host 都要正确）
+  if (/^file:\/\//i.test(abs)) {
     try {
       const u = new URL(abs)
-      abs = decodeURIComponent(u.pathname.replace(/^\//, ''))
-      if (/^\/[A-Za-z]:/.test(abs)) abs = abs.slice(1)
+      const p = decodeURIComponent(u.pathname)
+      if (u.host) abs = `//${u.host}${p}`
+      else if (/^\/[A-Za-z]:/.test(p)) abs = p.slice(1)
+      else abs = p
     } catch { abs = abs.replace(/^file:\/\/\//i, '') }
   }
   const enc = btoa(unescape(encodeURIComponent(abs)))
@@ -155,6 +162,14 @@ export function favUnlock(id) {
   favInFlight.delete(String(id))
 }
 
+// 番号噪声词（2026-10-02）：清晰度/编码串形如「HD-1080」「FHD 1080」「HEVC-10」，
+// 会被通用正则误判成番号（实测「FHD 1080p.mp4」提取出 FHD-1080）。命中这些词时
+// 继续向后找下一个候选 —— 文件名里常同时带清晰度与真番号（如「[FHD] SSIS-001」）。
+const CODE_NOISE_WORDS = new Set([
+  'HD', 'FHD', 'UHD', 'QHD', 'SD', 'HDR', 'SDR', 'HEVC', 'AVC', 'H264', 'H265', 'X264', 'X265',
+  'WEB', 'WEBRIP', 'BLURAY', 'BDRIP', 'REMUX', 'AAC', 'AC3', 'DTS'
+])
+
 /**
  * 从文件名尝试提取番号
  * 功能：通过正则匹配常见番号格式（字母-数字），如 ABC-123
@@ -163,10 +178,51 @@ export function favUnlock(id) {
  */
 export function extractCode(name) {
   if (!name) return ''
-  // 正则匹配：2-10 个字母 + 可选分隔符(-_\s) + 2-6 位数字
-  const m = String(name).match(/([A-Za-z]{2,10})[-_\s]?(\d{2,6})/)
-  if (m) return `${m[1].toUpperCase()}-${m[2]}`
+  // 正则匹配：2-10 个字母 + 可选分隔符(-_\s) + 2-6 位数字；全局匹配以便跳过噪声词
+  const re = /([A-Za-z]{2,10})[-_\s]?(\d{2,6})/g
+  const s = String(name)
+  let m
+  while ((m = re.exec(s))) {
+    if (CODE_NOISE_WORDS.has(m[1].toUpperCase())) continue
+    return `${m[1].toUpperCase()}-${m[2]}`
+  }
   return ''
+}
+
+/**
+ * 从视频文件名解析「无码破解 / 中文字幕 / 4K」属性标签（2026-10-04 播放页）。
+ *
+ * 命名约定（按用户真实库核对，2026-10-04）：
+ *   -U / -UC / -破解        → 无码破解（用户库中 300+ 部用「-破解」，-U 仅 2 部）
+ *   -C / -UC                → 中文字幕（含 -破解-C、-C-4K 这类组合）
+ *   4K                      → 4K（文件名标记，或调用方探测到的真实分辨率）
+ * 匹配方式：把文件名主干按 - _ 空格 点 切词做整词匹配（避免「ABC」里的 C 被误判），
+ * 「破解」用子串匹配（中文字符不存在跨词歧义）。
+ *
+ * @param {string} py - movies.py（视频文件路径，取文件名部分解析）
+ * @param {{is4k?: boolean}} [opts] - is4k=true：真实分辨率探测为 4K（文件名没写也加标签）
+ * @returns {{kind:'uncen'|'cnsub'|'uhd', label:string}[]} 按「无码破解 → 中文字幕 → 4K」排序
+ */
+export function fileBadgesOf(py, opts = {}) {
+  const badges = []
+  const name = String(py || '').replace(/\\/g, '/').split('/').pop()
+  if (!name) return badges
+  const stem = name.replace(/\.[A-Za-z0-9]+$/, '')
+  const tokens = stem.split(/[-_\s.]+/).map(t => t.toUpperCase()).filter(Boolean)
+  const hasTok = (...arr) => tokens.some(t => arr.includes(t))
+  if (hasTok('U', 'UC') || stem.includes('破解')) badges.push({ kind: 'uncen', label: '无码破解' })
+  if (hasTok('C', 'UC')) badges.push({ kind: 'cnsub', label: '中文字幕' })
+  if (hasTok('4K') || opts.is4k === true) badges.push({ kind: 'uhd', label: '4K' })
+  return badges
+}
+
+/**
+ * 真实分辨率 → 是否算 4K（3840×2160 及以上的宽或高）。
+ * @param {{width?: number, height?: number}|null} size - readVideoSize 的返回
+ * @returns {boolean}
+ */
+export function is4kSize(size) {
+  return !!(size && ((Number(size.width) || 0) >= 3840 || (Number(size.height) || 0) >= 2160))
 }
 
 /**
