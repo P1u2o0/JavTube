@@ -236,7 +236,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
   ipcMain.handle(IPC.SETTINGS_CLEAR, () => {
     try {
       // 删库前先收集全库图片引用；删库后所有候选文件都不再被引用 → 全部清掉（2026-09-29 审计）。
-      // 注意只删 covers/ 内、且确被这几部影片引用的文件，不会波及本来就是孤儿的文件。
+      // 注意只删图片目录（images/ 或旧 covers/）内、且确被这几部影片引用的文件，不会波及本来就是孤儿的文件。
       const refs = collectAllRefs(db)
       // 包在一次事务里（2026-09-29 审计）：原实现没有事务，第二步失败会留下「影片已清空、
       // 女优还在」的半清空状态，用户看到的是残缺数据。

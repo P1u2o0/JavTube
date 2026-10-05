@@ -24,8 +24,9 @@
 
 const fs = require('fs')
 const path = require('path')
-// 封面图片子目录名（只有此目录内的文件允许被本模块删除）
-const { COVER_DIR } = require('../constants')
+// 图片子目录名：新布局 images/（2026-10-05 起）+ 旧布局 covers/（迁移期兜底识别）
+// —— 这两个根之外的文件一律不允许被本模块删除
+const { IMAGE_DIR, COVER_DIR } = require('../constants')
 
 /** 统一为「正斜杠相对路径」，与库内 cover/previews/avatar 的存储口径一致 */
 function normRel(p) {
@@ -33,15 +34,20 @@ function normRel(p) {
 }
 
 /**
- * 文件是否位于 `<dataDir>/covers/` 之内（path.resolve + 前缀校验，防目录穿越）。
+ * 文件是否位于应用图片目录之内（path.resolve + 前缀校验，防目录穿越）。
+ * 新布局 `<dataDir>/images/` 与旧布局 `<dataDir>/covers/` 都算合法根：迁移完成后库里
+ * 只剩 images/，保留 covers/ 是为了「迁移前 / 迁移中途异常」时既不误删也不误拒。
  * @param {string} dataDir
  * @param {string} rel - 相对路径
  * @returns {boolean}
  */
-function underCovers(dataDir, rel) {
-  const root = path.resolve(dataDir, COVER_DIR)
+function underImageDir(dataDir, rel) {
   const abs = path.resolve(dataDir, rel)
-  return abs === root || abs.startsWith(root + path.sep)
+  for (const rootName of [IMAGE_DIR, COVER_DIR]) {
+    const root = path.resolve(dataDir, rootName)
+    if (abs === root || abs.startsWith(root + path.sep)) return true
+  }
+  return false
 }
 
 /**
@@ -110,7 +116,7 @@ function purgeUnreferenced(db, dataDir, candidates) {
   const remaining = r ? collectRefsFromValues(r.values) : new Set()
   for (const rel of candidates) {
     if (remaining.has(rel)) continue        // 仍被其它影片引用 → 保留
-    if (!underCovers(dataDir, rel)) continue // 不在 covers/ 内（含目录穿越）→ 拒绝
+    if (!underImageDir(dataDir, rel)) continue // 不在图片目录内（含目录穿越）→ 拒绝
     try {
       const abs = path.resolve(dataDir, rel)
       if (fs.existsSync(abs)) { fs.unlinkSync(abs); cleaned++ }
@@ -119,4 +125,4 @@ function purgeUnreferenced(db, dataDir, candidates) {
   return cleaned
 }
 
-module.exports = { collectMovieRefs, collectAllRefs, purgeUnreferenced, underCovers }
+module.exports = { collectMovieRefs, collectAllRefs, purgeUnreferenced, underImageDir }

@@ -16,10 +16,10 @@ const fs = require('fs')
 const path = require('path')
 const IPC = require('../../common/ipc-channels')
 const { scrapeMovie, isImageFile, isGifRenamed, inspectImage } = require('../scraper')
-const { COVER_DIR } = require('../constants')
-// covers/ 归属校验：与 cleanup.js 同一套门控（库内路径可能含 `..` 等异常值，
-// 修复要写文件/删文件，必须先确认目标在 dataDir/covers 之内）
-const { underCovers } = require('./cleanup')
+const { PREVIEW_MIN_BYTES } = require('../constants')
+// 图片目录归属校验：与 cleanup.js 同一套门控（库内路径可能含 `..` 等异常值，
+// 修复要写文件/删文件，必须先确认目标在 dataDir 的图片目录（images/ 或旧 covers/）之内）
+const { underImageDir } = require('./cleanup')
 
 /**
  * 文件存在且内容是**可用图片**才算可用。
@@ -28,13 +28,15 @@ const { underCovers } = require('./cleanup')
  * 界面也能渲染，但它不是真实内容；女优头像那边一直按「占位图」清理，封面/预览图
  * 之前漏了这条，会显示成一张假的「Now Printing」海报。
  */
-function usable(abs) {
+function usable(abs, minBytes = 0) {
   try {
     if (!fs.existsSync(abs)) return false
     // 一次读取拿到两个结论（2026-09-29 审计：原实现分别调 isImageFile + isGifRenamed，
     // 每张图重复 open/read 一次；全库 3,000+ 张时是可测量的同步 I/O 开销）
     const r = inspectImage(abs)
-    return r.ok && !r.gif
+    if (!r.ok || r.gif) return false
+    // 过小的图（预览图 <10KB）同样视为不可用：打开根本看不清，用户要求宁缺毋滥（2026-10-05）
+    return !minBytes || r.size >= minBytes
   } catch { return false }
 }
 
@@ -51,7 +53,7 @@ function movieImages(db, dataDir, id) {
   let dbPrevs = []
   try { const p = JSON.parse(previewsJson || '[]'); if (Array.isArray(p)) dbPrevs = p.map(x => String(x).replace(/\\/g, '/')) } catch {}
   const brokenCover = !!dbCover && !usable(path.join(dataDir, dbCover))
-  const brokenPrevs = dbPrevs.filter(rel => !usable(path.join(dataDir, rel)))
+  const brokenPrevs = dbPrevs.filter(rel => !usable(path.join(dataDir, rel), PREVIEW_MIN_BYTES))
   return {
     id: Number(id), ph: String(ph || ''), dbCover, dbPrevs,
     brokenCover, brokenPrevs,
@@ -110,7 +112,7 @@ async function scanBroken(db, dataDir) {
     try { const p = JSON.parse(previewsJson || '[]'); if (Array.isArray(p)) arr = p } catch {}
     for (const rel0 of arr) {
       const rel = String(rel0).replace(/\\/g, '/')
-      if (!usable(path.join(dataDir, rel))) { previewCount++; touch(false) }
+      if (!usable(path.join(dataDir, rel), PREVIEW_MIN_BYTES)) { previewCount++; touch(false) }
       const y = tick(); if (y) await y
     }
   }
@@ -142,7 +144,7 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   // 封面：若原路径仍坏，而本次新封面有效 → 复制过去（新封面扩展名不同时同样适用）
   // 两侧都必须在 covers/ 内（2026-10-02 补门控，与 cleanup.js 口径一致）：库内路径异常时
   // 不允许把文件写到 dataDir 之外、也不允许从之外读文件进 covers
-  if (dbCover && underCovers(dataDir, dbCover) && !usable(path.join(dataDir, dbCover)) && underCovers(dataDir, String(d.cover || ''))) {
+  if (dbCover && underImageDir(dataDir, dbCover) && !usable(path.join(dataDir, dbCover)) && underImageDir(dataDir, String(d.cover || ''))) {
     const src = path.join(dataDir, String(d.cover).replace(/\\/g, '/'))
     const dst = path.join(dataDir, dbCover)
     if (isImageFile(src)) {
@@ -155,13 +157,13 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   // 同样双侧门控（目标=库内路径，来源=本次下载产物，均应在 covers/ 内）
   const fresh = (Array.isArray(d.previews) ? d.previews : [])
     .map(p => String(p).replace(/\\/g, '/'))
-    .filter(rel => underCovers(dataDir, rel) && usable(path.join(dataDir, rel)))
+    .filter(rel => underImageDir(dataDir, rel) && usable(path.join(dataDir, rel)))
     .map(rel => path.join(dataDir, rel))
   let fi = 0
   for (const rel of dbPrevs) {
-    if (!underCovers(dataDir, rel)) continue
+    if (!underImageDir(dataDir, rel)) continue
     const dst = path.join(dataDir, rel)
-    if (usable(dst)) continue
+    if (usable(dst, PREVIEW_MIN_BYTES)) continue
     if (fi >= fresh.length) continue
     fs.mkdirSync(path.dirname(dst), { recursive: true })
     fs.copyFileSync(fresh[fi++], dst)
@@ -204,8 +206,8 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   if (after) {
     const leftovers = [...(after.brokenCover ? [after.dbCover] : []), ...after.brokenPrevs]
     for (const rel of leftovers) {
-      // 只删 covers/ 内的文件（2026-10-02 补门控）：库内路径异常时绝不越界删文件
-      if (!rel || !underCovers(dataDir, rel)) continue
+      // 只删图片目录（images/ 或旧 covers/）内的文件（2026-10-02 补门控）：库内路径异常时绝不越界删文件
+      if (!rel || !underImageDir(dataDir, rel)) continue
       try { const p = path.join(dataDir, rel); if (fs.existsSync(p)) fs.unlinkSync(p) } catch {}
     }
   }

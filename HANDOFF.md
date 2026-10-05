@@ -6,7 +6,7 @@
 > 需要数据库表结构 / IPC 通道全表 / 刮削链路时读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 > 面向使用者的功能介绍见 `README.md`，许可见 `LICENSE`。
 >
-> **当前版本：v3.2.0**（2026-10-04）｜更新本文时请连同这里的版本号一起改。
+> **当前版本：v3.3.0**（2026-10-05）｜更新本文时请连同这里的版本号一起改。
 
 ---
 
@@ -307,7 +307,7 @@ JavTube/
    └─ utils/                 # global.js（番号解析、标签拆分、safeCall…） / playback.js（统一播放入口）
 ```
 
-**数据目录**：运行时数据（`app.db` + `covers/` + `tag-categories.json`）写在应用数据目录下，
+**数据目录**：运行时数据（`app.db` + `images/`（新布局：每片一个文件夹的海报+预览、`actress/` 头像；旧版为 `covers/`，升级自动迁移） + `tag-categories.json`）写在应用数据目录下，
 **不入版本控制、不要手改**。
 
 ---

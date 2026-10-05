@@ -270,8 +270,16 @@
           <div class="g-label">应用信息</div>
           <div class="g-control">
             <div class="about-line"><b>JavTube</b>　v{{ appVersion }}</div>
-            <div class="about-line">框架：Electron 30 + Vue 3 + Vite 5 + sql.js</div>
-            <div class="about-line about-muted">2026 · 纯本地管理，数据仅保存在本软件 data 目录内，不上传任何内容。</div>
+            <!-- GitHub 图标按钮 + 检查更新（2026-10-05）：更新检查为手动触发，不自动联网 -->
+            <div class="about-actions">
+              <button class="gh-btn" title="打开项目主页" @click="openGithub">
+                <AppIcon name="github" :size="17" />GitHub
+              </button>
+              <el-button size="small" :loading="checkingUpdate" @click="checkUpdate">
+                <AppIcon name="reset" :size="14" style="margin-right:5px" />检查更新
+              </el-button>
+              <button class="about-author" title="作者 GitHub 主页" @click="openAuthor">@P1u2o0</button>
+            </div>
           </div>
         </div>
       </el-tab-pane>
@@ -333,6 +341,27 @@ const store = useMoviesStore()
 const tab = ref('basic')
 // 应用版本号（构建时由 vite define 注入，来源 package.json，见 vite.config.mjs）
 const appVersion = __APP_VERSION__
+
+// === 关于页：GitHub 跳转 + 检查更新（2026-10-05） ===
+// 检查更新为**手动触发**（仅用户点按钮时联网，不做自动检查）：
+// 主进程查 GitHub Releases 最新版本号与当前版本比较；有新版则给出「前往下载」跳转发布页。
+const checkingUpdate = ref(false)
+const GH_REPO = 'https://github.com/P1u2o0/JavTube'
+const GH_AUTHOR = 'https://github.com/P1u2o0'
+function openGithub() { window.api?.openExternal?.(GH_REPO) }
+function openAuthor() { window.api?.openExternal?.(GH_AUTHOR) }
+async function checkUpdate() {
+  if (!window.api?.checkUpdate || checkingUpdate.value) return
+  checkingUpdate.value = true
+  try {
+    const r = await window.api.checkUpdate()
+    if (!r || !r.ok) { ElMessage.error('检查更新失败：' + ((r && r.error) || '网络错误')); return }
+    if (!r.hasUpdate) { ElMessage.success(`已是最新版本（v${r.current}）`); return }
+    ElMessageBox.confirm(`发现新版本 v${r.latest}（当前 v${r.current}）`, '检查更新', {
+      confirmButtonText: '前往下载', cancelButtonText: '稍后', type: 'success'
+    }).then(() => { if (r.url) window.api?.openExternal?.(r.url) }).catch(() => {})
+  } finally { checkingUpdate.value = false }
+}
 // 基础 + 刮削设置表单（响应式；分 tab 保存）
 const st = reactive({
   player_path: '', use_builtin_player: 'y',
@@ -749,6 +778,17 @@ async function clearDb() {
 .about-line { padding: 3px 0; color: var(--text-2); font-size: var(--fs-md); }
 .about-line b { color: var(--text); font-family: var(--font-display); }
 .about-muted { color: var(--muted); font-size: var(--fs-base); }
+/* 关于页：GitHub 按钮 / 检查更新 / 作者链接（2026-10-05） */
+.about-actions { display: flex; align-items: center; gap: 10px; padding: 8px 0 2px; }
+.gh-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--text);
+  font-size: var(--fs-md); cursor: pointer;
+}
+.gh-btn:hover { border-color: var(--accent); color: var(--accent); }
+.about-author { background: none; border: none; padding: 0 2px; color: var(--muted); font-size: var(--fs-base); cursor: pointer; }
+.about-author:hover { color: var(--accent); }
 
 /* 快捷键键位绑定（2026-09-29 播放页） */
 .hk-grid { display: flex; flex-direction: column; gap: 8px; max-width: 320px; }

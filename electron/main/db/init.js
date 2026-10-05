@@ -17,7 +17,7 @@ const path = require('path')
 let appRef = null
 try { const m = require('electron'); appRef = m && m.app ? m.app : null } catch { appRef = null }
 // 封面目录名等共享常量（集中定义于 constants.js）
-const { COVER_DIR } = require('../constants')
+const { COVER_DIR, IMAGE_DIR } = require('../constants')
 
 // sql.js 实例缓存，避免重复初始化
 let SQL = null
@@ -426,11 +426,10 @@ async function initDb(dataDir) {
     db.run(`INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)`, [k, v])
   }
 
-  // 创建封面图片存放目录（含演员头像子目录 covers/actress，2026-09-14）
-  const coversDir = path.join(dataDir, COVER_DIR)
-  try { if (!fs.existsSync(coversDir)) fs.mkdirSync(coversDir, { recursive: true }) } catch {}
-  const actressDir = path.join(coversDir, 'actress')
-  try { if (!fs.existsSync(actressDir)) fs.mkdirSync(actressDir, { recursive: true }) } catch {}
+  // 创建图片存放目录（2026-10-05 新布局：images/<番号>/ 每片一个文件夹 + images/actress/ 头像集中；
+  // 旧 covers/ 不再主动创建，由迁移逻辑按存在与否处理）
+  try { fs.mkdirSync(path.join(dataDir, IMAGE_DIR), { recursive: true }) } catch {}
+  try { fs.mkdirSync(path.join(dataDir, IMAGE_DIR, 'actress'), { recursive: true }) } catch {}
 
   // === 脏标记 + 定时持久化机制 ===
   // sql.js 的数据库在内存中操作，需要定期写盘。
@@ -471,6 +470,18 @@ async function initDb(dataDir) {
   db._blockPersist = false  // 恢复备份后置 true：重启前禁止落盘（见 saveDbToDisk 说明）
   // 本次加载是否发生了降级恢复（''=正常 / 'bak' / 'tmp' / 'empty'），供上层弹窗告知用户
   db._recoveredFrom = recoveredFrom
+
+  // === 图片存储布局迁移（2026-10-05）：旧 covers/ → 新 images/（每片一个文件夹）===
+  // 位置刻意放在落盘机制安装之后：迁移的 DB 写入会打 dirty 并在此处 force() 立即落盘 ——
+  // 不允许出现「文件已搬、DB 路径未落盘」的中间状态；_blockPersist（恢复备份后）时整体跳过。
+  try {
+    const { migrateImageLayout } = require('./migrate-images')
+    db._imageMigration = migrateImageLayout(db, dataDir, dbPath)
+    if (db._imageMigration && db._imageMigration.changed) force()
+  } catch (e) {
+    db._imageMigration = { error: e.message }
+    console.warn('[images] 布局迁移异常：' + e.message)
+  }
 
   return db
 }

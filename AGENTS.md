@@ -187,7 +187,8 @@ sql.js（全内存数据库，同步 API）
 | 打包后的正式版 | `<exe 所在目录>/data/app.db`（扁平结构，`data/` 与 exe 同级） |
 | **开发时** | `node_modules/electron/dist/data/app.db` ← 因为 dev 时 electron.exe 在这个目录 |
 
-数据目录里还有 `covers/`（封面与女优头像缓存）和 `tag-categories.json`。**这些全部是用户数据。**
+数据目录里还有 `images/`（每部影片一个文件夹：海报 + 预览图；`actress/` 为女优头像；
+3.2.1 起新布局，更早版本为 `covers/`，升级时自动迁移）和 `tag-categories.json`。**这些全部是用户数据。**
 
 ### 4.2 三条铁律
 

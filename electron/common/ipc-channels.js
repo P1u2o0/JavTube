@@ -59,6 +59,10 @@ module.exports = {
   UTILS_READ_DURATION: 'utils:readDuration',
   // 批量读取视频真实分辨率（2026-10-04 播放页「4K」标签：文件名没写 4K 的影片靠它识别）
   UTILS_READ_VIDEO_SIZE: 'utils:readVideoSize',
+  // 打开外部链接（系统浏览器；仅 http/https，2026-10-05 关于页 GitHub 按钮）
+  UTILS_OPEN_EXTERNAL: 'utils:openExternal',
+  // 检查更新（查询 GitHub Releases 最新版本并比较，2026-10-05）
+  UPDATE_CHECK: 'update:check',
 
   // === 对话框 ===
   DIALOG_OPEN_DIR: 'dialog:openDir',

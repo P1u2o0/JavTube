@@ -14,10 +14,12 @@
 const { dialog, shell, app } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { VIDEO_EXTS, COVER_DIR } = require('./constants')
+const { VIDEO_EXTS } = require('./constants')
 const IPC = require('../common/ipc-channels')
 const { scrapeMovie } = require('./scraper')
 const { readMp4DurationMinutes, readVideoSize, isVideoReadCooling, noteVideoReadResult } = require('./video-meta')
+// 基于系统 curl 的 HTTP 客户端（检查更新要访问 api.github.com，需与刮削同一套代理/UA 逻辑）
+const { curlGet } = require('./net-curl')
 
 // 播放时拒绝的扩展名：shell.openPath 会「用系统默认程序打开」，
 // 其中可执行/脚本类等于直接执行它（见 UTILS_PLAY_VIDEO）
@@ -225,11 +227,55 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 打开数据库文件选择对话框
   ipcMain.handle(IPC.DIALOG_OPEN_DB, () => doOpen({ properties: ['openFile'], filters: [{ name: 'SQLite', extensions: ['db','sqlite'] }] }))
 
+  // === 检查更新 / 打开外部链接（2026-10-05，设置「关于」页） ===
+  // 渲染进程 → 主进程：查最新版本号并与当前版本比较。仅用户点「检查更新」时联网（不自动检查）。
+  // 实现走 `github.com/.../releases/latest` 的**重定向目标**（/releases/tag/vX.Y.Z）——
+  // 不用 api.github.com：匿名 API 在共享出口 IP 下会被限流 403（实测）；该页面同样需要代理，
+  // 复用刮削设置里的代理开关（GitHub 在部分网络下直连超时）。
+  ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+    try {
+      const settings = {}
+      try {
+        const rs = db.exec("SELECT key, value FROM settings WHERE key IN ('proxy_enabled','proxy_url')")
+        for (const row of (rs[0]?.values || [])) settings[row[0]] = row[1]
+      } catch {}
+      const proxy = settings.proxy_enabled === 'y' ? (settings.proxy_url || '') : ''
+      const r = await curlGet('https://github.com/P1u2o0/JavTube/releases/latest', {
+        proxy, follow: true, withUrl: true, referer: 'https://github.com/P1u2o0/JavTube', timeout: 20000
+      })
+      if (!r.ok) return { ok: false, error: r.error || ('HTTP ' + r.status) }
+      const m = String(r.url || '').match(/\/releases\/tag\/(v?[0-9][0-9.]*)/i)
+      if (!m) return { ok: false, error: '未找到版本信息（可能是网络拦截页）' }
+      const latest = m[1].replace(/^v/i, '')
+      const current = app.getVersion()
+      // 数字段逐级比较（1.2.10 > 1.2.9），避免字符串比较把 3.10 判得比 3.9 旧
+      const pa = latest.split('.').map(n => parseInt(n, 10) || 0)
+      const pb = current.split('.').map(n => parseInt(n, 10) || 0)
+      let hasUpdate = false
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const x = pa[i] || 0, y = pb[i] || 0
+        if (x !== y) { hasUpdate = x > y; break }
+      }
+      return { ok: true, latest, current, hasUpdate, url: r.url || '' }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // 渲染进程 → 主进程：用系统浏览器打开外部链接（仅 http/https —— 渲染层拿到的参数不完全可信，
+  // 不允许借它打开任意本地协议/文件）
+  ipcMain.handle(IPC.UTILS_OPEN_EXTERNAL, (_e, url) => {
+    try {
+      const s = String(url || '')
+      if (!/^https?:\/\//i.test(s)) return { ok: false, error: '仅支持 http(s) 链接' }
+      shell.openExternal(s)
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
   // === 刮削功能 ===
   // 渲染进程 → 主进程：根据番号从网络刮削影片信息
   // 参数：ph（番号）、source（刮削来源：auto/javbus/javdb）
-  // 封面目录固定用 constants 里的 COVER_DIR —— 此前允许渲染层传 coverDir，
-  // 而它会与番号一起拼进封面保存路径，等于给了个「往任意位置写文件」的口子
+  // 图片保存路径由 constants.js 的新布局助手决定、不接受渲染层指定 ——
+  // 此前允许渲染层传 coverDir，而它会与番号一起拼进保存路径，等于给了个「往任意位置写文件」的口子
   // 刮削选项（预览图下载开关/数量、统计开关）从 settings 表读取，前端无需逐次传递
   ipcMain.handle(IPC.SCRAPER_SCRAPE, async (_e, { ph, source, skipPreviews }) => {
     try {
@@ -247,7 +293,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       if (!Array.isArray(tagMapping)) tagMapping = []
       const r = await scrapeMovie(ph, {
         source: source || 'auto',
-        // coverDir 不传 → 由 scrapeMovie 取默认值 COVER_DIR（不接受渲染层指定）
+        // 图片落盘到 dataDir（子路径由 scraper 按新布局助手生成）
         dataDir,
         // skipPreviews：补全字段模式且该影片已有预览图时，不必重复下载（10 张/部，批量补全时差别很大）
         downloadPreviews: settings.scrape_previews === 'y' && !skipPreviews,

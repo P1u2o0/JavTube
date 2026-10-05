@@ -77,11 +77,14 @@ async function throttleByHost(url) {
 
 /**
  * 构造 curl 公共参数。
- * @param {Object} opts - 选项 { proxy, cookie, referer, timeout }
+ * @param {Object} opts - 选项 { proxy, cookie, referer, timeout, follow }
+ *   follow：跟随重定向（-L）——「检查更新」用 /releases/latest 的跳转目标取版本号，
+ *   不走 api.github.com（匿名 API 在共享出口 IP 下会被限流 403，实测）。
  * @returns {string[]} 参数数组
  */
-function buildCommonArgs({ proxy, cookie, referer, timeout = 30000 } = {}) {
+function buildCommonArgs({ proxy, cookie, referer, timeout = 30000, follow = false } = {}) {
   const args = ['-s', '-A', USER_AGENT, '--max-time', String(Math.ceil(timeout / 1000)), '--compressed']
+  if (follow) args.push('-L')                // 跟随重定向
   if (proxy) args.push('-x', proxy)          // 代理（页面请求需要，图片不传）
   if (cookie) args.push('-b', cookie)        // Cookie（curl 的 -b 支持 "k=v; k2=v2" 形式）
   if (referer) args.push('-e', referer)      // 来源页
@@ -97,7 +100,9 @@ function buildCommonArgs({ proxy, cookie, referer, timeout = 30000 } = {}) {
 function curlGet(url, opts = {}) {
   return throttleByHost(url).then(() => new Promise((resolve) => {
     const tmp = path.join(os.tmpdir(), `javtube-curl-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`)
-    const args = [...buildCommonArgs(opts), '-o', tmp, '-w', '%{http_code}', url]
+    // withUrl：额外回报最终 URL（%{url_effective}，配合 follow 用；检查更新靠它拿 releases/tag/vX.Y.Z）
+    const args = [...buildCommonArgs(opts), '-o', tmp,
+      '-w', opts.withUrl ? '%{http_code}\\n%{url_effective}' : '%{http_code}', url]
     execFile(CURL_BIN, args, { maxBuffer: 8 * 1024 * 1024, encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, async (err, stdout) => {
       if (err) {
         try { fs.unlinkSync(tmp) } catch {}
@@ -115,13 +120,16 @@ function curlGet(url, opts = {}) {
         return resolve({ ok: false, error: '读取响应失败: ' + e.message })
       }
       try { fs.unlinkSync(tmp) } catch {}
-      const status = Number(String(stdout).trim()) || 0
+      // withUrl 时 stdout 是「状态码\n最终URL」两行（\\n 由 curl 自行展开为换行）
+      const lines = String(stdout).trim().split('\n')
+      const status = Number(String(lines[0] || '').trim()) || 0
+      const effectiveUrl = opts.withUrl ? String(lines[1] || '').trim() : ''
       // 注意：JAVBUS 在反爬触发时返回 302 但响应体仍是有效详情页，
       // 因此只要拿到响应体就交由上层判断内容是否有效（由 assertJavdbNotBlocked 等负责）
       if (status < 200 || status >= 400) {
         return resolve({ ok: false, status, error: `HTTP ${status}` })
       }
-      resolve({ ok: true, status, html })
+      resolve({ ok: true, status, html, ...(opts.withUrl ? { url: effectiveUrl } : {}) })
     })
   }))
 }

@@ -269,6 +269,9 @@ contextBridge.exposeInMainWorld('api', {
    * @returns {Promise<Object>} { ok, data: { [path]: {width,height}|null } }
    */
   readVideoSize: (paths) => ipcRenderer.invoke(IPC.UTILS_READ_VIDEO_SIZE, paths),
+  // 检查更新 + 打开外部链接（2026-10-05 设置「关于」页）
+  checkUpdate: () => ipcRenderer.invoke(IPC.UPDATE_CHECK),
+  openExternal: (url) => ipcRenderer.invoke(IPC.UTILS_OPEN_EXTERNAL, url),
 
   // === 系统对话框接口 ===
 

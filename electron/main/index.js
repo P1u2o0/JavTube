@@ -83,7 +83,7 @@ const APP_TITLE = 'JavTube'
 
 /**
  * 获取应用数据存储目录，并处理数据库迁移逻辑。
- * 数据目录位于 exe 同级的 data 文件夹下，包含数据库文件 app.db 和封面图片目录 covers。
+ * 数据目录位于 exe 同级的 data 文件夹下，包含数据库文件 app.db 和图片目录 images（每片一个文件夹的海报+预览、actress 头像；旧版本为 covers）。
  * 如果数据库文件不存在，会尝试从旧版本（Javlibrary）或打包资源中迁移数据。
  * @returns {string} 数据目录的绝对路径
  */
@@ -110,7 +110,7 @@ function getDataDir() {
   const dbPath = path.join(dir, 'app.db')
 
   // === 从旧版本 (Javlibrary) 迁移数据 ===
-  // 只搬真正的数据：app.db（影片/标签/设置）与 covers/（封面、头像）。
+  // 只搬真正的数据：app.db（影片/标签/设置）与图片目录（images/ 新布局、covers/ 旧布局）。
   // 不搬 Chromium 的 Profile 垃圾（Cache / GPUCache / blob_storage / Local Storage …），
   // 它们对新的 sql.js 版本毫无用处。
   //
@@ -121,7 +121,7 @@ function getDataDir() {
   if (!fs.existsSync(dbPath)) {
     const oldDir = path.join(app.getPath('home'), 'AppData', 'Roaming', 'Javlibrary')
     if (fs.existsSync(path.join(oldDir, 'app.db'))) {
-      for (const name of ['app.db', 'covers']) {
+      for (const name of ['app.db', 'images', 'covers']) {
         const src = path.join(oldDir, name)
         const dst = path.join(dir, name)
         if (!fs.existsSync(src) || fs.existsSync(dst)) continue  // 不存在或已迁移过 → 跳过，绝不覆盖
@@ -334,8 +334,8 @@ app.whenReady().then(async () => {
     getMainWindow: () => mainWindow,   // 运行时读取当前窗口，与原闭包语义一致
     dataDir: dataDirForGlobal
   }))                                                              // 工具类 IPC
-  reg('movies', () => registerMovieIpc(ipcMain, db, dataDirForGlobal))     // 影片数据 IPC（删除时要清理 covers/ 内的孤儿图片）
-  reg('actress', () => registerActressIpc(ipcMain, db, dataDirForGlobal))  // 女优数据 IPC（含补全头像：要写 covers/actress）
+  reg('movies', () => registerMovieIpc(ipcMain, db, dataDirForGlobal))     // 影片数据 IPC（删除时要清理图片目录内的孤儿图片）
+  reg('actress', () => registerActressIpc(ipcMain, db, dataDirForGlobal))  // 女优数据 IPC（含补全头像：要写 images/actress）
   reg('images', () => registerImageIpc(ipcMain, db, dataDirForGlobal))     // 图片完整性 IPC（扫描/修复失效封面与预览图）
   reg('settings', () => registerSettingsIpc(ipcMain, db, dataDirForGlobal)) // 设置数据 IPC
   reg('home', () => registerHomeIpc(ipcMain, db))                         // 首页推荐 IPC

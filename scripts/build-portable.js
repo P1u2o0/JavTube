@@ -209,7 +209,7 @@ function writeReadme(targetDir) {
     '【数据存放位置】',
     '  所有数据都在软件同目录的 data 文件夹里：',
     '    data\\app.db      数据库（影片、标签、设置、Cookie 等）',
-    '    data\\covers\\     封面与女优头像缓存',
+    '    data\\images\\     图片缓存（每部影片一个文件夹：海报 + 预览图；actress\\ 为女优头像）',
     '  首次运行会自动创建 data 文件夹。整个文件夹拷走 = 数据一起搬走。',
     '',
     '【升级到新版本】',
