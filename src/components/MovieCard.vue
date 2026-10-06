@@ -56,7 +56,7 @@
     </div>
     <!-- 影片信息区域：番号 + 标题 -->
     <div class="info">
-      <div class="code">{{ m.ph || '—' }}</div>
+      <div class="code">{{ m.ph || '—' }}<FileTags :py="m.py" size="sm" /></div>
       <div class="title" :title="m.pm">{{ m.pm || '无标题' }}</div>
     </div>
   </div>
@@ -69,6 +69,8 @@ import { computed, ref, watch } from 'vue'
 import { resolveCover, dataDirRef } from '@/utils/global'
 // 引入统一图标组件
 import AppIcon from '@/components/AppIcon.vue'
+// 文件名属性标签（无码破解/中文字幕/4K，与播放页同款样式，2026-10-05）
+import FileTags from '@/components/FileTags.vue'
 
 // 组件 props 定义
 const props = defineProps({

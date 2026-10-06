@@ -18,7 +18,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 // 封面/头像目录名（dataDir 下的子目录，集中定义于 constants.js）
-const { COVER_DIR } = require('../constants')
+const { COVER_DIR, IMAGE_DIR } = require('../constants')
 // 头像来源（JAVDB 演员页）+ 图片下载/内容校验（含主站图床走代理的判断）
 // isGifRenamed 统一放在 scraper.js（与 isImageFile 同处，图片判定只此一份）：
 // 女优头像与封面/预览图共用同一条「GIF 伪装成 .jpg」判据，避免两处口径漂移。
@@ -516,6 +516,52 @@ function removeUnusableAvatar(db, dataDir, name, preItem) {
 }
 
 /**
+ * 扫描 data/images/actress/ 下用户手工放置的头像文件，按文件名匹配库内女优。
+ *
+ * 命名约定（2026-10-06 用户要求）：
+ *   <名字>.<ext>              —— 主头像（名字与库内显示名完全一致，如「松岡すず.jpg」）
+ *   <名字>-2.<ext> / -3 ...   —— 同名不同人的备选（主头像不存在时才用 -2，依此类推）
+ * 扩展名白名单：jpg/jpeg/png/webp。
+ *
+ * 匹配规则：去掉扩展名后，用正则拆出「名字」与可选的「-序号」后缀；同名多份时优先无后缀的，
+ * 其次序号小的。返回 Map<名字, 相对路径>（相对路径形如 images/actress/松岡すず.jpg）。
+ *
+ * @param {string} dataDir - 数据目录绝对路径
+ * @returns {Map<string, string>} 女优名 → 头像相对路径
+ */
+function scanLocalAvatars(dataDir) {
+  const out = new Map()
+  if (!dataDir) return out
+  const dir = path.join(dataDir, IMAGE_DIR, 'actress')
+  let entries
+  try { entries = fs.readdirSync(dir) } catch { return out }
+  // 先把所有候选按「名字」分组，再决定每组取哪一个
+  const groups = new Map() // name → Array<{base, ext, suffix}>
+  for (const f of entries) {
+    const abs = path.join(dir, f)
+    let st
+    try { st = fs.statSync(abs) } catch { continue }
+    if (!st.isFile()) continue
+    const ext = path.extname(f)
+    if (!/^\.(jpg|jpeg|png|webp)$/i.test(ext)) continue
+    const base = path.basename(f, ext)
+    // 拆出「名字」与可选的 -序号 后缀（名字本身可能含连字符，故用非贪婪 + 末尾 -数字 匹配）
+    const m = base.match(/^(.+?)(?:-(\d+))?$/)
+    const name = m ? m[1] : base
+    const suffix = m && m[2] ? parseInt(m[2], 10) : 0
+    const arr = groups.get(name) || []
+    arr.push({ base, ext, suffix, file: f })
+    groups.set(name, arr)
+  }
+  for (const [name, arr] of groups) {
+    // 优先 suffix=0（无后缀），其次按序号升序
+    arr.sort((a, b) => a.suffix - b.suffix)
+    out.set(name, `${IMAGE_DIR}/actress/${arr[0].file}`)
+  }
+  return out
+}
+
+/**
  * 注册女优相关的 IPC 处理器。
  * @param {Object} ipcMain - Electron ipcMain 对象
  * @param {Object} db - sql.js 数据库实例
@@ -665,6 +711,39 @@ function registerActressIpc(ipcMain, db, dataDir) {
         data: { name: nm, path: rel, movies: touched, total, actorId: got.id, note: got.note || '' }
       }
     } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // IPC: actress:avatarRefreshLocal — 扫描本地 images/actress/ 下用户手工放置的头像，
+  // 按文件名匹配库内女优并写入 cast_json（2026-10-06，「补全头像」的第一步，优先于 JAVDB）。
+  // 返回应用的数量与未匹配（库里没有这位）的文件名列表，前端据此提示用户。
+  ipcMain.handle(IPC.ACTRESS_AVATAR_REFRESH_LOCAL, () => {
+    if (!dataDir) return { ok: false, error: '未取到数据目录', data: { applied: 0, unmatched: [] } }
+    try {
+      const localMap = scanLocalAvatars(dataDir)
+      if (!localMap.size) return { ok: true, data: { applied: 0, unmatched: [] } }
+      // 库内女优名集合（cast_json 优先，缺 cast_json 回退拆 yid；与 avatarStateOf 同口径）
+      const dbNames = new Set()
+      const state = avatarStateOf(db)
+      for (const nm of state.keys()) dbNames.add(nm)
+      const applied = []
+      const unmatched = []
+      for (const [name, rel] of localMap) {
+        if (!dbNames.has(name)) { unmatched.push(path.basename(rel)); continue }
+        // 内容校验：用户可能放了损坏/非图片文件，扩展名对不算数（与封面/预览图同一判据）
+        const abs = path.join(dataDir, rel.replace(/\\/g, '/'))
+        if (!isImageFile(abs)) { unmatched.push(path.basename(rel)); continue }
+        // 仅当「当前头像与本地文件不同」时才写库（避免每次点补全都无谓改动 cast_json）
+        const cur = currentAvatarOf(db, name).replace(/\\/g, '/')
+        if (cur === rel) continue
+        applyAvatarToCast(db, name, rel)
+        applied.push(name)
+      }
+      if (applied.length) {
+        persistSoon(db)
+        invalidateActorCaches()
+      }
+      return { ok: true, data: { applied: applied.length, unmatched } }
+    } catch (e) { return { ok: false, error: e.message, data: { applied: 0, unmatched: [] } } }
   })
 }
 

@@ -81,7 +81,7 @@
             <CoverImg v-if="coverOf(m)" :src="coverOf(m)" :alt="m.pm || ''" />
             <div v-else class="ac-no-cover"><AppIcon name="image" :size="22" /></div>
           </div>
-          <div class="ac-code">{{ m.ph || '—' }}</div>
+          <div class="ac-code">{{ m.ph || '—' }}<FileTags :py="m.py" size="sm" /></div>
           <div class="ac-title" :title="m.pm">{{ m.pm || '无标题' }}</div>
         </div>
         <!-- 空位：不足 8 部时补齐占位，保持 4 列 × 2 行版式。
@@ -104,6 +104,8 @@ import { useRouter } from 'vue-router'
 import { resolveCover } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
 import CoverImg from '@/components/CoverImg.vue'
+// 文件名属性标签（近期上新卡片，与播放页同款样式，2026-10-05）
+import FileTags from '@/components/FileTags.vue'
 
 const router = useRouter()
 

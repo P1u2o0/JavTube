@@ -180,7 +180,8 @@ watch(() => route.query, (q) => {
 })
 
 /**
- * 补全缺失头像：无头像 / 文件缺失 / 占位图 → 从 JAVDB 取真实头像。
+ * 补全缺失头像：先扫描本地 images/actress/ 下用户手工放置的头像（按「名字.<ext>」命名），
+ * 命中的直接采用；再对剩余无头像的女优从 JAVDB 抓取。
  * 先取清单再逐条补，逐条更新按钮文案显示进度（与批量刮削同一套「渲染层驱动循环」约定）。
  */
 const filling = ref(false)
@@ -192,12 +193,30 @@ async function onFillAvatars() {
   let ran = false
   let ok = 0
   let cleaned = 0
+  let localApplied = 0
   const failed = []
   try {
+    // 第一步：扫描本地头像（用户在 data/images/actress/ 下按「名字.<ext>」放置的图片）
+    fillText.value = '扫描本地头像…'
+    const lr = await window.api.refreshLocalAvatars().catch(() => null)
+    if (lr?.ok) {
+      localApplied = lr.data?.applied || 0
+      // 有未匹配的本地文件时提示用户（库里没有对应名字，放了也不会生效）
+      const un = lr.data?.unmatched || []
+      if (un.length) {
+        const head = un.slice(0, 3).join('、')
+        ElMessage.warning(`${un.length} 个本地文件未匹配到库内女优（如 ${head}${un.length > 3 ? ' 等' : ''}），请确认文件名与演员名一致`)
+      }
+    }
+
+    // 第二步：剩余无头像的女优走 JAVDB
     const t = await window.api.getAvatarTodo().catch(() => null)
     if (!t?.ok) { ElMessage.error(t?.error || '读取缺失清单失败'); return }
     const todo = t.data || []
-    if (!todo.length) { ElMessage.success('所有女优都已有头像'); return }
+    if (!todo.length) {
+      if (!localApplied) ElMessage.success('所有女优都已有头像')
+      return
+    }
     ran = true
     for (let i = 0; i < todo.length; i++) {
       fillText.value = `补全中 ${i + 1}/${todo.length}`
@@ -211,11 +230,13 @@ async function onFillAvatars() {
     filling.value = false
     fillText.value = '补全头像'
   }
-  if (!ran) return
+  if (!ran && !localApplied) return
   // 重载列表以显示新头像（主进程已清掉总览缓存）
   await load()
   // 成功/失败都要报出来（2026-09-29 审计）：原提示只体现成功数，用户看不出哪些没补上
-  const parts = [`成功 ${ok} 位，失败 ${failed.length} 位`]
+  const parts = []
+  if (localApplied) parts.push(`本地匹配 ${localApplied} 位`)
+  if (ran) parts.push(`JAVDB 成功 ${ok} 位，失败 ${failed.length} 位`)
   if (cleaned) parts.push(`${cleaned} 位没有可用照片，已清除并统一显示剪影`)
   if (failed.length) {
     const head = failed.slice(0, 4).join('；')

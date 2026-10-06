@@ -990,23 +990,8 @@ onBeforeUnmount(() => {
 }
 
 /* 文件名属性标签（2026-10-04）：位于喜欢按钮左侧 / 推荐项标题下方。
-   配色令牌见 global.css --filetag-*（中文字幕=浅紫、无码破解=浅蓝、4K=琥珀）。
-   原「★ 评分」样式已随评分显示一并移除（2026-10-04） */
-.file-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: var(--r-tag);
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: nowrap;
-  user-select: none;
-}
-.ft-uncen { background: var(--filetag-blue-soft); color: var(--filetag-blue); }
-.ft-cnsub { background: var(--filetag-purple-soft); color: var(--filetag-purple); }
-.ft-uhd { background: var(--filetag-gold-soft); color: var(--filetag-gold); }
-/* 推荐项里的缩小版（窄列，跟随 12px 演员名层级） */
-.file-tag-sm { padding: 1px 8px; font-size: 11px; border-radius: 8px; }
+   .file-tag / .ft-* / .file-tag-sm 三组样式已统一到 FileTags.vue 的非 scoped 全局样式
+   （2026-10-05，全站单一事实来源）——本页标记不变、样式不变；配色令牌见 global.css --filetag-* */
 
 /* 标签行右侧的操作按钮组（属性标签 / 喜欢 / 详情，同一行） */
 .row-actions {

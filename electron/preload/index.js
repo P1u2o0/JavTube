@@ -162,6 +162,15 @@ contextBridge.exposeInMainWorld('api', {
   fillAvatar: (name) => ipcRenderer.invoke(IPC.ACTRESS_AVATAR_FILL, name),
 
   /**
+   * 扫描本地 images/actress/ 下用户手工放置的头像并匹配入库（2026-10-06）。
+   * 命名：<名字>.<ext>（与库内显示名一致），同名备选用 <名字>-2.<ext>。
+   * 「补全头像」的第一步：本地命中的优先采用，剩余无头像的再走 JAVDB。
+   * @returns {Promise<{ok:boolean,data?:{applied:number,unmatched:string[]},error?:string}>}
+   *          applied = 成功匹配并写入的女优数；unmatched = 库里没有对应名字的文件名
+   */
+  refreshLocalAvatars: () => ipcRenderer.invoke(IPC.ACTRESS_AVATAR_REFRESH_LOCAL),
+
+  /**
    * 扫描全库失效图片（2026-09-27）：数据库里引用了、但文件缺失或内容不是有效图片的
    * 封面与预览图。只读扫描，不写任何文件。
    * @returns {Promise<{ok:boolean,data?:{coverCount:number,previewCount:number,

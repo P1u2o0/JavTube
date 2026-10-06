@@ -72,7 +72,8 @@ function registerHomeIpc(ipcMain, db) {
   ipcMain.handle(IPC.HOME_RECOMMEND, () => {
     try {
       const all = rows(db.exec(
-        `SELECT id, ph, pm, cover, bq, xl, yid, yy, fl, pfs, tjrq, play_time, play_count
+        // py（视频文件路径）用于「近期上新」卡片的文件名属性标签（无码破解/中文字幕/4K，2026-10-05）
+        `SELECT id, ph, pm, cover, bq, xl, yid, yy, fl, pfs, tjrq, play_time, play_count, py
          FROM movies`
       )[0])
 

@@ -39,6 +39,9 @@ module.exports = {
   // 2026-09-24 女优头像补全：列出缺头像（无图/占位图）的女优 / 按名字从 JAVDB 补一位
   ACTRESS_AVATAR_TODO: 'actress:avatarTodo',
   ACTRESS_AVATAR_FILL: 'actress:avatarFill',
+  // 2026-10-06 女优头像本地补全：扫描 images/actress/ 下按「名字.<ext>」命名的图片，
+  //   匹配库内女优并写入 cast_json（用户手工放置的头像，点击「补全头像」时优先于 JAVDB 应用）
+  ACTRESS_AVATAR_REFRESH_LOCAL: 'actress:avatarRefreshLocal',
 
   // === 设置 ===
   SETTINGS_GET: 'settings:get',

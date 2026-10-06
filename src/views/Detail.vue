@@ -19,6 +19,8 @@
     <div class="title-row">
       <BackButton />
       <span class="code">{{ m.ph || '—' }}</span>
+      <!-- 文件名属性标签（无码破解/中文字幕/4K，与播放页同款样式，2026-10-05） -->
+      <FileTags :py="m.py" />
       <span class="title-text">{{ m.pm || '无标题' }}</span>
     </div>
 
@@ -186,6 +188,8 @@ import TagChip from '@/components/TagChip.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import CoverImg from '@/components/CoverImg.vue'
 import BackButton from '@/components/BackButton.vue'
+// 文件名属性标签（标题行番号右侧，与播放页同款样式，2026-10-05）
+import FileTags from '@/components/FileTags.vue'
 import ManualForm from '@/components/AddMovieDialog/ManualForm.vue'
 import { resolveCover, buildScrapeUpdate, splitTags, bumpCover, SCRAPE_FIELD_LABELS, statsFillHint, favLock, favUnlock } from '@/utils/global'
 import { playMovie } from '@/utils/playback'
