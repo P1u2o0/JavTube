@@ -242,13 +242,14 @@ function onClearAll() {
      使分类名与同行芯片文字落在同一条水平线上 */
   line-height: 34px;
   flex-shrink: 0;
-  min-width: 60px;
+  /* 统一最小宽度（≈3 个汉字），让所有展开按钮在同一条垂直线上对齐 */
+  min-width: 42px;
 }
 /* 展开/收起按钮：内嵌 AppIcon，展开态指向下、收起态 rotate(-90deg) 指向右 */
 .cat-toggle {
-  width: 22px;
-  height: 22px;
-  margin-left: 4px;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
