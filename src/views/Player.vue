@@ -598,7 +598,9 @@ function initOrSwitchPlayer() {
     // 重算模糊，是播放卡顿的主要来源之一，这里关掉（控制条仍有半透明黑底，观感不变）。
     backdrop: false,
     hotkey: false,          // 内置键盘关闭：方向键长按/单击语义由本页面接管
-    moreVideoAttr: { playsInline: true }
+    // preload=auto：让浏览器尽可能多缓冲，连续快进时命中已缓冲区间即可瞬时跳转，
+    // 减少 waiting 事件触发的加载图标闪烁
+    moreVideoAttr: { playsInline: true, preload: 'auto' }
   })
   playingId = m.value.id        // 首次构造：art 从此刻起播的就是当前影片
   switchSuppress = false
@@ -839,6 +841,16 @@ onBeforeUnmount(() => {
    它是最内层、被画面内容完全覆盖，不参与圆角边缘的抗锯齿合成，不会产生黑线。 */
 .player-box :deep(.art-video-player video) {
   background: #000;
+}
+/* 加载指示器延迟显示：连续快进时，命中已缓冲区间的 seek 通常 <150ms 完成，
+   延迟 150ms 后才显示转圈，避免「明明没卡却闪一下缓冲图标」的观感。
+   真正需要缓冲（跳到未读区间）时 150ms 后正常显示。 */
+.player-box :deep(.art-loading) {
+  opacity: 0 !important;
+  transition: opacity 0.12s linear 0.15s;
+}
+.player-box :deep(.art-loading.art-loading-show) {
+  opacity: 1 !important;
 }
 
 /* 长按倍速 / 快退角标（挂在 ArtPlayer 根节点上，非 scoped —— 用 :global 穿透） */

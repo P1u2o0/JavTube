@@ -98,7 +98,10 @@ function setupMediaProtocol() {
       const common = {
         'content-type': contentType,
         'accept-ranges': 'bytes',
-        'cache-control': 'no-store'   // 视频不进磁盘缓存，避免占双倍空间
+        // 允许浏览器缓存已读片段：连续快进时，跳回已读过的区间可直接命中缓存，
+        // 不再走磁盘 I/O，waiting 事件大幅减少。max-age 覆盖一次观影会话即可
+        // （影片文件极少在播放中被修改）。
+        'cache-control': 'public, max-age=3600'
       }
 
       const rangeHeader = request.headers.get('range')

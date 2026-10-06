@@ -19,24 +19,40 @@
     <div class="filter-body">
       <!-- 遍历有标签的分类，渲染每个分类行 -->
       <div v-for="cat in displayCategories" :key="cat.idx" class="cat-row">
-        <!-- 分类名称 -->
-        <span class="cat-name">{{ cat.cat }}</span>
-        <!-- 分类下的标签列表 -->
-        <div class="cat-tags">
-          <TagChip v-for="t in cat.tags" :key="t"
-                   :label="t"
-                   :selected="isTagSelected(cat.idx, t)"
-                   @click="onToggle(cat.idx, t)" />
+        <!-- 分类名称 + 展开/收起按钮 -->
+        <div class="cat-name-wrap">
+          <span class="cat-name">{{ cat.cat }}</span>
+          <button class="cat-toggle" :class="{ collapsed: isCollapsed(cat.idx) }"
+                  @click="toggleCat(cat.idx)" :title="isCollapsed(cat.idx) ? '展开' : '收起'">
+            <AppIcon name="chevron-down" :size="14" />
+          </button>
+        </div>
+        <!-- 分类下的标签列表（grid-rows 过渡实现平滑展开/收起） -->
+        <div class="cat-tags-wrap" :class="{ collapsed: isCollapsed(cat.idx) }">
+          <div class="cat-tags">
+            <TagChip v-for="t in cat.tags" :key="t"
+                     :label="t"
+                     :selected="isTagSelected(cat.idx, t)"
+                     @click="onToggle(cat.idx, t)" />
+          </div>
         </div>
       </div>
       <!-- 未分类标签区域：有未分类标签时显示 -->
       <div v-if="uncategorizedTags.length" class="cat-row">
-        <span class="cat-name">未分类</span>
-        <div class="cat-tags">
-          <TagChip v-for="t in uncategorizedTags" :key="t"
-                   :label="t"
-                   :selected="isTagSelected(-1, t)"
-                   @click="onToggleUncategorized(t)" />
+        <div class="cat-name-wrap">
+          <span class="cat-name">未分类</span>
+          <button class="cat-toggle" :class="{ collapsed: isCollapsed(-1) }"
+                  @click="toggleCat(-1)" :title="isCollapsed(-1) ? '展开' : '收起'">
+            <AppIcon name="chevron-down" :size="14" />
+          </button>
+        </div>
+        <div class="cat-tags-wrap" :class="{ collapsed: isCollapsed(-1) }">
+          <div class="cat-tags">
+            <TagChip v-for="t in uncategorizedTags" :key="t"
+                     :label="t"
+                     :selected="isTagSelected(-1, t)"
+                     @click="onToggleUncategorized(t)" />
+          </div>
         </div>
       </div>
     </div>
@@ -45,9 +61,11 @@
 
 <script setup>
 // 引入 Vue 的计算属性 API
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 // 引入标签芯片子组件
 import TagChip from './TagChip.vue'
+// 引入统一图标组件
+import AppIcon from './AppIcon.vue'
 // 引入影片数据仓库（Pinia store）
 import { useMoviesStore } from '@/store/movies'
 
@@ -56,6 +74,22 @@ import { useMoviesStore } from '@/store/movies'
 const emit = defineEmits(['change'])
 // 获取 store 实例
 const store = useMoviesStore()
+
+// 已收起的分类索引集合（-1 表示未分类）
+const collapsedCats = ref(new Set())
+
+/** 判断指定分类是否已收起 */
+function isCollapsed(idx) {
+  return collapsedCats.value.has(idx)
+}
+
+/** 切换指定分类的展开/收起状态 */
+function toggleCat(idx) {
+  const next = new Set(collapsedCats.value)
+  if (next.has(idx)) next.delete(idx)
+  else next.add(idx)
+  collapsedCats.value = next
+}
 
 // 所有数据库标签（计算属性，从 store 获取；allDbTags 本身按使用频率降序）
 const allTags = computed(() => store.allDbTags || [])
@@ -193,6 +227,12 @@ function onClearAll() {
   gap: 2px 5px;
   padding: 4px 0;
 }
+/* 分类名称 + 展开收起按钮容器 */
+.cat-name-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
 /* 分类名称样式 */
 .cat-name {
   font-weight: 500;
@@ -201,15 +241,54 @@ function onClearAll() {
   /* 行高 = 芯片总高（12.5×1.6 + 8 padding + 6 上下 margin = 34px），
      使分类名与同行芯片文字落在同一条水平线上 */
   line-height: 34px;
-  margin-right: 6px;
   flex-shrink: 0;
   min-width: 60px;
 }
+/* 展开/收起按钮：内嵌 AppIcon，展开态指向下、收起态 rotate(-90deg) 指向右 */
+.cat-toggle {
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out);
+  flex-shrink: 0;
+  padding: 0;
+}
+/* 箭头图标：展开态指向下（默认），收起态旋转指向右 */
+.cat-toggle .app-icon {
+  transition: transform var(--dur-base) var(--ease-out);
+  will-change: transform;
+}
+.cat-toggle.collapsed .app-icon {
+  transform: rotate(-90deg);
+}
+.cat-toggle:hover { color: var(--primary); border-color: var(--primary); background: var(--surface-2); }
+.cat-toggle:active { transform: scale(0.9); }
+/* 标签列表外层网格容器：用 grid-template-rows 0fr↔1fr 实现高度过渡 */
+.cat-tags-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-out);
+  flex: 1;
+  min-width: 0;
+  will-change: grid-template-rows;
+}
+.cat-tags-wrap.collapsed { grid-template-rows: 0fr; }
 /* 分类下标签列表容器 */
 .cat-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 5px;
-  flex: 1;
+  overflow: hidden;
+  min-height: 0;
 }
 </style>
