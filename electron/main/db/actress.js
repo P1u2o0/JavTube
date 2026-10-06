@@ -861,6 +861,21 @@ function registerActressIpc(ipcMain, db, dataDir) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
+  // IPC: actress:delete — 删除女优个人资料（2026-10-06）。
+  // 仅从 actress 表移除该女优的身高/三围等资料行，不触碰影片 cast_json（影片仍保留该演员出演记录）。
+  // 若该女优在任何影片的 cast_json 中仍有引用，女优列表依旧会显示她（由 computeOverview 从影片聚合），
+  // 只是没有额外资料；若没有任何影片引用她，女优列表自然不再显示。
+  ipcMain.handle(IPC.ACTRESS_DELETE, (_e, name) => {
+    try {
+      const nm = String(name || '').trim()
+      if (!nm) return { ok: false, error: '演员名为空' }
+      db.run('DELETE FROM actress WHERE name=?', [nm])
+      persistSoon(db)
+      invalidateActorCaches()
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
   // IPC: actress:importAvatar — 把用户选中的本地图片复制到 images/actress/ 并应用（2026-10-06）。
   // payload: { name, srcPath }  srcPath 是用户通过文件对话框选的本地图片绝对路径
   ipcMain.handle(IPC.ACTRESS_IMPORT_AVATAR, (_e, payload) => {

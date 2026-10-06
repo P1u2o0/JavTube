@@ -246,6 +246,19 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       const d = data || {}
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
+      // 演员同步（2026-10-06）：手动录入只填 yid，需从 yid 生成 cast_json
+      // （否则 computeOverview 读不到演员，演员列表里这部片的演员不出现）
+      if (d.yid && !d.cast_json) {
+        const names = String(d.yid).split(/[，,]/).map(s => s.trim()).filter(Boolean)
+        const seen = new Set()
+        const cast = []
+        for (const nm of names) {
+          if (seen.has(nm)) continue
+          seen.add(nm)
+          cast.push({ name: nm, gender: 'f', avatar: '' })
+        }
+        d.cast_json = JSON.stringify(cast)
+      }
       // 文件名派生标签（2026-10-06）：「中文字幕」「无码破解」只认文件名来源，
       // 刮削/手填的同名标签要剔除后按文件名重算；4K 允许来自刮削，保留后追加。
       if (d.py) {
@@ -306,6 +319,25 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       const d = { ...cur, ...patch }
       // 标签标准化
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
+      // 演员同步（2026-10-06）：手动编辑影片时只改 yid（逗号分隔的演员名），
+      // 但 cast_json 若不跟着重建，computeOverview 会优先读旧 cast_json，
+      // 导致「编辑影片删了某个演员，但演员页仍显示她出演本片」。
+      // 这里当 yid 被显式传入时，从 yid 重建 cast_json（保留旧 cast_json 里同名演员的头像）。
+      if (data && 'yid' in data) {
+        const oldCast = (() => { try { return JSON.parse(cur.cast_json || '[]') } catch { return [] } })()
+        const avatarMap = new Map()
+        for (const c of oldCast) if (c && c.name) avatarMap.set(c.name, c.avatar || '')
+        const names = String(d.yid || '').split(/[，,]/).map(s => s.trim()).filter(Boolean)
+        // 去重保序
+        const seen = new Set()
+        const cast = []
+        for (const nm of names) {
+          if (seen.has(nm)) continue
+          seen.add(nm)
+          cast.push({ name: nm, gender: 'f', avatar: avatarMap.get(nm) || '' })
+        }
+        d.cast_json = JSON.stringify(cast)
+      }
       // 文件名派生标签（2026-10-06）：视频路径变更时重算「中文字幕/无码破解/4K」
       if (d.py) {
         const fnTags = filenameTagsOf(d.py)

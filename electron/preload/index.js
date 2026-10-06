@@ -188,6 +188,14 @@ contextBridge.exposeInMainWorld('api', {
   importActressAvatar: (payload) => ipcRenderer.invoke(IPC.ACTRESS_IMPORT_AVATAR, payload),
 
   /**
+   * 删除演员个人资料（2026-10-06）：从 actress 表移除该演员的身高/三围等资料行，
+   * 不触碰影片 cast_json。若该演员无任何影片引用，女优列表自然不再显示。
+   * @param {string} name - 演员名
+   * @returns {Promise<{ok:boolean,error?:string}>}
+   */
+  deleteActress: (name) => ipcRenderer.invoke(IPC.ACTRESS_DELETE, name),
+
+  /**
    * 扫描全库失效图片（2026-09-27）：数据库里引用了、但文件缺失或内容不是有效图片的
    * 封面与预览图。只读扫描，不写任何文件。
    * @returns {Promise<{ok:boolean,data?:{coverCount:number,previewCount:number,

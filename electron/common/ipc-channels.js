@@ -46,6 +46,8 @@ module.exports = {
   ACTRESS_UPDATE: 'actress:update',
   // 2026-10-06 女优头像导入：把用户选中的本地图片复制到 images/actress/ 并写入 cast_json
   ACTRESS_IMPORT_AVATAR: 'actress:importAvatar',
+  // 2026-10-06 女优删除：从 actress 表移除该女优的个人资料（不影响影片 cast_json）
+  ACTRESS_DELETE: 'actress:delete',
 
   // === 设置 ===
   SETTINGS_GET: 'settings:get',

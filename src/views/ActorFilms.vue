@@ -31,6 +31,20 @@
           </button>
         </div>
         <div class="ah-count">{{ films.length }} 部作品</div>
+        <!-- 女优个人资料（身高/三围/罩杯/生日/出道/备注）：有值才显示，
+             数据来自 actress 表，由编辑弹窗写入。 -->
+        <div class="ah-info" v-if="hasInfo">
+          <div class="info-chips">
+            <span class="info-chip" v-if="info.height">身高 <b>{{ info.height }}</b>cm</span>
+            <span class="info-chip" v-if="info.zb">罩杯 <b>{{ info.zb }}</b></span>
+            <span class="info-chip" v-if="info.bust">胸围 <b>{{ info.bust }}</b></span>
+            <span class="info-chip" v-if="info.waist">腰围 <b>{{ info.waist }}</b></span>
+            <span class="info-chip" v-if="info.hip">臀围 <b>{{ info.hip }}</b></span>
+            <span class="info-chip" v-if="info.birthday">生日 <b>{{ info.birthday }}</b></span>
+            <span class="info-chip" v-if="info.debut">出道 <b>{{ info.debut }}</b></span>
+          </div>
+          <div class="info-remark" v-if="info.remark">{{ info.remark }}</div>
+        </div>
       </div>
       <!-- 指数区（评分指数 + 热度）：跟在大名/作品数右侧，靠右对齐。
            评分指数 = 所有「有评分」作品的平均分，星星按 平均分/5 从左往右填充；
@@ -125,7 +139,7 @@
             <img :src="editAvatarUrl" :alt="editName" @error="editAvatarBroken = true" />
           </div>
           <div class="edit-avatar-actions">
-            <button class="btn-primary" @click="pickAvatar" :disabled="saving">选择图片</button>
+            <el-button type="primary" @click="pickAvatar" :disabled="saving" round>选择图片</el-button>
             <div class="edit-avatar-hint">支持 jpg / png / webp，导入后存到 images/actress/</div>
           </div>
         </div>
@@ -133,50 +147,55 @@
         <!-- 名字 -->
         <div class="edit-field">
           <label>名字</label>
-          <input v-model="editName" class="edit-input" placeholder="演员名字" />
+          <el-input v-model="editName" placeholder="演员名字" />
         </div>
 
         <!-- 资料：两列网格（身高/罩杯/胸围/腰围/臀围/生日/出道） -->
         <div class="edit-grid">
           <div class="edit-field">
             <label>身高 (cm)</label>
-            <input v-model.number="editInfo.height" type="number" class="edit-input" placeholder="如 160" />
+            <el-input v-model.number="editInfo.height" type="number" placeholder="如 160" />
           </div>
           <div class="edit-field">
             <label>罩杯</label>
-            <input v-model="editInfo.zb" class="edit-input" placeholder="如 C" />
+            <el-input v-model="editInfo.zb" placeholder="如 C" />
           </div>
           <div class="edit-field">
             <label>胸围 (cm)</label>
-            <input v-model.number="editInfo.bust" type="number" class="edit-input" placeholder="如 88" />
+            <el-input v-model.number="editInfo.bust" type="number" placeholder="如 88" />
           </div>
           <div class="edit-field">
             <label>腰围 (cm)</label>
-            <input v-model.number="editInfo.waist" type="number" class="edit-input" placeholder="如 58" />
+            <el-input v-model.number="editInfo.waist" type="number" placeholder="如 58" />
           </div>
           <div class="edit-field">
             <label>臀围 (cm)</label>
-            <input v-model.number="editInfo.hip" type="number" class="edit-input" placeholder="如 86" />
+            <el-input v-model.number="editInfo.hip" type="number" placeholder="如 86" />
           </div>
           <div class="edit-field">
             <label>生日</label>
-            <input v-model="editInfo.birthday" class="edit-input" placeholder="如 1995-01-01" />
+            <el-input v-model="editInfo.birthday" placeholder="如 1995-01-01" />
           </div>
           <div class="edit-field edit-field-full">
             <label>出道日期</label>
-            <input v-model="editInfo.debut" class="edit-input" placeholder="如 2018-01" />
+            <el-input v-model="editInfo.debut" placeholder="如 2018-01" />
           </div>
           <div class="edit-field edit-field-full">
             <label>备注</label>
-            <input v-model="editInfo.remark" class="edit-input" placeholder="备注信息" />
+            <el-input v-model="editInfo.remark" placeholder="备注信息" />
           </div>
         </div>
       </div>
       <template #footer>
-        <button class="btn-ghost" @click="editVisible = false" :disabled="saving">取消</button>
-        <button class="btn-primary" @click="saveEdit" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
+        <div class="edit-dialog-footer">
+          <el-button type="danger" plain @click="deleteActress" :disabled="saving" round>删除该女优</el-button>
+          <div class="edit-dialog-footer-right">
+            <el-button @click="editVisible = false" :disabled="saving" round>取消</el-button>
+            <el-button type="primary" @click="saveEdit" :disabled="saving" round>
+              {{ saving ? '保存中…' : '保存' }}
+            </el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -185,7 +204,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { resolveCover, splitTags, favLock, favUnlock } from '@/utils/global'
 import { playMovie } from '@/utils/playback'
@@ -208,6 +227,12 @@ const name = computed(() => String(route.params.name || ''))
 const gender = ref('f')
 const avatar = ref('')
 const info = ref(null)
+/** 是否有任何可展示的女优资料（任一字段非空） */
+const hasInfo = computed(() => {
+  const i = info.value
+  if (!i) return false
+  return Boolean(i.height || i.bust || i.waist || i.hip || i.zb || i.birthday || i.debut || i.remark)
+})
 const films = ref([])
 /** 热度排名（后端按全库女优排序后回传）：{ rank, total, tier } 或 null */
 const heatRank = ref(null)
@@ -530,6 +555,31 @@ function onEditClosed() {
   editAvatarBroken.value = false
 }
 
+/** 删除该女优的个人资料（不影响影片 cast_json） */
+async function deleteActress() {
+  if (saving.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除「${name.value}」的女优资料吗？\n\n影片中的出演记录不会被删除，但若该女优没有任何出演影片，将从女优列表中消失。`,
+      '删除女优',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch { return }
+  saving.value = true
+  try {
+    const r = await window.api.deleteActress(name.value).catch(() => null)
+    if (r?.ok) {
+      ElMessage.success('已删除')
+      editVisible.value = false
+      router.push('/actresses')
+    } else {
+      ElMessage.error(r?.error || '删除失败')
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(async () => {
   // 确保设置与全局标签已加载（每行数量 + 标签分类栏都依赖 store）
   // 注：这两行此前用 `safeCall(() => ...)` 传函数，实际从未执行 ——
@@ -577,6 +627,19 @@ onMounted(async () => {
    —— 此前这里重复定义了 18px/700/color，改字号要改两处，已收口 */
 
 .ah-count { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 女优个人资料区：身高/三围/罩杯等以 chip 形式横排，备注单独一行 */
+.ah-info { margin-top: 2px; display: flex; flex-direction: column; gap: 4px; }
+.info-chips { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.info-chip {
+  font-size: var(--fs-sm); color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 2px 10px;
+  line-height: 1.6;
+}
+.info-chip b { color: var(--text); font-weight: 600; margin: 0 1px; }
+.info-remark { font-size: var(--fs-sm); color: var(--muted); line-height: 1.5; }
 
 /* ===== 指数区（评分指数 + 热度）：紧接大名右侧、整体靠右 =====
    视觉沿用应用既有卡片语言：--surface 底 + 发丝边框 + --r-md 圆角 + --sh-1 微阴影；
@@ -687,27 +750,10 @@ onMounted(async () => {
 /* 表单字段 */
 .edit-field { display: flex; flex-direction: column; gap: 4px; }
 .edit-field label { font-size: var(--fs-sm); color: var(--text-2); font-weight: 500; }
-.edit-input {
-  padding: 7px 14px;
-  font-size: var(--fs-base); color: var(--text);
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-pill); outline: none;
-  transition: border-color var(--dur-fast) var(--ease-out);
-}
-.edit-input:focus { border-color: var(--primary); }
 /* 两列网格 */
 .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .edit-field-full { grid-column: 1 / -1; }
-/* 按钮（弹窗 footer） */
-.btn-primary, .btn-ghost {
-  padding: 7px 16px; font-size: var(--fs-base);
-  border-radius: var(--r-pill); cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
-}
-.btn-primary { background: var(--primary); color: #fff; border: none; }
-.btn-primary:hover:not(:disabled) { opacity: 0.9; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
-.btn-ghost:hover:not(:disabled) { background: var(--surface-2); }
-.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 弹窗底部：左删除 / 右取消+保存，按钮间距与全站 dialog 一致（12px） */
+.edit-dialog-footer { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.edit-dialog-footer-right { display: flex; gap: 12px; }
 </style>
