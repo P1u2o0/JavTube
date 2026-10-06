@@ -18,6 +18,7 @@ let appRef = null
 try { const m = require('electron'); appRef = m && m.app ? m.app : null } catch { appRef = null }
 // 封面目录名等共享常量（集中定义于 constants.js）
 const { COVER_DIR, IMAGE_DIR } = require('../constants')
+const { filenameTagsOf } = require('./util')
 
 // sql.js 实例缓存，避免重复初始化
 let SQL = null
@@ -481,6 +482,40 @@ async function initDb(dataDir) {
   } catch (e) {
     db._imageMigration = { error: e.message }
     console.warn('[images] 布局迁移异常：' + e.message)
+  }
+
+  // === 文件名派生标签迁移（2026-10-06）===
+  // 把「中文字幕」「无码破解」「4K」从文件名解析后写入 bq，使它们能出现在标签筛选栏。
+  // 来源是文件名而非刮削结果——符合用户「这些标签不按刮削、按文件名」的要求。
+  // 一次性迁移：用 settings.filename_tags_migrated_v2 标记（v2 因前后端匹配逻辑对齐而重跑）。
+  try {
+    const migRow = db.exec("SELECT value FROM settings WHERE key='filename_tags_migrated_v2'")
+    const migrated = !!(migRow && migRow[0] && migRow[0].values[0] && String(migRow[0].values[0][0]) === '1')
+    if (!migrated) {
+      const rows = db.exec("SELECT id, py, bq FROM movies WHERE py IS NOT NULL AND py != ''")
+      let n = 0
+      if (rows && rows[0]) {
+        for (const row of rows[0].values) {
+          const id = row[0], py = row[1], bq = row[2]
+          const fnTags = filenameTagsOf(py)
+          // 无论文件名有没有标记，都要先清掉刮削来的「中文字幕」「无码破解」
+          // （这两个按用户要求只认文件名来源），再按文件名追加
+          const existing = new Set(String(bq || '').split(/[，,]/).map(s => s.trim()).filter(Boolean))
+          let changed = false
+          for (const t of ['中文字幕', '无码破解']) if (existing.delete(t)) changed = true
+          for (const t of fnTags) if (!existing.has(t)) { existing.add(t); changed = true }
+          if (changed) {
+            db.run('UPDATE movies SET bq=? WHERE id=?', [Array.from(existing).join(','), id])
+            n++
+          }
+        }
+      }
+      db.run("INSERT OR REPLACE INTO settings(key,value) VALUES('filename_tags_migrated_v2','1')")
+      force()
+      console.log(`[db] 文件名派生标签迁移(v2)完成，更新 ${n} 条影片`)
+    }
+  } catch (e) {
+    console.warn('[db] 文件名派生标签迁移异常:', e.message)
   }
 
   return db

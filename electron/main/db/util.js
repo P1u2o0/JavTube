@@ -107,4 +107,25 @@ function persistSoon(db) {
   }, wait)
 }
 
-module.exports = { rows, firstRow, firstScalar, nowLocal, persist, persistSoon }
+/**
+ * 从视频文件名解析派生标签（与前端 utils/global.js 的 fileBadgesOf **完全同源**）。
+ * 只认文件名里的硬标记，不依赖刮削结果。前后端必须一致，否则会出现
+ * 「卡片徽章显示了，但标签筛选栏里没有」或反之的错位。
+ * @param {string} py - 视频文件路径
+ * @returns {string[]} 标签名数组，如 ['中文字幕','无码破解']
+ */
+function filenameTagsOf(py) {
+  if (!py) return []
+  const name = String(py).replace(/\\/g, '/').split('/').pop()
+  if (!name) return []
+  const stem = name.replace(/\.[A-Za-z0-9]+$/, '')
+  const tokens = stem.split(/[-_\s.]+/).map(t => t.toUpperCase()).filter(Boolean)
+  const hasTok = (...arr) => tokens.some(t => arr.includes(t))
+  const tags = []
+  if (hasTok('U', 'UC') || stem.includes('破解')) tags.push('无码破解')
+  if (hasTok('C', 'UC')) tags.push('中文字幕')
+  if (hasTok('4K')) tags.push('4K')
+  return tags
+}
+
+module.exports = { rows, firstRow, firstScalar, nowLocal, persist, persistSoon, filenameTagsOf }

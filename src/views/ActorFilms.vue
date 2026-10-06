@@ -117,7 +117,7 @@
          头像导入走 importActressAvatar（复制到 images/actress/<名字>.<ext>），
          保存时把返回的相对路径传给 updateActress。 -->
     <el-dialog v-model="editVisible" title="编辑演员信息" width="520px" :close-on-click-modal="false"
-               destroy-on-close @closed="onEditClosed">
+               destroy-on-close append-to-body @closed="onEditClosed">
       <div class="edit-body">
         <!-- 头像区：当前头像预览 + 选择图片按钮 -->
         <div class="edit-avatar-row">
@@ -688,10 +688,10 @@ onMounted(async () => {
 .edit-field { display: flex; flex-direction: column; gap: 4px; }
 .edit-field label { font-size: var(--fs-sm); color: var(--text-2); font-weight: 500; }
 .edit-input {
-  padding: 7px 10px;
+  padding: 7px 14px;
   font-size: var(--fs-base); color: var(--text);
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-sm); outline: none;
+  border-radius: var(--r-pill); outline: none;
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 .edit-input:focus { border-color: var(--primary); }
@@ -701,7 +701,7 @@ onMounted(async () => {
 /* 按钮（弹窗 footer） */
 .btn-primary, .btn-ghost {
   padding: 7px 16px; font-size: var(--fs-base);
-  border-radius: var(--r-sm); cursor: pointer;
+  border-radius: var(--r-pill); cursor: pointer;
   transition: all var(--dur-fast) var(--ease-out);
 }
 .btn-primary { background: var(--primary); color: #fff; border: none; }

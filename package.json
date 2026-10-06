@@ -1,6 +1,6 @@
 {
   "name": "javtube",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "description": "JavTube - 本地影片管理软件",
   "main": "electron/main/index.js",
   "author": "JavTube",

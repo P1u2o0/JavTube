@@ -172,7 +172,7 @@
     </Teleport>
 
     <!-- 编辑对话框 - 复用 ManualForm 手动录入表单 -->
-    <el-dialog v-model="editShow" title="编辑影片" width="820px" destroy-on-close>
+    <el-dialog v-model="editShow" title="编辑影片" width="820px" destroy-on-close append-to-body>
       <ManualForm :initial="m" @submit="onSaveEdit" />
     </el-dialog>
   </div>

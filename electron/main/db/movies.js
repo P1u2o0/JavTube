@@ -16,7 +16,7 @@ const { TAG_DELIM, FAV_Y, FAV_N, SORTABLE_COLUMNS } = require('../constants')
 // Node 文件系统：导入去重时校验已有视频路径是否仍有效（失效则回填）
 const fs = require('fs')
 // db 层通用工具（查询结果转换 / 时间格式 / 落盘收口 persistSoon 等）
-const { rows, firstRow, firstScalar, nowLocal, persistSoon } = require('./util')
+const { rows, firstRow, firstScalar, nowLocal, persistSoon, filenameTagsOf } = require('./util')
 // IPC 通道名常量（preload 与 main 共享，定义于 common/ipc-channels.js）
 const IPC = require('../../common/ipc-channels')
 // 视频文件读取的存储根冷却（NAS 离线时跳过会挂 ~40s 的真实 I/O，见 video-meta.js）
@@ -246,6 +246,15 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       const d = data || {}
       // 标签标准化：将中文/英文逗号分隔的标签统一为中文逗号分隔
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
+      // 文件名派生标签（2026-10-06）：「中文字幕」「无码破解」只认文件名来源，
+      // 刮削/手填的同名标签要剔除后按文件名重算；4K 允许来自刮削，保留后追加。
+      if (d.py) {
+        const fnTags = filenameTagsOf(d.py)
+        const existing = new Set(String(d.bq || '').split(TAG_DELIM).filter(Boolean))
+        for (const t of ['中文字幕', '无码破解']) existing.delete(t)
+        for (const t of fnTags) existing.add(t)
+        d.bq = Array.from(existing).join(TAG_DELIM)
+      }
       // 番号去重：已存在时不重复新建。但若本次传入了有效的视频路径，
       // 而库中该记录的路径为空或文件已失效（移动/改名/换盘），则回填路径——
       // 修复「扫描导入后播放提示路径不对、需手动到编辑里重选视频文件」的问题
@@ -297,6 +306,16 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       const d = { ...cur, ...patch }
       // 标签标准化
       if (d.bq) d.bq = d.bq.split(/[，,]/).map(s => s.trim()).filter(Boolean).join(TAG_DELIM)
+      // 文件名派生标签（2026-10-06）：视频路径变更时重算「中文字幕/无码破解/4K」
+      if (d.py) {
+        const fnTags = filenameTagsOf(d.py)
+        const existing = new Set(String(d.bq || '').split(TAG_DELIM).filter(Boolean))
+        // 只清「中文字幕」「无码破解」——这两个按用户要求只认文件名来源，刮削来的要剔除；
+        // 4K 允许来自刮削，故不清，只做追加（Set 自动去重）
+        for (const t of ['中文字幕', '无码破解']) existing.delete(t)
+        for (const t of fnTags) existing.add(t)
+        d.bq = Array.from(existing).join(TAG_DELIM)
+      }
       // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
       db.run(UPDATE_MOVIE_SQL, buildMovieUpdateParams(d, id))
       persistSoon(db)
