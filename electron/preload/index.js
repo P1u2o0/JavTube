@@ -171,6 +171,23 @@ contextBridge.exposeInMainWorld('api', {
   refreshLocalAvatars: () => ipcRenderer.invoke(IPC.ACTRESS_AVATAR_REFRESH_LOCAL),
 
   /**
+   * 编辑演员信息（2026-10-06，演员影片页「编辑」按钮）。
+   * @param {{oldName:string, newName?:string, avatar?:string, info?:object}} payload
+   *   - newName 变化时同步改所有影片 cast_json
+   *   - avatar 为相对路径（如 images/actress/xxx.jpg）；用 importActressAvatar 导入后传入
+   *   - info: {height,bust,waist,hip,zb,birthday,debut,remark}
+   * @returns {Promise<{ok:boolean,data?:{name,renameTotal,avatar},error?:string}>}
+   */
+  updateActress: (payload) => ipcRenderer.invoke(IPC.ACTRESS_UPDATE, payload),
+
+  /**
+   * 导入演员头像：把用户选中的本地图片复制到 images/actress/ 并写入 cast_json（2026-10-06）。
+   * @param {{name:string, srcPath:string}} payload - srcPath 为本地图片绝对路径
+   * @returns {Promise<{ok:boolean,data?:{path:string},error?:string}>}
+   */
+  importActressAvatar: (payload) => ipcRenderer.invoke(IPC.ACTRESS_IMPORT_AVATAR, payload),
+
+  /**
    * 扫描全库失效图片（2026-09-27）：数据库里引用了、但文件缺失或内容不是有效图片的
    * 封面与预览图。只读扫描，不写任何文件。
    * @returns {Promise<{ok:boolean,data?:{coverCount:number,previewCount:number,
@@ -292,6 +309,9 @@ contextBridge.exposeInMainWorld('api', {
 
   /** 打开可执行文件选择对话框，返回选中文件路径 */
   openFileDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_FILE),
+
+  /** 打开图片文件选择对话框（2026-10-06，女优头像导入），返回图片路径或 null */
+  openImageDialog: () => ipcRenderer.invoke(IPC.DIALOG_OPEN_IMAGE),
 
   /** 打开数据库保存对话框，返回保存路径 */
   saveDbDialog: () => ipcRenderer.invoke(IPC.DIALOG_SAVE_DB),

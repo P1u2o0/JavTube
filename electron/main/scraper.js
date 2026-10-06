@@ -473,7 +473,7 @@ async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || 
     const tag = inteHandler(t, '<a href=', '</a>', [1, 1, 1])
     if (tag) bq = bq ? bq + '，' + tag : tag
   }
-  bq = twToCn(bq)  // 繁体标签转简体
+  bq = stripFilenameDerivedTags(twToCn(bq))  // 繁体转简体 + 剔除文件名派生标签
 
   // 提取时长（分钟，2026-09-09 新增）
   // 2026-09-13 修正：实测 JAVBUS 页面该字段为 <span class="header">長度:</span>
@@ -667,7 +667,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
     const tag = t.replace(/<[^>]+>/g, '').trim()
     if (tag) bq = bq ? bq + '，' + tag : tag
   }
-  bq = twToCn(bq)  // 繁体标签转简体
+  bq = stripFilenameDerivedTags(twToCn(bq))  // 繁体转简体 + 剔除文件名派生标签
 
   // 提取封面图片 URL（2026-10-05 修复）：
   // JAVDB 现版封面是 <img class="video-cover" width="600" ... src="https://c0.jdbstatic.com/..."> ——
@@ -779,6 +779,22 @@ function autoSelectSources(type) {
   if (type === 'FC2') return [2, 1]       // FC2 类型：JAVBUS 优先，JAVDB 兜底
   if (type === '欧美') return [1]          // 欧美类型优先使用 JAVDB
   return [2, 1]                            // 有码类型优先 JAVBUS，其次 JAVDB
+}
+
+/**
+ * 从刮削标签中剔除「文件名派生标签」（2026-10-06 用户要求）。
+ * 「中文字幕」「无码破解」这两个标签不依赖来源站，统一从视频文件名解析（见 utils/global.js
+ * 的 fileBadgesOf），因此刮削拿到的 bq 里如果有它们要剔除，避免与 FileTags 徽章重复、
+ * 也避免来源站漏标/误标导致标签栏不一致。剔除是精确匹配（twToCn 已转简体）。
+ * @param {string} bq - 中文逗号分隔的标签串
+ * @returns {string} 剔除后的标签串
+ */
+function stripFilenameDerivedTags(bq) {
+  if (!bq) return bq
+  const DROP = new Set(['中文字幕', '无码破解'])
+  const tags = String(bq).split('，').map(t => t.trim()).filter(Boolean)
+  const kept = tags.filter(t => !DROP.has(t))
+  return kept.join('，')
 }
 
 /**

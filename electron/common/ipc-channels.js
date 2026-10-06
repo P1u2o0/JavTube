@@ -42,6 +42,10 @@ module.exports = {
   // 2026-10-06 女优头像本地补全：扫描 images/actress/ 下按「名字.<ext>」命名的图片，
   //   匹配库内女优并写入 cast_json（用户手工放置的头像，点击「补全头像」时优先于 JAVDB 应用）
   ACTRESS_AVATAR_REFRESH_LOCAL: 'actress:avatarRefreshLocal',
+  // 2026-10-06 女优信息编辑：在演员影片页修改该女优的名字/头像/身高三围等资料
+  ACTRESS_UPDATE: 'actress:update',
+  // 2026-10-06 女优头像导入：把用户选中的本地图片复制到 images/actress/ 并写入 cast_json
+  ACTRESS_IMPORT_AVATAR: 'actress:importAvatar',
 
   // === 设置 ===
   SETTINGS_GET: 'settings:get',
@@ -71,6 +75,7 @@ module.exports = {
   DIALOG_OPEN_DIR: 'dialog:openDir',
   DIALOG_OPEN_VIDEO: 'dialog:openVideo',
   DIALOG_OPEN_FILE: 'dialog:openFile',
+  DIALOG_OPEN_IMAGE: 'dialog:openImage',
   DIALOG_SAVE_DB: 'dialog:saveDb',
   DIALOG_OPEN_DB: 'dialog:openDb',
 

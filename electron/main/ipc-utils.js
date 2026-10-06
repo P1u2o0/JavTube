@@ -210,6 +210,8 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   ipcMain.handle(IPC.DIALOG_OPEN_VIDEO, () => doOpen({ properties: ['openFile'], filters: [{ name: '视频文件', extensions: ['mp4','avi','mkv','mov','flv','wmv','rmvb','m4v','mpg','mpeg','ts','webm','*'] }] }))
   // 打开可执行文件选择对话框
   ipcMain.handle(IPC.DIALOG_OPEN_FILE, () => doOpen({ properties: ['openFile'], filters: [{ name: '可执行文件', extensions: ['exe','bat','cmd'] }, { name: '所有文件', extensions: ['*'] }] }))
+  // 打开图片文件选择对话框（2026-10-06，女优头像导入）
+  ipcMain.handle(IPC.DIALOG_OPEN_IMAGE, () => doOpen({ properties: ['openFile'], filters: [{ name: '图片文件', extensions: ['jpg','jpeg','png','webp','bmp','gif'] }] }))
   // 保存数据库备份文件对话框
   ipcMain.handle(IPC.DIALOG_SAVE_DB, () => {
     try {

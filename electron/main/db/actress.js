@@ -488,6 +488,52 @@ function applyAvatarToCast(db, name, relPath) {
 }
 
 /**
+ * 把某演员在所有影片 cast_json 里的名字改成 newName（2026-10-06 演员改名）。
+ * 与 applyAvatarToCast 同口径：cast_json 优先，缺 cast_json 时回退拆 yid 改名。
+ * 改名同时保留该演员已有的 avatar（如果 newName 此前在 cast_json 里没条目、avatar 取自 oldName）。
+ *
+ * @param {Object} db
+ * @param {string} oldName
+ * @param {string} newName
+ * @returns {{touched:number, total:number}} touched = 实际改写的影片条数；total = 该演员出现的影片数
+ */
+function renameInCast(db, oldName, newName) {
+  const res = db.exec('SELECT id, cast_json, yid FROM movies')[0]
+  if (!res) return { touched: 0, total: 0 }
+  let touched = 0
+  let total = 0
+  for (const [id, cj, yid] of res.values) {
+    let cast = []
+    let parsed = false
+    try {
+      const arr = JSON.parse(cj || '[]')
+      if (Array.isArray(arr) && arr.length) { cast = arr; parsed = true }
+    } catch {}
+    if (parsed) {
+      let appears = false
+      let changed = false
+      for (const c of cast) {
+        if (c && c.name === oldName) {
+          appears = true
+          c.name = newName
+          changed = true
+        }
+      }
+      if (!appears) continue
+      total++
+      if (changed) { db.run('UPDATE movies SET cast_json=? WHERE id=?', [JSON.stringify(cast), id]); touched++ }
+    } else if (splitNameList(yid).includes(oldName)) {
+      // yid-only：把 yid 里的 oldName 替换成 newName（保持中文逗号分隔）
+      total++
+      const names = splitNameList(yid).map(nm => nm === oldName ? newName : nm)
+      db.run('UPDATE movies SET yid=? WHERE id=?', [names.join('，'), id])
+      touched++
+    }
+  }
+  return { touched, total }
+}
+
+/**
  * 补不到真实头像时，把「不可用的那张」清掉，让界面回落到本地剪影。
  *
  * 「不可用」= 来源站占位图（粉色假图）或无效图片（坏下载/错误页，前端会显示成破图）。
@@ -744,6 +790,98 @@ function registerActressIpc(ipcMain, db, dataDir) {
       }
       return { ok: true, data: { applied: applied.length, unmatched } }
     } catch (e) { return { ok: false, error: e.message, data: { applied: 0, unmatched: [] } } }
+  })
+
+  // IPC: actress:update — 编辑演员信息（2026-10-06，演员影片页「编辑」按钮）。
+  // payload: { oldName, newName?, avatar?, info: {height,bust,waist,hip,zb,birthday,debut,remark} }
+  // - newName 变化时：所有影片 cast_json / yid 同步改名，actress 表 name 一并改
+  // - avatar 变化时：applyAvatarToCast 写入所有影片 + actress 表 img
+  // - info 变化时：写 actress 表（无则插入）
+  ipcMain.handle(IPC.ACTRESS_UPDATE, (_e, payload) => {
+    try {
+      const oldName = String(payload?.oldName || '').trim()
+      if (!oldName) return { ok: false, error: '演员名为空' }
+      const newName = payload?.newName != null ? String(payload.newName).trim() : oldName
+      const avatar = payload?.avatar != null ? String(payload.avatar).trim() : null
+      const info = payload?.info || {}
+      const nameChanged = newName && newName !== oldName
+
+      // 改名：先改 cast_json / yid，再处理 actress 表
+      let renameTotal = 0
+      if (nameChanged) {
+        const r = renameInCast(db, oldName, newName)
+        renameTotal = r.total
+      }
+
+      // 头像：写到新名字下（改名后所有 cast_json 里已经是 newName）
+      if (avatar != null) {
+        const targetName = nameChanged ? newName : oldName
+        applyAvatarToCast(db, targetName, avatar)
+      }
+
+      // actress 表：插入或更新（name 用最终名字）
+      const finalName = nameChanged ? newName : oldName
+      const fields = {
+        height: Number(info.height) || null,
+        bust: Number(info.bust) || null,
+        waist: Number(info.waist) || null,
+        hip: Number(info.hip) || null,
+        zb: info.zb || null,
+        birthday: info.birthday || null,
+        debut: info.debut || null,
+        remark: info.remark || null,
+        img: avatar != null ? avatar : undefined   // undefined 表示不改 img
+      }
+      // 删除 undefined 字段（img 未传时不更新）
+      const cols = Object.entries(fields).filter(([, v]) => v !== undefined)
+      if (cols.length || nameChanged) {
+        const sets = cols.map(([k]) => `${k}=?`).join(',')
+        const vals = cols.map(([, v]) => v)
+        if (nameChanged) {
+          // 改名：先尝试更新 oldName 那行的 name，没有就插入 newName
+          db.run('UPDATE actress SET name=? WHERE name=?', [finalName, oldName])
+          if (cols.length) {
+            db.run(`UPDATE actress SET ${sets} WHERE name=?`, [...vals, finalName])
+          }
+        } else if (cols.length) {
+          db.run(`UPDATE actress SET ${sets} WHERE name=?`, [...vals, finalName])
+        }
+        // actress 表没有该演员时插入
+        const exists = firstRow(db.exec('SELECT 1 FROM actress WHERE name=?', [finalName])[0])
+        if (!exists) {
+          const colNames = ['name', ...cols.map(([k]) => k)].join(',')
+          const placeholders = ['?', ...cols.map(() => '?')].join(',')
+          db.run(`INSERT INTO actress (${colNames}) VALUES (${placeholders})`, [finalName, ...vals])
+        }
+      }
+
+      persistSoon(db)
+      invalidateActorCaches()
+      return { ok: true, data: { name: finalName, renameTotal, avatar: avatar || '' } }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // IPC: actress:importAvatar — 把用户选中的本地图片复制到 images/actress/ 并应用（2026-10-06）。
+  // payload: { name, srcPath }  srcPath 是用户通过文件对话框选的本地图片绝对路径
+  ipcMain.handle(IPC.ACTRESS_IMPORT_AVATAR, (_e, payload) => {
+    const name = String(payload?.name || '').trim()
+    const srcPath = String(payload?.srcPath || '')
+    if (!name) return { ok: false, error: '演员名为空' }
+    if (!srcPath || !fs.existsSync(srcPath)) return { ok: false, error: '图片文件不存在' }
+    if (!dataDir) return { ok: false, error: '未取到数据目录' }
+    try {
+      if (!isImageFile(srcPath)) return { ok: false, error: '不是有效图片' }
+      const ext = path.extname(srcPath).toLowerCase() || '.jpg'
+      // 文件名用演员名（与本地头像补全同口径：images/actress/<名字><ext>）
+      const rel = `${IMAGE_DIR}/actress/${name}${ext}`
+      const abs = path.join(dataDir, rel.replace(/\\/g, '/'))
+      fs.mkdirSync(path.dirname(abs), { recursive: true })
+      fs.copyFileSync(srcPath, abs)
+      applyAvatarToCast(db, name, rel)
+      persistSoon(db)
+      invalidateActorCaches()
+      return { ok: true, data: { path: rel } }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 }
 

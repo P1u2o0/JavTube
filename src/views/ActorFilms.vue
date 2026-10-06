@@ -22,7 +22,14 @@
       </div>
       <div class="ah-main">
         <!-- page-title：页面级标题统一类（字号/字重/字距在 global.css 一处定义） -->
-        <div class="ah-name page-title">{{ name }}</div>
+        <div class="ah-name-row">
+          <div class="ah-name page-title">{{ name }}</div>
+          <!-- 编辑按钮：点开弹窗可改名字/头像/资料（2026-10-06） -->
+          <button class="ah-edit-btn" @click="openEditDialog" title="编辑演员信息">
+            <AppIcon name="edit" :size="15" />
+            <span>编辑</span>
+          </button>
+        </div>
         <div class="ah-count">{{ films.length }} 部作品</div>
       </div>
       <!-- 指数区（评分指数 + 热度）：跟在大名/作品数右侧，靠右对齐。
@@ -104,6 +111,74 @@
                      :page-size="pageSize" :current-page="page"
                      @current-change="p => (page = p)" background small />
     </div>
+
+    <!-- ===== 编辑演员信息弹窗（2026-10-06） =====
+         可改：名字（同步改所有影片 cast_json）、头像（选本地图片导入）、身高三围等资料。
+         头像导入走 importActressAvatar（复制到 images/actress/<名字>.<ext>），
+         保存时把返回的相对路径传给 updateActress。 -->
+    <el-dialog v-model="editVisible" title="编辑演员信息" width="520px" :close-on-click-modal="false"
+               destroy-on-close @closed="onEditClosed">
+      <div class="edit-body">
+        <!-- 头像区：当前头像预览 + 选择图片按钮 -->
+        <div class="edit-avatar-row">
+          <div class="edit-avatar-preview">
+            <img :src="editAvatarUrl" :alt="editName" @error="editAvatarBroken = true" />
+          </div>
+          <div class="edit-avatar-actions">
+            <button class="btn-primary" @click="pickAvatar" :disabled="saving">选择图片</button>
+            <div class="edit-avatar-hint">支持 jpg / png / webp，导入后存到 images/actress/</div>
+          </div>
+        </div>
+
+        <!-- 名字 -->
+        <div class="edit-field">
+          <label>名字</label>
+          <input v-model="editName" class="edit-input" placeholder="演员名字" />
+        </div>
+
+        <!-- 资料：两列网格（身高/罩杯/胸围/腰围/臀围/生日/出道） -->
+        <div class="edit-grid">
+          <div class="edit-field">
+            <label>身高 (cm)</label>
+            <input v-model.number="editInfo.height" type="number" class="edit-input" placeholder="如 160" />
+          </div>
+          <div class="edit-field">
+            <label>罩杯</label>
+            <input v-model="editInfo.zb" class="edit-input" placeholder="如 C" />
+          </div>
+          <div class="edit-field">
+            <label>胸围 (cm)</label>
+            <input v-model.number="editInfo.bust" type="number" class="edit-input" placeholder="如 88" />
+          </div>
+          <div class="edit-field">
+            <label>腰围 (cm)</label>
+            <input v-model.number="editInfo.waist" type="number" class="edit-input" placeholder="如 58" />
+          </div>
+          <div class="edit-field">
+            <label>臀围 (cm)</label>
+            <input v-model.number="editInfo.hip" type="number" class="edit-input" placeholder="如 86" />
+          </div>
+          <div class="edit-field">
+            <label>生日</label>
+            <input v-model="editInfo.birthday" class="edit-input" placeholder="如 1995-01-01" />
+          </div>
+          <div class="edit-field edit-field-full">
+            <label>出道日期</label>
+            <input v-model="editInfo.debut" class="edit-input" placeholder="如 2018-01" />
+          </div>
+          <div class="edit-field edit-field-full">
+            <label>备注</label>
+            <input v-model="editInfo.remark" class="edit-input" placeholder="备注信息" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-ghost" @click="editVisible = false" :disabled="saving">取消</button>
+        <button class="btn-primary" @click="saveEdit" :disabled="saving">
+          {{ saving ? '保存中…' : '保存' }}
+        </button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -370,6 +445,91 @@ async function load() {
   }
 }
 
+// ========== 编辑演员信息（2026-10-06） ==========
+const editVisible = ref(false)
+const saving = ref(false)
+const editName = ref('')
+const editAvatar = ref('')            // 相对路径（images/actress/xxx.jpg）
+const editAvatarBroken = ref(false)
+const editInfo = ref({ height: null, bust: null, waist: null, hip: null, zb: '', birthday: '', debut: '', remark: '' })
+
+/** 编辑弹窗内的头像预览 URL */
+const editAvatarUrl = computed(() => (editAvatar.value && !editAvatarBroken.value)
+  ? resolveCover(editAvatar.value)
+  : (gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f))
+
+/** 打开编辑弹窗：用当前演员的数据回填 */
+function openEditDialog() {
+  editName.value = name.value
+  editAvatar.value = avatar.value || ''
+  editAvatarBroken.value = false
+  const i = info.value || {}
+  editInfo.value = {
+    height: i.height ?? null,
+    bust: i.bust ?? null,
+    waist: i.waist ?? null,
+    hip: i.hip ?? null,
+    zb: i.zb ?? '',
+    birthday: i.birthday ?? '',
+    debut: i.debut ?? '',
+    remark: i.remark ?? ''
+  }
+  editVisible.value = true
+}
+
+/** 选择本地图片作为头像：复制到 images/actress/ 并拿到相对路径 */
+async function pickAvatar() {
+  if (!window.api?.openImageDialog) return
+  const p = await window.api.openImageDialog()
+  if (!p) return
+  const nm = editName.value.trim()
+  if (!nm) { ElMessage.warning('请先填写名字'); return }
+  const r = await window.api.importActressAvatar({ name: nm, srcPath: p }).catch(() => null)
+  if (r?.ok) {
+    editAvatar.value = r.data.path
+    editAvatarBroken.value = false
+    ElMessage.success('头像已导入')
+  } else {
+    ElMessage.error(r?.error || '导入失败')
+  }
+}
+
+/** 保存编辑：调 updateActress，改名成功后跳转到新名字的页面 */
+async function saveEdit() {
+  if (saving.value) return
+  const nm = editName.value.trim()
+  if (!nm) { ElMessage.warning('名字不能为空'); return }
+  saving.value = true
+  try {
+    const payload = {
+      oldName: name.value,
+      newName: nm,
+      avatar: editAvatar.value || '',
+      info: editInfo.value
+    }
+    const r = await window.api.updateActress(payload).catch(() => null)
+    if (r?.ok) {
+      ElMessage.success('保存成功')
+      editVisible.value = false
+      // 改名后跳转到新名字的演员页（路由参数变了，本页数据不会自动刷新）
+      if (nm !== name.value) {
+        router.push({ path: `/actor/${encodeURIComponent(nm)}` })
+      } else {
+        await load()
+      }
+    } else {
+      ElMessage.error(r?.error || '保存失败')
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+/** 弹窗关闭后复位（destroy-on-close 已保证 DOM 销毁，这里清状态位） */
+function onEditClosed() {
+  editAvatarBroken.value = false
+}
+
 onMounted(async () => {
   // 确保设置与全局标签已加载（每行数量 + 标签分类栏都依赖 store）
   // 注：这两行此前用 `safeCall(() => ...)` 传函数，实际从未执行 ——
@@ -397,6 +557,22 @@ onMounted(async () => {
 }
 .ah-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ah-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+/* 名字行：大名 + 编辑按钮同一行，按钮跟在名字右侧、垂直居中 */
+.ah-name-row { display: flex; align-items: center; gap: 10px; }
+.ah-edit-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.ah-edit-btn:hover { color: var(--primary); border-color: var(--primary); }
+.ah-edit-btn:active { transform: scale(0.96); }
+.ah-edit-btn svg { --icon-fill: currentColor; --icon-stroke: currentColor; }
 /* .ah-name 的字号 / 字重 / 字距 / 颜色全部来自 global.css 的 .page-title（页面标题体系）
    —— 此前这里重复定义了 18px/700/color，改字号要改两处，已收口 */
 
@@ -495,4 +671,43 @@ onMounted(async () => {
 .actor-grid { display: grid; gap: 14px; }
 .actor-empty { padding: 60px 0; text-align: center; color: var(--muted); font-size: var(--fs-md); }
 .actor-pager { display: flex; justify-content: center; margin-top: 4px; }
+
+/* ===== 编辑弹窗（2026-10-06） ===== */
+.edit-body { display: flex; flex-direction: column; gap: 16px; }
+/* 头像行：预览图 + 操作按钮，左右布局 */
+.edit-avatar-row { display: flex; align-items: center; gap: 16px; }
+.edit-avatar-preview {
+  width: 96px; height: 96px; flex-shrink: 0;
+  border-radius: var(--r-md); overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.edit-avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.edit-avatar-actions { display: flex; flex-direction: column; gap: 8px; }
+.edit-avatar-hint { font-size: var(--fs-sm); color: var(--muted); }
+/* 表单字段 */
+.edit-field { display: flex; flex-direction: column; gap: 4px; }
+.edit-field label { font-size: var(--fs-sm); color: var(--text-2); font-weight: 500; }
+.edit-input {
+  padding: 7px 10px;
+  font-size: var(--fs-base); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-sm); outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.edit-input:focus { border-color: var(--primary); }
+/* 两列网格 */
+.edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.edit-field-full { grid-column: 1 / -1; }
+/* 按钮（弹窗 footer） */
+.btn-primary, .btn-ghost {
+  padding: 7px 16px; font-size: var(--fs-base);
+  border-radius: var(--r-sm); cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.btn-primary { background: var(--primary); color: #fff; border: none; }
+.btn-primary:hover:not(:disabled) { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-2); }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
