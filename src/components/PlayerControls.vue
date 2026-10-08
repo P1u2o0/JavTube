@@ -61,7 +61,7 @@
         <AppIcon name="fullscreen" :size="18" />
       </button>
       <button type="button" class="pc-btn" title="使用外部播放器打开" @click="$emit('external')">
-        <AppIcon name="external" :size="17" />
+        <AppIcon name="external" :size="16" />
       </button>
     </div>
   </div>
@@ -214,7 +214,7 @@ function fmtRate(r) {
 
 .pc-time {
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
   opacity: 0.9;
   white-space: nowrap;
@@ -256,7 +256,7 @@ function fmtRate(r) {
 
 /* 倍速 */
 .pc-rate-wrap { position: relative; flex: none; }
-.pc-rate { width: auto; min-width: 40px; padding: 0 6px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pc-rate { width: auto; min-width: 40px; padding: 0 6px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .pc-rate-list {
   position: absolute;
   bottom: 34px;
@@ -273,7 +273,7 @@ function fmtRate(r) {
   border: 0;
   background: transparent;
   color: #fff;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   text-align: center;
   padding: 4px 8px;
   border-radius: var(--r-sm);

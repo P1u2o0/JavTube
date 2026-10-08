@@ -68,7 +68,7 @@
           <div class="r-name">{{ a.name }}</div>
           <div class="r-sub">{{ a.count }} 部作品</div>
           <div class="r-heat" v-if="a.heat !== null" :title="'热度排名：第 ' + a.rank + ' / ' + a.total + ' 名'">
-            <AppIcon name="flame-filled" :size="17" class="r-flame" :class="'t-' + a.tier" />
+            <AppIcon name="flame-filled" :size="16" class="r-flame" :class="'t-' + a.tier" />
             <span class="r-heat-val">{{ a.heat.toLocaleString('zh-CN') }}</span>
           </div>
         </div>
@@ -85,7 +85,7 @@
           </button>
         </div>
         <button class="r-more" @click="goActor(a.name)">
-          更多<AppIcon name="more" :size="15" />
+          更多<AppIcon name="more" :size="14" />
         </button>
       </div>
       <div v-if="!list.length && !loading" class="empty">库内还没有女优数据</div>

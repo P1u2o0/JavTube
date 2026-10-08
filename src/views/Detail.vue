@@ -34,7 +34,7 @@
         <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
         <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
-            <AppIcon name="play" :size="24" />
+            <AppIcon name="play" :size="22" />
           </button>
         </div>
       </div>
@@ -67,9 +67,9 @@
           <div class="info-value star-row">
             <span class="stars">
               <span v-for="i in 5" :key="i" class="star">
-                <AppIcon name="star-filled" :size="19" class="star-base" />
+                <AppIcon name="star-filled" :size="18" class="star-base" />
                 <span class="star-clip" :style="{ width: starFill(i) + '%' }">
-                  <AppIcon name="star-filled" :size="19" class="star-on" />
+                  <AppIcon name="star-filled" :size="18" class="star-on" />
                 </span>
               </span>
             </span>
@@ -123,16 +123,16 @@
           <!-- 操作按钮：喜欢 / 刮削 / 编辑 / 删除（large 尺寸，与放大的信息文字协调） -->
           <div class="card-actions">
           <el-button size="large" class="act-fav" :class="{ 'fav-on': isFav }" @click="toggleFav">
-            <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="15" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
+            <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="14" style="margin-right:5px" />{{ isFav ? '已喜欢' : '喜欢' }}
           </el-button>
           <el-button size="large" class="act-scrape" @click="onScrape" :loading="scraping">
-            <AppIcon v-if="!scraping" name="globe" :size="15" style="margin-right:5px" />刮削
+            <AppIcon v-if="!scraping" name="globe" :size="14" style="margin-right:5px" />刮削
           </el-button>
           <el-button size="large" @click="editShow = true">
-            <AppIcon name="edit" :size="15" style="margin-right:5px" />编辑
+            <AppIcon name="edit" :size="14" style="margin-right:5px" />编辑
           </el-button>
           <el-button size="large" class="act-del" @click="onDel">
-            <AppIcon name="trash" :size="15" style="margin-right:5px" />删除
+            <AppIcon name="trash" :size="14" style="margin-right:5px" />删除
           </el-button>
         </div>
       </div>

@@ -18,7 +18,7 @@
       <BackButton fallback="/library" />
       <span class="ft-text">{{ pageTitle }}</span>
       <button class="ft-clear" title="查看全部影片" @click="clearFilterTitle">
-        <AppIcon name="close" :size="13" />
+        <AppIcon name="close" :size="14" />
       </button>
     </div>
     <!-- 标签筛选栏，标签变化时触发刷新 -->

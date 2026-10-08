@@ -23,7 +23,7 @@
       <img v-if="coverUrl && !errd" :src="coverUrl" loading="lazy" decoding="async" @error="onErr" />
       <!-- 无封面时显示占位 -->
       <div v-else class="no-cover">
-        <AppIcon name="image" :size="26" />
+        <AppIcon name="image" :size="22" />
         <span>无封面</span>
       </div>
       <!-- 悬停遮罩层，包含播放按钮 -->
@@ -40,11 +40,11 @@
               :title="isFav ? '取消喜欢' : '喜欢'"
               :aria-pressed="isFav"
               @click.stop="onFavClick">
-        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="23" :sw="2.2" />
+        <AppIcon :name="isFav ? 'heart-filled' : 'heart'" :size="22" :sw="2.2" />
       </button>
       <!-- 播放次数角标（观看记录页显示）：右下角胶囊，播放次数来自 recordPlay 累加 -->
       <span v-if="showPlayCount && m.play_count" class="play-count">
-        <AppIcon name="play" :size="10" />{{ m.play_count }}
+        <AppIcon name="play" :size="12" />{{ m.play_count }}
       </span>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中品牌红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">

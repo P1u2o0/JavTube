@@ -26,7 +26,7 @@
           <div class="ah-name page-title">{{ name }}</div>
           <!-- 编辑按钮：点开弹窗可改名字/头像/资料（2026-10-06） -->
           <button class="ah-edit-btn" @click="openEditDialog" title="编辑演员信息">
-            <AppIcon name="edit" :size="15" />
+            <AppIcon name="edit" :size="14" />
             <span>编辑</span>
           </button>
         </div>
@@ -747,7 +747,7 @@ onMounted(async () => {
 .idx-num { display: flex; flex-direction: column; gap: 1px; }
 .idx-val {
   font-family: var(--font-display);
-  font-size: 26px; font-weight: 700; line-height: 1.05;
+  font-size: 26px; font-weight: 700; line-height: 1.05;   /* 展示级大号数字：令牌阶梯最大 20px，这一处有意超出 */
   color: var(--text); font-variant-numeric: tabular-nums;
 }
 .idx-cap { font-size: var(--fs-sm); color: var(--muted); }

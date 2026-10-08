@@ -45,7 +45,7 @@ const list = computed(() => props.badges || fileBadgesOf(props.py))
   align-items: center;
   padding: 4px 12px;
   border-radius: var(--r-tag);
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.6;
   white-space: nowrap;
   user-select: none;
@@ -54,5 +54,5 @@ const list = computed(() => props.badges || fileBadgesOf(props.py))
 .ft-cnsub { background: var(--filetag-purple-soft); color: var(--filetag-purple); }
 .ft-uhd { background: var(--filetag-gold-soft); color: var(--filetag-gold); }
 /* 卡片里的缩小版（窄卡片，跟随 11px 小字层级） */
-.file-tag-sm { padding: 1px 8px; font-size: 11px; border-radius: var(--r-sm); }
+.file-tag-sm { padding: 1px 8px; font-size: var(--fs-xs); border-radius: var(--r-sm); }
 </style>

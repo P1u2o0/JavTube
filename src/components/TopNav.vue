@@ -19,24 +19,24 @@
       <!-- 导航标签区域 -->
       <nav class="tabs">
         <router-link to="/" class="tab" active-class="active" :class="{ active: route.path === '/' }">
-          <AppIcon name="home" :size="19" />
+          <AppIcon name="home" :size="18" />
           <span>首页</span>
         </router-link>
         <router-link to="/library" class="tab" active-class="active" @click="onLibraryClick">
-          <AppIcon name="library" :size="19" />
+          <AppIcon name="library" :size="18" />
           <span>片库</span>
         </router-link>
         <router-link to="/favorite" class="tab" active-class="active">
-          <AppIcon name="heart" :size="19" />
+          <AppIcon name="heart" :size="18" />
           <span>喜欢</span>
         </router-link>
         <router-link to="/history" class="tab" active-class="active">
-          <AppIcon name="history" :size="19" />
+          <AppIcon name="history" :size="18" />
           <span>观看记录</span>
         </router-link>
         <!-- 演员（2026-09-22）：库内女优总览（头像墙 / 热度排行） -->
         <router-link to="/actresses" class="tab" active-class="active">
-          <AppIcon name="user" :size="19" />
+          <AppIcon name="user" :size="18" />
           <span>演员</span>
         </router-link>
       </nav>
@@ -49,7 +49,7 @@
         <input v-model="q" class="search-input" type="text" placeholder="搜索番号、标题、女优…"
                @keyup.enter="onSearch" />
         <button class="search-btn" @click="onSearch" aria-label="搜索">
-          <AppIcon name="search" :size="17" />
+          <AppIcon name="search" :size="16" />
         </button>
       </div>
       <!-- 导入按钮，点击打开添加影片对话框 -->

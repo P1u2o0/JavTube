@@ -143,7 +143,7 @@
                   <AppIcon name="close" :size="14" />
                 </button>
                 <el-button v-if="idx === 0" class="add-btn" title="添加类别" @click="addCat">
-                  <AppIcon name="plus" :size="15" />
+                  <AppIcon name="plus" :size="14" />
                 </el-button>
               </div>
             </div>
@@ -161,7 +161,7 @@
                   <AppIcon name="close" :size="14" />
                 </button>
                 <el-button v-if="idx === 0" class="add-btn" title="添加映射" @click="addMap">
-                  <AppIcon name="plus" :size="15" />
+                  <AppIcon name="plus" :size="14" />
                 </el-button>
               </div>
             </div>
@@ -286,7 +286,7 @@
             <!-- GitHub 图标按钮 + 检查更新（2026-10-05）：更新检查为手动触发，不自动联网 -->
             <div class="about-actions">
               <button class="gh-btn" title="打开项目主页" @click="openGithub">
-                <AppIcon name="github" :size="17" />GitHub
+                <AppIcon name="github" :size="16" />GitHub
               </button>
               <el-button size="small" :loading="checkingUpdate" @click="checkUpdate">
                 <AppIcon name="reset" :size="14" style="margin-right:5px" />检查更新

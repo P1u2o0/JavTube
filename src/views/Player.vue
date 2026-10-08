@@ -1264,7 +1264,7 @@ onBeforeUnmount(() => {
   border-radius: var(--r-pill);
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   letter-spacing: 0.04em;
   pointer-events: none;
@@ -1280,14 +1280,14 @@ onBeforeUnmount(() => {
   box-shadow: var(--sh-1);
   text-align: center;
 }
-.me-title { font-size: 16px; font-weight: 600; color: var(--text); }
-.me-desc { margin: 8px 0 14px; color: var(--text-2); font-size: 13px; }
+.me-title { font-size: var(--fs-xl); font-weight: 600; color: var(--text); }
+.me-desc { margin: 8px 0 14px; color: var(--text-2); font-size: var(--fs-base); }
 /* 错误码 + Chromium 原文：小一号、等宽、低对比 —— 是「可回报的证据」，不该抢正文视线。
    本文件没有 --text-3/--font-mono 令牌，用现有令牌 + 内联字体栈，不新造令牌。 */
 .me-hint {
   margin: -6px 0 14px;
   color: var(--text-2);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-family: ui-monospace, Menlo, Consolas, "Courier New", monospace;
   opacity: 0.8;
   word-break: break-word;
@@ -1319,7 +1319,7 @@ onBeforeUnmount(() => {
   background: var(--overlay-strong);
   color: #fff;
   box-shadow: var(--sh-2);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1.55;
 }
 .qw-text { opacity: 0.94; }
@@ -1328,7 +1328,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.32);
   background: transparent;
   color: #fff;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   padding: 3px 10px;
   border-radius: var(--r-pill);
   cursor: pointer;
@@ -1349,7 +1349,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-size: 18px;
+  font-size: var(--fs-2xl);
   font-weight: 600;
   line-height: 1.4;
 }
@@ -1359,7 +1359,7 @@ onBeforeUnmount(() => {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;   /* 等宽数字：与详情页番号同一处理 */
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--fs-xl);
   letter-spacing: -0.01em;
 }
 /* 单行截断：标题行高恒定，播放器顶边位置不受片名长短影响 */
@@ -1377,7 +1377,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   margin-top: 12px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--muted);
 }
 .tag-row .tags {
@@ -1394,7 +1394,7 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px 12px;
   margin-top: 8px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--muted);
 }
 .actress {
@@ -1408,6 +1408,8 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--text);
   font: inherit;
+  /* 17px：与 44px 头像配套的「名字字号」，有意超出 --fs-* 阶梯（16/18 之间）。
+     这是用户目视确认过的值，播放页 UI 套件的 U3 也钉着它，不要为了令牌整齐改掉。 */
   font-size: 17px;
   font-weight: 500;
   cursor: pointer;
@@ -1428,7 +1430,7 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 .ac-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.ac-fallback { font-size: 19px; font-weight: 600; color: var(--text-2); }
+.ac-fallback { font-size: 19px; font-weight: 600; color: var(--text-2); }   /* 同上：与 44px 头像配套的首字字号 */
 .ac-name { white-space: nowrap; }
 
 /* 标签（展示影片全部 bq；三类排在前，纯展示不可点 → 不用 TagChip 的 pointer 语义） */
@@ -1437,7 +1439,7 @@ onBeforeUnmount(() => {
   border-radius: var(--r-tag);
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.6;
   white-space: nowrap;
   user-select: none;
@@ -1467,7 +1469,7 @@ onBeforeUnmount(() => {
   background: var(--surface);
   color: var(--text-2);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
@@ -1510,7 +1512,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: var(--text);
 }
@@ -1526,7 +1528,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding-right: 8px;
 }
-.rec-empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+.rec-empty { color: var(--muted); font-size: var(--fs-base); padding: 20px 0; text-align: center; }
 .rec-item {
   display: flex;
   gap: 10px;
@@ -1558,7 +1560,7 @@ onBeforeUnmount(() => {
 .rec-item .thumb .no-cover {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 12px;
+  color: var(--muted); font-size: var(--fs-sm);
 }
 .rec-item .dur {
   position: absolute;
@@ -1568,11 +1570,11 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.75);   /* 压在缩略图上，保持深底白字 */
   color: #fff;
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 .rec-info { min-width: 0; padding-top: 2px; }
 .rec-title {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--text);
   line-height: 1.45;
   max-height: 4.35em;            /* 最多 3 行（3 × 1.45em） */
@@ -1584,7 +1586,7 @@ onBeforeUnmount(() => {
 /* 演员名（替代原番号位置；过长单行截断） */
 .rec-actors {
   margin-top: 5px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;

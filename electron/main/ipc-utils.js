@@ -168,21 +168,35 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   //     事件循环卡 ~40s（实测），异步版阻塞在 libuv 线程池，界面照常响应；
   //  ② 结果按路径缓存（见 videoSizeCache：正结果不过期、负结果 5 分钟 TTL）；
   //  ③ 批量上限 40，防调用方误传整库。
+  //  ④ 并发读（2026-10-08 优化）：原来是 for + await 串行读，播放页一次要读
+  //     「当前片 + 10 部推荐」共 11 个 NAS 文件，单个实测 10~320ms → 串起来最坏好几秒，
+  //     而渲染层要等**整批**回来才挂「4K」标签。改成并发 4 路：总耗时约降到 1/3，
+  //     且仍走 libuv 线程池（不阻塞主进程事件循环）。
+  const READ_CONCURRENCY = 4
   ipcMain.handle(IPC.UTILS_READ_VIDEO_SIZE, async (_e, paths) => {
     try {
       const list = [...new Set((Array.isArray(paths) ? paths : [paths])
         .filter(p => typeof p === 'string' && p.trim()))].slice(0, 40)
       const data = {}
+      const todo = []
       for (const p of list) {
         const hit = videoSizeCache.get(p)
         if (hit && (hit.size !== null || Date.now() - hit.ts < NEG_TTL_MS)) {
           data[p] = hit.size
           continue
         }
-        const size = await readVideoSize(p).catch(() => null)
-        videoSizeCache.set(p, { size, ts: Date.now() })
-        data[p] = size
+        todo.push(p)
       }
+      let cursor = 0
+      const worker = async () => {
+        while (cursor < todo.length) {
+          const p = todo[cursor++]
+          const size = await readVideoSize(p).catch(() => null)
+          videoSizeCache.set(p, { size, ts: Date.now() })
+          data[p] = size
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, todo.length) }, worker))
       return { ok: true, data }
     } catch (e) { return { ok: false, error: e.message } }
   })
