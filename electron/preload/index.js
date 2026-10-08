@@ -105,6 +105,37 @@ contextBridge.exposeInMainWorld('api', {
    */
   getRecommendations: (id, limit) => ipcRenderer.invoke(IPC.PLAYER_RECOMMEND, { id, limit }),
 
+  // === mpv 播放内核（2026-10-08「高兼容模式」）===
+
+  /**
+   * mpv 控制通道（唯一入口，cmd 与属性名在 main 侧白名单化）。
+   * cmd 取值：
+   *   'start'            { file, hole, volume, muted, startAt }  起 mpv 并载入
+   *   'stop'                                                     停 mpv
+   *   'load'             { file, startAt }                       换片
+   *   'setHole'          { hole:{x,y,w,h,winW,winH} }            同步画面区域（窗口缩放/全屏时重下发）
+   *   'set'              { name, value }                         写属性
+   *   'get'              { name }                                读属性
+   *   'command'          { name, args }                          调 mpv 命令
+   *   'status'                                                   运行状态（诊断用）
+   * 全屏不在这里 —— 透明窗口下 `win.setFullScreen` 失效，一律走 DOM 全屏（见 main/mpv.js 注释）。
+   * @param {Object} payload - { cmd, ...参数 }
+   * @returns {Promise<{ok:boolean, data?:any, error?:string}>}
+   */
+  mpvControl: (payload) => ipcRenderer.invoke(IPC.MPV_CONTROL, payload),
+
+  /**
+   * 订阅 mpv 事件（归一化后的事件：loadedmetadata/canplay/playing/pause/ended/
+   * timeupdate/volumechange/error/started/exited）。
+   * @param {(payload:{type:string,data:Object}) => void} cb
+   * @returns {Function} 取消订阅
+   */
+  onMpvEvent: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload) } catch { /* 回调异常不影响通道 */ } }
+    ipcRenderer.on(IPC.MPV_EVENT, handler)
+    return () => { try { ipcRenderer.removeListener(IPC.MPV_EVENT, handler) } catch { /* 忽略 */ } }
+  },
+
   /**
    * 批量设置收藏状态
    * @param {number[]} ids - 影片 ID 数组
@@ -186,6 +217,14 @@ contextBridge.exposeInMainWorld('api', {
    * @returns {Promise<{ok:boolean,data?:{path:string},error?:string}>}
    */
   importActressAvatar: (payload) => ipcRenderer.invoke(IPC.ACTRESS_IMPORT_AVATAR, payload),
+
+  /**
+   * 从 theidolbase.com 检索演员资料（2026-10-07，演员编辑弹窗「从 TheIdolBase 检索」按钮）。
+   * 返回的字段供前端填入表单，不直接写库；用户审阅后手动点保存。
+   * @param {string} name - 演员名
+   * @returns {Promise<{ok:boolean, data?:{height,bust,waist,hip,zb,debut,slug,matchedName}, error?:string}>}
+   */
+  scrapeActressInfo: (name) => ipcRenderer.invoke(IPC.ACTRESS_SCRAPE_INFO, name),
 
   /**
    * 删除演员个人资料（2026-10-06）：从 actress 表移除该演员的身高/三围等资料行，

@@ -263,6 +263,18 @@ html, body, #app {
 a { color: inherit; text-decoration: none; }
 h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: var(--ls-display); }
 
+/* ====== mpv「高兼容模式」的窗口镂空（2026-10-08）======
+   内置播放页换成 mpv 内核后，mpv 的画面是从**页面镂空处透出来**的（窗口本身 transparent: true，
+   见 electron/main/index.js）。透明只能靠「不绘制」实现 —— 给子元素设 background: transparent
+   是没用的，父级画过的底色还在下面。所以这里把整条祖先链的底色关掉，
+   由播放页的挖洞遮罩（src/views/Player.vue 的 .mpv-shield）负责把「洞以外」画满。
+   这个 class 由播放页在遮罩尺寸就绪后才挂上（否则会有一瞬整窗透明、透出桌面）。 */
+html.mpv-hole,
+html.mpv-hole body,
+html.mpv-hole #app {
+  background: transparent;
+}
+
 /* 键盘可达性：统一焦点描边（不加 border-radius，避免圆形控件聚焦时被改成方角） */
 :focus-visible {
   outline: 2px solid var(--primary);

@@ -31,6 +31,8 @@ const { registerPlayerIpc } = require('./db/player')
 const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
 // javtube-media 视频流协议（内置播放页，2026-09-29）
 const { registerMediaScheme, setupMediaProtocol } = require('./media-protocol')
+// mpv 播放内核（内置播放页「高兼容模式」，2026-10-08）：进程管理 + JSON IPC 桥
+const { registerMpvIpc, disposeMpv } = require('./mpv')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -183,7 +185,19 @@ function createWindow() {
         symbolColor: '#22211f',  // 按钮符号：墨黑（--text）
         height: 48               // 与 .topnav 高度一致
       },
-      backgroundColor: '#fafafa', // 背景色，避免加载白屏
+      // ===== 透明窗口（2026-10-08，mpv 播放内核的前提）=====
+      // 内置播放页的「高兼容模式」把播放内核换成 mpv，做法是让页面把视频区域**镂空**、
+      // mpv 的画面从洞里透出来（详见 docs/MPV_INTEGRATION_PLAN.md）。
+      // 这要求窗口本身是透明的 —— 否则页面底下的那层底色会挡住 mpv。
+      //
+      // ⚠️ 透明是**窗口级**属性，不能在运行时切换，所以常开。代价与对策：
+      //   · 非播放页：页面自己把整屏画满 --bg（见 global.css 的 html/body/#app 背景），
+      //     观感与不透明窗口完全一致（已逐页截图比对）。
+      //   · 播放页且 mpv 生效时：给 <html> 加 .mpv-hole，让底色交给「挖洞遮罩」去画
+      //     （src/views/Player.vue），只有视频那一块真正透明。
+      //   · 退回 Chromium 内核时同样是安全的：<video> 自身画黑底，洞被它填满。
+      transparent: true,
+      backgroundColor: '#00000000', // 透明窗口必须给全透明底色，否则透明度不生效
       autoHideMenuBar: true,      // 自动隐藏菜单栏
       show: true,         // 窗口创建后立即显示
       center: true,       // 窗口居中显示
@@ -221,8 +235,17 @@ function createWindow() {
     mainWindow.on('closed', () => { console.log('[main] window closed'); mainWindow = null })
 
     // 监听渲染进程的 console 消息，转发到主进程控制台（方便调试）
-    mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-      console.log(`[renderer][${level}] ${message} (${sourceId}:${line})`)
+    // ⚠️ 签名兼容（2026-10-07）：Electron 36+ 把回调参数并成 (event, details)，旧版是
+    //    (event, level, message, line, sourceId)，旧形式已弃用。
+    //    **必须用 rest 参数**：Electron 是按「回调声明的形参个数」判断新旧式的，
+    //    写成 5 个具名参数即使不用也会被判成旧式、照样打弃用警告（实测）。
+    //    `(event, ...rest)` 声明数为 1 → 走新式；运行时再按 rest[0] 的类型兼容旧式，
+    //    这样将来升级 / 回退 Electron 这段日志都不会失效。
+    mainWindow.webContents.on('console-message', (_e, ...rest) => {
+      const det = (rest[0] && typeof rest[0] === 'object')
+        ? rest[0]
+        : { level: rest[0], message: rest[1], lineNumber: rest[2], sourceId: rest[3] }
+      console.log(`[renderer][${det.level}] ${det.message} (${det.sourceId}:${det.lineNumber})`)
     })
     // 渲染进程崩溃时的处理
     mainWindow.webContents.on('render-process-gone', (_e, details) => {
@@ -340,6 +363,7 @@ app.whenReady().then(async () => {
   reg('settings', () => registerSettingsIpc(ipcMain, db, dataDirForGlobal)) // 设置数据 IPC
   reg('home', () => registerHomeIpc(ipcMain, db))                         // 首页推荐 IPC
   reg('player', () => registerPlayerIpc(ipcMain, db))                     // 播放页 IPC（进度 + 相关推荐，2026-09-29）
+  reg('mpv', () => registerMpvIpc(ipcMain, { getMainWindow: () => mainWindow }))  // mpv 播放内核控制通道（2026-10-08）
   if (ipcFailures.length) {
     console.error('[main] IPC 部分模块注册失败:', ipcFailures.join(' | '))
     // 让用户知道「有些功能不可用」，而不是遇到奇怪的半残界面。
@@ -371,9 +395,13 @@ app.whenReady().then(async () => {
 // 所有窗口关闭时的事件处理
 app.on('window-all-closed', () => {
   try { db?._forceSave?.() } catch {}  // 强制将数据库写入磁盘
+  try { disposeMpv() } catch {}        // 确保 mpv 子进程一起退出（否则会变成孤儿进程占着窗口句柄）
   // macOS 上应用保持活跃，其他平台退出
   if (process.platform !== 'darwin') app.quit()
 })
+
+// 退出前也要收一次 mpv：window-all-closed 在个别路径（如 app.quit() 由别处触发）不会走到
+app.on('before-quit', () => { try { disposeMpv() } catch {} })
 
 // 捕获未处理的异常，防止应用崩溃
 process.on('uncaughtException', (e) => console.error('[main] uncaughtException:', e?.stack || e))

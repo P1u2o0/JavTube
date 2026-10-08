@@ -46,8 +46,11 @@ const ID_NO_AVATAR = 11     // ABF-337 / 釈アリス / cast.avatar 为空
 const ID_MULTI_ACTRESS = 140
 const MULTI_ACTRESS_MIN = 3  // 断言下限取 3（防数据漂移；实际 9）
 // id=10 的 bq = 「第一人称摄影，女教师，口交，接吻，单体作品」
+// id=10 的 bq = 「第一人称摄影，女教师，口交，接吻，单体作品，中文字幕」
+// 末尾的「中文字幕」是 v3.6.0 的「文件名派生标签」按 `-C` 后缀自动追加的（见 HANDOFF §5.3），
+// 期望值必须带上它 —— 否则这条断言自那次功能上线起就一直是假失败（2026-10-07 修正）。
 const EXPECT_KEY_FIRST = ['口交', '接吻']                                    // 三类命中项（排最前）
-const EXPECT_ALL = ['口交', '接吻', '第一人称摄影', '女教师', '单体作品']      // 全部标签
+const EXPECT_ALL = ['口交', '接吻', '第一人称摄影', '女教师', '单体作品', '中文字幕']  // 全部标签
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 /** dev 库直读/直写（app 已退出时用；点喜欢会改 movies.cl，收尾还原） */
@@ -193,6 +196,16 @@ async function main() {
   // ★ 整库快照必须在**启动应用之前**取：应用一启动就会读库、退出时落盘，
   //   而下面进播放页/点喜欢都会改库。拿不到快照就直接抛错，绝不用真库硬跑。
   const snap = devdb.takeSnapshot('verify-player-ui', DEV_DB)
+  // ★ 播放内核钉成 Chromium（2026-10-08）：本套件断言的是 **ArtPlayer 的 DOM**
+  //   （.art-video-player / 设置面板 / video 元素几何）。而内置播放页的默认内核已改为
+  //   mpv「高兼容模式」——那种模式下页面里根本没有 ArtPlayer，这些断言会全部失效。
+  //   这里先把 dev 库的 player_kernel 写死成 chromium，跑完由整库快照逐字节还原。
+  //   （mpv 模式另有专门探针 tmp/probe-mpv-e2e.js：断言 mpv 侧丢帧为 0、镂空矩形对齐等。）
+  await withDb(db => {
+    db.run("INSERT INTO settings(key,value) VALUES('player_kernel','chromium') " +
+      "ON CONFLICT(key) DO UPDATE SET value='chromium'")
+  })
+  console.log('已把 player_kernel 钉为 chromium（本套件只验 Chromium 内核的 UI）')
   // 点击测试会写 movies.cl → 先取原值（仅用于打印对照）
   const beforeCl = await withDb(db => {
     const r = db.exec(`SELECT cl FROM movies WHERE id=${ID_WITH_AVATAR}`)

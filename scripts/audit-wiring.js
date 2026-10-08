@@ -39,7 +39,9 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length
   const used = new Map()
   for (const f of walk('src', ['.vue', '.js', '.mjs'])) {
     const t = read(f)
-    for (const m of t.matchAll(/window\.api\.([a-zA-Z][a-zA-Z0-9]*)/g)) {
+    // 允许可选链（window.api?.X）：播放页/播放后端在 window.api 可能缺席的环境里会这么写，
+    // 早先的正则只认 window.api.X，导致这些调用被误判成「preload 暴露但没人用」。
+    for (const m of t.matchAll(/window\.api\??\.([a-zA-Z][a-zA-Z0-9]*)/g)) {
       if (!used.has(m[1])) used.set(m[1], [])
       used.get(m[1]).push(`${f}:${lineOf(t, m.index)}`)
     }
@@ -60,14 +62,28 @@ const lineOf = (text, index) => text.slice(0, index).split('\n').length
   const preload = read('electron/preload/index.js')
   const invoked = new Set()
   for (const m of preload.matchAll(/IPC\.([A-Z0-9_]+)/g)) invoked.add(m[1])
+  // 主进程 → 渲染层 的**推送通道**（preload 用 ipcRenderer.on 订阅，main 用 webContents.send 发）。
+  // 这类通道不需要 ipcMain.handle，判定方式也不同（见下），必须与 invoke 型通道分开。
+  const pushChannels = new Set(
+    [...preload.matchAll(/ipcRenderer\.on\(\s*IPC\.([A-Z0-9_]+)/g)].map(m => m[1])
+  )
   const mainText = walk('electron/main', ['.js']).map(read).join('\n')
   const handled = new Set([...mainText.matchAll(/ipcMain\.handle\(\s*IPC\.([A-Z0-9_]+)/g)].map(m => m[1]))
+  const sent = new Set([...mainText.matchAll(/webContents\.send\(\s*IPC\.([A-Z0-9_]+)/g)].map(m => m[1]))
   for (const key of invoked) {
     if (!(key in constToChannel)) { problems.push(`② preload 用到的通道常量 ${key} 在 ipc-channels.js 里不存在`); continue }
+    if (pushChannels.has(key)) {
+      // 推送通道：反过来要求 main 侧真的有 send，否则渲染层永远收不到
+      if (!sent.has(key)) problems.push(`② 推送通道 ${key}（${constToChannel[key]}）在 preload 订阅了，但主进程没有 webContents.send → 永远收不到消息`)
+      continue
+    }
     if (!handled.has(key)) problems.push(`② 通道 ${key}（${constToChannel[key]}）被 preload 调用，但主进程没有 ipcMain.handle → 点了没反应`)
   }
   for (const key of handled) {
     if (!invoked.has(key)) notes.push(`② 主进程注册了 ${key}（${constToChannel[key]}）但 preload 未暴露调用`)
+  }
+  for (const key of sent) {
+    if (!pushChannels.has(key)) notes.push(`② 主进程往 ${key}（${constToChannel[key] || '?'}）推送，但 preload 未订阅`)
   }
 }
 

@@ -19,6 +19,10 @@ PROJECT_BRIEF.md
 接续工作小结.md
 项目总结_*.md
 
+# AI 助手的工作目录（会话记忆 / 内部笔记，仅本地保留）
+.workbuddy-ai/
+.trae/
+
 # 日志与系统文件
 *.log
 Thumbs.db
@@ -26,3 +30,8 @@ Thumbs.db
 
 # 本地临时脚本/中间产物（发布脚本、探针、截图等，仅本地用）
 tmp/
+
+# 内置播放内核二进制（约 120MB，不入库；获取方式见 vendor/mpv/README.md）
+vendor/mpv/*.exe
+vendor/mpv/*.dll
+vendor/mpv/*.com

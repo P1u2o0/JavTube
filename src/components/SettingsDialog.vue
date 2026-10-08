@@ -56,9 +56,22 @@
           <div class="g-control">
             <el-switch v-model="st.use_builtin_player" active-value="y" inactive-value="n" />
             <span class="g-tip" v-if="showTips">
-              开启：点播放进入本软件内置播放页；关闭：直接交给下方设置的外部播放器
+              开启：点击播放时进入内置播放页；关闭：交由下方设置的外部播放器打开
             </span>
           </div>
+          <!-- 播放内核（2026-10-08）：内置播放页用哪套播放内核 -->
+          <div class="g-label">播放内核</div>
+          <div class="g-control">
+            <el-radio-group v-model="st.player_kernel">
+              <el-radio-button label="mpv">兼容模式（推荐）</el-radio-button>
+              <el-radio-button label="chromium">标准模式</el-radio-button>
+            </el-radio-group>
+            <span class="g-tip" v-if="showTips">
+              兼容模式使用 mpv 内核，可正常播放容器时间戳不规范的影片，并支持更多格式；标准模式使用浏览器内置内核，启动更快。
+              仅对内置播放器生效
+            </span>
+          </div>
+
           <!-- 外部播放器路径（输入框与选择按钮并排；关闭内置播放器后生效） -->
           <div class="g-label">播放器路径</div>
           <div class="g-control">
@@ -67,7 +80,7 @@
               <el-button @click="choosePlayer">选择</el-button>
             </div>
             <span class="g-tip" v-if="showTips">
-              外部播放器程序路径；关闭「使用内置播放器」后，播放影片时用它打开（留空则由系统默认程序打开）
+              外部播放器程序路径。关闭「使用内置播放器」后，播放影片时将使用该程序打开；留空则交由系统默认程序打开
             </span>
           </div>
 
@@ -85,7 +98,7 @@
             <el-select v-model="hk.holdSpeed" style="width:140px">
               <el-option v-for="n in [1.5, 2, 3, 4]" :key="n" :label="n + ' 倍速'" :value="n" />
             </el-select>
-            <span class="g-tip" v-if="showTips">长按 → 时以该倍速播放，松开恢复原速</span>
+            <span class="g-tip" v-if="showTips">长按 → 时以该倍速播放，松开后恢复原速</span>
           </div>
 
           <div class="g-label">长按判定时间</div>
@@ -93,7 +106,7 @@
             <el-select v-model="hk.holdThresholdMs" style="width:140px">
               <el-option v-for="n in [250, 350, 500]" :key="n" :label="n + ' 毫秒'" :value="n" />
             </el-select>
-            <span class="g-tip" v-if="showTips">方向键按住超过该时长视为「长按」，短于则算单击（快进/退一步）</span>
+            <span class="g-tip" v-if="showTips">方向键按住超过该时长判定为「长按」，短于该时长则视为单击（快进 / 快退一步）</span>
           </div>
 
           <div class="g-label">键位绑定</div>
@@ -110,7 +123,7 @@
               </div>
             </div>
             <span class="g-tip" v-if="showTips">
-              点击按键框后按下新按键即可改绑（Esc 取消）；一个按键只能绑定一个功能。保存后在播放页生效
+              点击按键框后按下新按键即可重新绑定（Esc 取消）；一个按键仅可绑定一个功能，保存后在播放页生效
             </span>
           </div>
         </div>
@@ -364,7 +377,7 @@ async function checkUpdate() {
 }
 // 基础 + 刮削设置表单（响应式；分 tab 保存）
 const st = reactive({
-  player_path: '', use_builtin_player: 'y',
+  player_path: '', use_builtin_player: 'y', player_kernel: 'mpv',
   click_action: 'detail', page_size: '20', cols_per_row: '5', cover_dir: 'covers',
   scrape_source: 'auto', scrape_previews: 'n', scrape_stats: 'y',
   proxy_enabled: 'n', proxy_url: 'http://127.0.0.1:7890', javdb_cookie: '',
@@ -591,7 +604,7 @@ async function saveAll() {
   st.preview_count = String(previewCountN.value)
   st.hotkeys = JSON.stringify(hk)
   const kvKeys = [
-    'player_path', 'use_builtin_player', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
+    'player_path', 'use_builtin_player', 'player_kernel', 'click_action', 'page_size', 'cols_per_row', 'show_tips',
     'scrape_source', 'scrape_previews', 'preview_count', 'scrape_stats',
     'proxy_enabled', 'proxy_url', 'javdb_cookie', 'auto_check_images', 'hotkeys'
   ]

@@ -31,7 +31,7 @@
           </button>
         </div>
         <div class="ah-count">{{ films.length }} 部作品</div>
-        <!-- 女优个人资料（身高/三围/罩杯/生日/出道/备注）：有值才显示，
+        <!-- 女优个人资料（身高/三围/罩杯/出生日期）：有值才显示，
              数据来自 actress 表，由编辑弹窗写入。 -->
         <div class="ah-info" v-if="hasInfo">
           <div class="info-chips">
@@ -40,10 +40,8 @@
             <span class="info-chip" v-if="info.bust">胸围 <b>{{ info.bust }}</b></span>
             <span class="info-chip" v-if="info.waist">腰围 <b>{{ info.waist }}</b></span>
             <span class="info-chip" v-if="info.hip">臀围 <b>{{ info.hip }}</b></span>
-            <span class="info-chip" v-if="info.birthday">生日 <b>{{ info.birthday }}</b></span>
-            <span class="info-chip" v-if="info.debut">出道 <b>{{ info.debut }}</b></span>
+            <span class="info-chip" v-if="info.birthday">出生日期 <b>{{ info.birthday }}</b></span>
           </div>
-          <div class="info-remark" v-if="info.remark">{{ info.remark }}</div>
         </div>
       </div>
       <!-- 指数区（评分指数 + 热度）：跟在大名/作品数右侧，靠右对齐。
@@ -150,7 +148,16 @@
           <el-input v-model="editName" placeholder="演员名字" />
         </div>
 
-        <!-- 资料：两列网格（身高/罩杯/胸围/腰围/臀围/生日/出道） -->
+        <!-- 从 TheIdolBase 一键检索（2026-10-07）：按当前名字查身高/三围/出道，自动填表，不自动保存 -->
+        <div class="edit-scrape-row">
+          <el-button type="primary" plain @click="scrapeFromIdol" :disabled="saving || scraping" round>
+            <AppIcon name="search" :size="14" />
+            <span>{{ scraping ? '检索中…' : '从 TheIdolBase 检索' }}</span>
+          </el-button>
+          <div class="edit-scrape-hint">按当前名字查 TheIdolBase，命中后自动填入身高/三围/出生日期</div>
+        </div>
+
+        <!-- 资料：两列网格（身高/罩杯/胸围/腰围/臀围/出生日期） -->
         <div class="edit-grid">
           <div class="edit-field">
             <label>身高 (cm)</label>
@@ -173,16 +180,8 @@
             <el-input v-model.number="editInfo.hip" type="number" placeholder="如 86" />
           </div>
           <div class="edit-field">
-            <label>生日</label>
+            <label>出生日期</label>
             <el-input v-model="editInfo.birthday" placeholder="如 1995-01-01" />
-          </div>
-          <div class="edit-field edit-field-full">
-            <label>出道日期</label>
-            <el-input v-model="editInfo.debut" placeholder="如 2018-01" />
-          </div>
-          <div class="edit-field edit-field-full">
-            <label>备注</label>
-            <el-input v-model="editInfo.remark" placeholder="备注信息" />
           </div>
         </div>
       </div>
@@ -202,7 +201,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, toRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
@@ -231,7 +230,7 @@ const info = ref(null)
 const hasInfo = computed(() => {
   const i = info.value
   if (!i) return false
-  return Boolean(i.height || i.bust || i.waist || i.hip || i.zb || i.birthday || i.debut || i.remark)
+  return Boolean(i.height || i.bust || i.waist || i.hip || i.zb || i.birthday)
 })
 const films = ref([])
 /** 热度排名（后端按全库女优排序后回传）：{ rank, total, tier } 或 null */
@@ -473,6 +472,7 @@ async function load() {
 // ========== 编辑演员信息（2026-10-06） ==========
 const editVisible = ref(false)
 const saving = ref(false)
+const scraping = ref(false)
 const editName = ref('')
 const editAvatar = ref('')            // 相对路径（images/actress/xxx.jpg）
 const editAvatarBroken = ref(false)
@@ -504,18 +504,59 @@ function openEditDialog() {
 
 /** 选择本地图片作为头像：复制到 images/actress/ 并拿到相对路径 */
 async function pickAvatar() {
-  if (!window.api?.openImageDialog) return
+  if (typeof window.api?.openImageDialog !== 'function') return
   const p = await window.api.openImageDialog()
   if (!p) return
   const nm = editName.value.trim()
   if (!nm) { ElMessage.warning('请先填写名字'); return }
-  const r = await window.api.importActressAvatar({ name: nm, srcPath: p }).catch(() => null)
-  if (r?.ok) {
-    editAvatar.value = r.data.path
-    editAvatarBroken.value = false
-    ElMessage.success('头像已导入')
-  } else {
-    ElMessage.error(r?.error || '导入失败')
+  try {
+    if (typeof window.api?.importActressAvatar !== 'function') {
+      ElMessage.error('接口未就绪，请重启应用后重试')
+      return
+    }
+    const r = await window.api.importActressAvatar({ name: nm, srcPath: p })
+    if (r?.ok) {
+      editAvatar.value = r.data.path
+      editAvatarBroken.value = false
+      ElMessage.success('头像已导入')
+    } else {
+      ElMessage.error(r?.error || '导入失败')
+    }
+  } catch (e) {
+    ElMessage.error('导入出错：' + (e?.message || String(e)))
+  }
+}
+
+/** 从 TheIdolBase 检索身高/三围/出道，命中后填入 editInfo（不自动保存，让用户审阅） */
+async function scrapeFromIdol() {
+  if (scraping.value || saving.value) return
+  const nm = editName.value.trim()
+  if (!nm) { ElMessage.warning('请先填写名字'); return }
+  if (typeof window.api?.scrapeActressInfo !== 'function') {
+    ElMessage.error('接口未就绪，请重启应用后重试')
+    return
+  }
+  scraping.value = true
+  try {
+    const r = await window.api.scrapeActressInfo(nm)
+    if (!r?.ok) {
+      ElMessage.error(r?.error || '检索失败')
+      return
+    }
+    const d = r.data || {}
+    // 仅覆盖 scrape 取到值的字段，保留用户已手填的值
+    if (d.height != null) editInfo.value.height = d.height
+    if (d.bust != null) editInfo.value.bust = d.bust
+    if (d.waist != null) editInfo.value.waist = d.waist
+    if (d.hip != null) editInfo.value.hip = d.hip
+    if (d.zb) editInfo.value.zb = d.zb
+    if (d.birthday) editInfo.value.birthday = d.birthday
+    const filled = [d.height, d.bust, d.waist, d.hip, d.zb, d.birthday].filter(v => v != null && v !== '').length
+    ElMessage.success(`已填入 ${filled} 项（按「${d.matchedName || nm}」命中），确认无误后点保存`)
+  } catch (e) {
+    ElMessage.error('检索出错：' + (e?.message || String(e)))
+  } finally {
+    scraping.value = false
   }
 }
 
@@ -530,9 +571,17 @@ async function saveEdit() {
       oldName: name.value,
       newName: nm,
       avatar: editAvatar.value || '',
-      info: editInfo.value
+      // editInfo 是 ref，.value 是 reactive Proxy，不能直接走 Electron IPC（structured clone 失败报
+      // "An object could not be cloned"）。用 toRaw + 展开构造一个纯字面量对象再传。
+      info: { ...toRaw(editInfo.value) }
     }
-    const r = await window.api.updateActress(payload).catch(() => null)
+    // 安全检查：接口未就绪时给出明确提示（此前 .catch(() => null) 会吞掉同步异常，
+    // 导致 window.api 缺失时用户看不到任何反馈）
+    if (typeof window.api?.updateActress !== 'function') {
+      ElMessage.error('接口未就绪，请重启应用后重试')
+      return
+    }
+    const r = await window.api.updateActress(payload)
     if (r?.ok) {
       ElMessage.success('保存成功')
       editVisible.value = false
@@ -545,6 +594,9 @@ async function saveEdit() {
     } else {
       ElMessage.error(r?.error || '保存失败')
     }
+  } catch (e) {
+    // 捕获所有异常（包括同步抛出的 TypeError），给用户明确反馈
+    ElMessage.error('保存出错：' + (e?.message || String(e)))
   } finally {
     saving.value = false
   }
@@ -567,7 +619,11 @@ async function deleteActress() {
   } catch { return }
   saving.value = true
   try {
-    const r = await window.api.deleteActress(name.value).catch(() => null)
+    if (typeof window.api?.deleteActress !== 'function') {
+      ElMessage.error('接口未就绪，请重启应用后重试')
+      return
+    }
+    const r = await window.api.deleteActress(name.value)
     if (r?.ok) {
       ElMessage.success('已删除')
       editVisible.value = false
@@ -575,6 +631,8 @@ async function deleteActress() {
     } else {
       ElMessage.error(r?.error || '删除失败')
     }
+  } catch (e) {
+    ElMessage.error('删除出错：' + (e?.message || String(e)))
   } finally {
     saving.value = false
   }
@@ -750,6 +808,10 @@ onMounted(async () => {
 /* 表单字段 */
 .edit-field { display: flex; flex-direction: column; gap: 4px; }
 .edit-field label { font-size: var(--fs-sm); color: var(--text-2); font-weight: 500; }
+/* TheIdolBase 检索行：按钮 + 提示文字水平排列，浅底卡片 */
+.edit-scrape-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--r-sm); }
+.edit-scrape-row .el-button { flex-shrink: 0; }
+.edit-scrape-hint { font-size: var(--fs-sm); color: var(--muted); }
 /* 两列网格 */
 .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
 .edit-field-full { grid-column: 1 / -1; }

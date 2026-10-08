@@ -31,6 +31,12 @@ module.exports = {
   PLAYER_SAVE_PROGRESS: 'player:saveProgress',  // 节流保存播放进度
   PLAYER_RECOMMEND: 'player:recommend',         // 播放页右侧「相关推荐」
 
+  // === mpv 播放内核（2026-10-08「高兼容模式」）===
+  // 控制面收敛成一条透传通道（mpv 命令面很宽），在 main 侧白名单化 cmd 与属性名；
+  // 事件面一条，由 main 把 mpv 的属性变化归一化后主动推给渲染层。
+  MPV_CONTROL: 'mpv:control',   // { cmd, ...args } → { ok, data?, error? }
+  MPV_EVENT: 'mpv:event',       // main → 渲染层：{ type, data }
+
   // === 女优 ===
   // 2026-09-14 演员头像：按演员名查询其出演影片 + 演员信息（男女通用）
   ACTOR_FILMS: 'actor:films',
@@ -48,6 +54,8 @@ module.exports = {
   ACTRESS_IMPORT_AVATAR: 'actress:importAvatar',
   // 2026-10-06 女优删除：从 actress 表移除该女优的个人资料（不影响影片 cast_json）
   ACTRESS_DELETE: 'actress:delete',
+  // 2026-10-07 演员资料刮削：从 theidolbase.com 列表页匹配 → 详情页提取身高/三围/出道
+  ACTRESS_SCRAPE_INFO: 'actress:scrapeInfo',
 
   // === 设置 ===
   SETTINGS_GET: 'settings:get',

@@ -12,19 +12,61 @@
 -->
 
 <template>
-  <div class="player-page" tabindex="-1">
+  <div class="player-page" :class="{ 'mpv-on': isMpv }" tabindex="-1">
+    <!-- mpv 高兼容模式的「挖洞遮罩」（2026-10-08）：
+         一个自身透明的元素 + 超大 box-shadow spread，把「除视频区域以外」的整屏涂成页面底色。
+         视频那一块不绘制 → mpv 的画面从洞里透出来。teleport 到 body 是为了让它落在所有页面
+         内容之下（z-index:-1）、又不被任何祖先的层叠上下文困住。
+         圆角靠遮罩自身的 border-radius：box-shadow 会跟着圆角走，洞也就是圆角的。
+         位置尺寸由 syncHole() 用 CSS 变量下发（mpv 侧同步收到同一份矩形）。 -->
+    <Teleport to="body">
+      <div v-if="isMpv" ref="shieldRef" class="mpv-shield" aria-hidden="true"></div>
+    </Teleport>
     <!-- ============ 左列：标题 + 播放器 + 女优信息 ============ -->
     <div class="main-col">
       <!-- 标题行（播放器上方）：番号 + 片名。
            行高固定 --head-h，与右列「相关推荐」标题同高 → 播放器与第一张海报顶边对齐 -->
       <div class="info-head">
+        <BackButton fallback="/library" />
         <div class="info-title swap-in" v-if="m" :key="'title-' + m.id" :title="[m.ph, m.pm || m.ph].filter(Boolean).join(' ')">
           <span class="info-ph">{{ m.ph }}</span>
           <span class="info-name">{{ m.pm || m.ph }}</span>
         </div>
       </div>
 
-      <div class="player-box" ref="boxRef"></div>
+      <!-- 播放器外层：只为「播放质量提示」浮层与 mpv 控件条提供定位参照。自身不产生额外高度
+           （两者都是 absolute），所以「播放器顶边 = 右列第一张海报顶边」这条对齐关系不受影响。 -->
+      <div class="player-wrap" ref="wrapRef">
+        <div class="player-box" ref="boxRef"></div>
+
+        <!-- mpv 模式的控制条（2026-10-08）：mpv 不参与页面渲染，ArtPlayer 的控制条用不上了，
+             这一条由页面自己画、经 @/player 契约驱动 mpv。只铺在视频区域内（HTML 绘制在 mpv 之上）。 -->
+        <PlayerControls
+          v-if="isMpv && !mediaErr"
+          :state="mpvUi"
+          @toggle="onCtlToggle"
+          @seek="onCtlSeek"
+          @volume="onCtlVolume"
+          @rate="onCtlRate"
+          @fullscreen="onCtlFullscreen"
+          @external="playExternal"
+        />
+
+        <!-- 播放质量提示（非阻塞，2026-10-07）：
+             少数影片的容器时间戳不标准（码流用了 B 帧但 MP4 缺 ctts 盒），Chromium 的渲染器
+             会因此丢掉约 20% 的帧 → 画面「一卡一卡」；同一文件用外部播放器完全正常。
+             内置播放器换不了内核，所以这里只做提示 + 一键转外部播放器。 -->
+        <div v-if="qualityWarn" class="quality-warn">
+          <div class="qw-text">
+            检测到画面丢帧较多（约 {{ qualityPct }}%）。该视频的编码或封装可能不符合规范，
+            内置播放器无法流畅呈现，建议改用外部播放器播放。
+          </div>
+          <div class="qw-actions">
+            <button type="button" class="qw-btn qw-primary" @click="playExternal">使用外部播放器打开</button>
+            <button type="button" class="qw-btn" @click="dismissQualityWarn">忽略</button>
+          </div>
+        </div>
+      </div>
 
       <!-- 视频确实放不出来时的兜底面板。
            注意（2026-09-30 修复）：这里**不能**断言「解码器不支持」—— Chromium 把
@@ -32,12 +74,12 @@
            MEDIA_ERR_SRC_NOT_SUPPORTED(4)，与真正的「编码不支持」同一个码。
            文案按错误码分化，并附真实错误码/信息，用户回报时能直接定位。 -->
       <div v-if="mediaErr" class="media-error">
-        <div class="me-title">该视频无法在软件内播放</div>
+        <div class="me-title">该视频无法在内置播放器中播放</div>
         <div class="me-desc">{{ mediaErrText }}</div>
         <div class="me-hint" v-if="mediaErrDetail">{{ mediaErrDetail }}</div>
         <div class="me-actions">
           <el-button type="primary" @click="retryPlay">重试</el-button>
-          <el-button @click="playExternal">用外部播放器打开</el-button>
+          <el-button @click="playExternal">使用外部播放器打开</el-button>
           <el-button @click="goDetail">查看详情</el-button>
         </div>
       </div>
@@ -109,23 +151,15 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import Artplayer from 'artplayer'
 import AppIcon from '@/components/AppIcon.vue'
-import { resolveMedia, resolveCover, splitTags, dataDirRef, favLock, favUnlock, fileBadgesOf, is4kSize } from '@/utils/global'
+import BackButton from '@/components/BackButton.vue'
+import PlayerControls from '@/components/PlayerControls.vue'
+import { createBackend, isBackendAvailable, PLAYER_KINDS } from '@/player'
+import { resolveMedia, resolveMediaPath, resolveCover, splitTags, dataDirRef, favLock, favUnlock, fileBadgesOf, is4kSize } from '@/utils/global'
 import { useMoviesStore } from '@/store/movies'
-
-// 设置面板「倍速」宽度：两态统一 200px（2026-09-30，实测 tmp/probe-playbackrate-size.js）
-// ① 一致性：ArtPlayer resize() 取「当前面板首项的 $parent.width || SETTING_WIDTH(250)」当
-//    面板宽度。根面板首项 $parent 为 undefined → 落到 250，而内置倍速项
-//    width = SETTING_ITEM_WIDTH(200) → 点开倍速后面板 250→200、左右各内缩 25px，两态不同宽。
-// ② 收窄：250 时面板右缘正好压在视频右边框上（right=0），观感太长；收到 200 后右缘退回 25px。
-// 把两个常量一起钉到 200 —— 展开前后同宽、且不再贴着右边界。
-// （顺带覆盖之后可能启用的画面比例 / 翻转等内置 selector 项）
-Artplayer.SETTING_WIDTH = 200
-Artplayer.SETTING_ITEM_WIDTH = Artplayer.SETTING_WIDTH
 
 const route = useRoute()
 const router = useRouter()
@@ -133,6 +167,8 @@ const store = useMoviesStore()
 
 // ====== 状态 ======
 const boxRef = ref(null)
+const wrapRef = ref(null)      // 播放器外层：mpv 模式下控件条与长按徽标的定位参照
+const shieldRef = ref(null)    // mpv 模式的挖洞遮罩（teleport 到 body）
 const recColRef = ref(null)    // 右列容器：整条布局按列表可用高反算条目间距
 const recGap = ref('0px')      // 条目间距（fitRecRows 反算）→ :style 绑给 .rec-list
 const m = ref(null)            // 当前影片行（movies 表）
@@ -143,9 +179,15 @@ const mediaErr = ref(false)
 const mediaErrKind = ref('')   // '' = 无错误；'media' = 播放失败；'nopath' = 这部影片没有视频路径
 const mediaErrCode = ref(0)    // 最近一次 MediaError.code（0 = 未知）；见 mediaErrText 的分化文案
 const mediaErrRaw = ref('')    // 原始错误信息（Chromium 原文，回报问题时最有价值）
-let art = null                 // ArtPlayer 实例（非响应式）
-let playingId = null           // art 实例当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
-let switchSuppress = false     // 换片进行中：挡住 pause/timeupdate 的进度记账（此时 art 里还是旧片的时间）
+// 播放内核后端。页面只依赖 @/player 的契约，不直接 import 任何内核。
+// 默认 Chromium；onMounted 里读完设置后再决定要不要换成 mpv（换内核只改这一个变量）。
+let player = createBackend()
+// mpv 模式（高兼容模式，2026-10-08）：窗口镂空 + 自制控件条，见本文件 mpv 相关段落
+const isMpv = ref(false)
+// 控件条读的播放状态（契约里的状态是同步读的，mpv 后端已做缓存，这里只做响应式镜像）
+const mpvUi = reactive({ t: 0, dur: 0, paused: false, vol: 0.8, muted: false, rate: 1 })
+let playingId = null           // player 当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
+let switchSuppress = false     // 换片进行中：挡住 pause/timeupdate 的进度记账（此时内核里还是旧片的时间）
 let recordedFor = null         // recordPlay 去重：同一部影片一次会话只记一次
 let lastSaveTs = 0             // 进度节流
 let pendingPos = 0             // 最新播放位置（切页兜底保存用）
@@ -157,6 +199,18 @@ const ext = computed(() => {
   const i = py.lastIndexOf('.')
   return i >= 0 ? py.slice(i + 1).toUpperCase() : '?'
 })
+
+/**
+ * 当前影片的可播放地址（按内核分化）。
+ * Chromium 走 `javtube-media://`（自定义协议，支持 Range，拖进度条必需）；
+ * **mpv 必须给真实文件路径** —— 它是个独立进程，读不了本应用注册的自定义协议
+ * （给它 javtube-media:// 会直接报 end-file reason=error）。
+ * @returns {string} 可播放地址；没有视频路径时返回空串
+ */
+function mediaUrl() {
+  const py = m.value?.py
+  return isMpv.value ? resolveMediaPath(py) : resolveMedia(py)
+}
 
 function coverUrl(r) {
   if (!r || r._err) return ''
@@ -285,17 +339,60 @@ const DEFAULT_HK = {
 }
 const hk = ref(JSON.parse(JSON.stringify(DEFAULT_HK)))
 
-async function loadHotkeys() {
+/**
+ * 读取播放相关设置：快捷键 + 播放内核。
+ * ⚠️ 内核必须在这里（loadMovie 之前）定下来 —— 后端实例是后续所有播放调用的载体。
+ * 设置项 `player_kernel`：'mpv'（高兼容模式，默认）| 'chromium'（内置 Chromium 媒体栈）。
+ * mpv 通道不在场（打包漏了 mpv.exe）时自动退回 Chromium，绝不出现「点了播不了」。
+ */
+async function loadPlayerSettings() {
+  let kernel = PLAYER_KINDS.MPV
   try {
     const r = await window.api?.getSettings()
-    if (r?.ok && r.data?.hotkeys) {
-      const saved = JSON.parse(r.data.hotkeys)
-      hk.value = {
-        ...DEFAULT_HK, ...saved,
-        keys: { ...DEFAULT_HK.keys, ...(saved.keys || {}) }
+    if (r?.ok) {
+      if (r.data?.hotkeys) {
+        const saved = JSON.parse(r.data.hotkeys)
+        hk.value = {
+          ...DEFAULT_HK, ...saved,
+          keys: { ...DEFAULT_HK.keys, ...(saved.keys || {}) }
+        }
+      }
+      if (r.data?.player_kernel === PLAYER_KINDS.CHROMIUM) kernel = PLAYER_KINDS.CHROMIUM
+    }
+  } catch { /* 解析失败按默认值 */ }
+
+  if (kernel === PLAYER_KINDS.MPV) {
+    // 双保险①：通道在不在（preload 没暴露时直接退）
+    if (!isBackendAvailable(PLAYER_KINDS.MPV)) {
+      console.warn('[player] mpv 控制通道不可用，退回 Chromium 内核')
+      kernel = PLAYER_KINDS.CHROMIUM
+    } else {
+      // 双保险②：mpv.exe 在不在（打包漏了 / 被安全软件删了）。
+      // 提前问一次，比「起播失败再回退」更干净：用户不会看到一次闪黑。
+      const st = await window.api?.mpvControl?.({ cmd: 'status' }).catch(() => null)
+      if (st && !st.exe) {
+        console.warn('[player] 未找到 mpv 可执行文件，退回 Chromium 内核')
+        kernel = PLAYER_KINDS.CHROMIUM
       }
     }
-  } catch { /* 解析失败按默认键位 */ }
+  }
+  player = createBackend(kernel)
+  isMpv.value = kernel === PLAYER_KINDS.MPV
+}
+
+/**
+ * mpv 起不来时退回 Chromium 内核（例如进程被安全软件拦截）。
+ * 换内核只在这里发生一次；之后整页行为与「设置里选了 Chromium」完全一致。
+ * @param {string} reason - 失败原因（只用于日志）
+ */
+function fallbackToChromium(reason) {
+  if (!isMpv.value) return
+  console.warn('[player] mpv 启动失败，自动退回 Chromium 内核：', reason)
+  try { player.destroy() } catch { /* 忽略 */ }
+  isMpv.value = false
+  clearHole()
+  player = createBackend(PLAYER_KINDS.CHROMIUM)
+  nextTick(() => initOrSwitchPlayer())
 }
 
 // ====== 键盘：单击 = 快进/退，长按 = 倍速/加速倒带 ======
@@ -303,27 +400,28 @@ const HOLD = { key: null, fired: false, timer: null, interval: null, ramp: 1, pr
 let badgeTimer = null
 
 function showBadge(text) {
-  if (!art) return
-  const el = art.template.$player.querySelector('.jt-hold-badge')
+  const root = player.rootEl
+  if (!root) return
+  const el = root.querySelector('.jt-hold-badge')
   const b = el || document.createElement('div')
   b.className = 'jt-hold-badge'
   b.textContent = text
-  if (!el) art.template.$player.appendChild(b)
+  if (!el) root.appendChild(b)
   clearTimeout(badgeTimer)
   badgeTimer = setTimeout(hideBadge, 1200)
 }
 function hideBadge() {
-  art?.template?.$player?.querySelector('.jt-hold-badge')?.remove()
+  player.rootEl?.querySelector('.jt-hold-badge')?.remove()
 }
 
 function seekBy(sec) {
-  if (!art) return
-  const d = art.duration || 0
-  art.currentTime = Math.min(Math.max(0, art.currentTime + sec), d ? d - 0.1 : Infinity)
+  if (!player.isMounted) return
+  const d = player.duration
+  player.currentTime = Math.min(Math.max(0, player.currentTime + sec), d ? d - 0.1 : Infinity)
 }
 
 function onKeyDown(e) {
-  if (!art || mediaErr.value) return
+  if (!player.isMounted || mediaErr.value) return
   // 输入控件聚焦时不抢键（播放页本身没有输入框，防御性处理）
   const tag = (e.target && e.target.tagName) || ''
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
@@ -335,11 +433,11 @@ function onKeyDown(e) {
     if (HOLD.key) return                       // 已按住一个方向键时忽略另一个
     HOLD.key = k; HOLD.fired = false
     HOLD.timer = setTimeout(() => startHold(k), hk.value.holdThresholdMs)
-  } else if (k === keys.toggle) { e.preventDefault(); art.toggle() }
-  else if (k === keys.mute) { e.preventDefault(); art.muted = !art.muted }
-  else if (k === keys.fullscreen) { e.preventDefault(); art.fullscreenWeb = false; art.fullscreen = !art.fullscreen }
-  else if (k === keys.volUp) { e.preventDefault(); art.volume = Math.min(1, Math.round((art.volume + 0.05) * 100) / 100) }
-  else if (k === keys.volDown) { e.preventDefault(); art.volume = Math.max(0, Math.round((art.volume - 0.05) * 100) / 100) }
+  } else if (k === keys.toggle) { e.preventDefault(); player.toggle() }
+  else if (k === keys.mute) { e.preventDefault(); player.muted = !player.muted }
+  else if (k === keys.fullscreen) { e.preventDefault(); player.fullscreenWeb = false; player.fullscreen = !player.fullscreen }
+  else if (k === keys.volUp) { e.preventDefault(); player.volume = Math.min(1, Math.round((player.volume + 0.05) * 100) / 100) }
+  else if (k === keys.volDown) { e.preventDefault(); player.volume = Math.max(0, Math.round((player.volume - 0.05) * 100) / 100) }
 }
 
 function onKeyUp(e) {
@@ -353,11 +451,11 @@ function onKeyUp(e) {
 
 /** 长按判定触发：→ 进倍速；← 进加速倒带 */
 function startHold(k) {
-  if (!art || HOLD.key !== k) return
+  if (!player.isMounted || HOLD.key !== k) return
   HOLD.fired = true
   if (k === hk.value.keys.forward) {
-    HOLD.prevRate = art.playbackRate || 1
-    art.playbackRate = hk.value.holdSpeed
+    HOLD.prevRate = player.playbackRate || 1
+    player.playbackRate = hk.value.holdSpeed
     showBadge(`▶▶ ${hk.value.holdSpeed}x 倍速`)
   } else {
     HOLD.ramp = 1
@@ -374,10 +472,115 @@ function startHold(k) {
 
 function endHold() {
   if (HOLD.interval) { clearInterval(HOLD.interval); HOLD.interval = null }
-  if (HOLD.prevRate != null && art) { art.playbackRate = HOLD.prevRate }
+  if (HOLD.prevRate != null && player.isMounted) { player.playbackRate = HOLD.prevRate }
   HOLD.prevRate = null
   hideBadge()
 }
+
+// ====== mpv 高兼容模式：镂空矩形同步 + 控件条（2026-10-08）======
+// mpv 是**独立进程**，它往**整个窗口**渲染；页面这一侧则把视频区域「镂空」让它透出来。
+// 两侧必须用**同一个矩形**：
+//   · 页面侧 → 挖洞遮罩（.mpv-shield）的位置尺寸；
+//   · mpv 侧 → --video-margin-ratio-*（窗口尺寸的比例，由主进程换算）。
+// 实测（tmp/mpv-spike/test-hole-align.js）：两侧对齐是像素级的，且运行时改 margin 即时生效，
+// 所以窗口缩放 / 进全屏都只是「重算一次矩形」，不需要重启 mpv。
+let lastHoleKey = ''
+
+/**
+ * 重算镂空矩形，同时下发给「挖洞遮罩」与 mpv。
+ *
+ * ⚠️ 必须是**同步**的，不能用 requestAnimationFrame 包起来：窗口被遮挡/最小化时
+ *    Chromium 会把 rAF 节流甚至暂停，那样遮罩会永远停在 0×0、整窗透明也永远挂不上
+ *    （实测踩到：探针里窗口被挡住时 mpv-hole=false、遮罩矩形 0×0，画面自然出不来）。
+ * 反复调用是安全的：矩形没变就直接返回（resize 事件很密集，靠这个去重）。
+ */
+function syncHole() {
+  if (!isMpv.value) return
+  const box = boxRef.value
+  const el = shieldRef.value
+  if (!box || !el) return
+  const r = box.getBoundingClientRect()
+  const w = Math.max(0, r.width), h = Math.max(0, r.height)
+  if (!(w > 0) || !(h > 0)) return          // 还没布局出来，等下一次
+  const hole = { x: r.left, y: r.top, w, h, winW: window.innerWidth, winH: window.innerHeight }
+  const key = [hole.x, hole.y, hole.w, hole.h, hole.winW, hole.winH]
+    .map(n => Math.round(n * 10) / 10).join(',')
+  if (key === lastHoleKey) return
+  lastHoleKey = key
+  el.style.setProperty('--hx', hole.x + 'px')
+  el.style.setProperty('--hy', hole.y + 'px')
+  el.style.setProperty('--hw', hole.w + 'px')
+  el.style.setProperty('--hh', hole.h + 'px')
+  player.setHole?.(hole)
+  // ⚠️ 遮罩尺寸就绪之后才把整窗底色关掉（html.mpv-hole）。提前关会有一瞬整窗透明、透出桌面。
+  document.documentElement.classList.add('mpv-hole')
+}
+
+/** 退出播放页时把窗口底色恢复成不透明（否则其它页面会透出桌面） */
+function clearHole() {
+  lastHoleKey = ''
+  document.documentElement.classList.remove('mpv-hole')
+}
+
+/**
+ * 入场后的一小段「落定」重算。
+ * 为什么需要：刚进页面时盒子还在动 ——
+ *   · 路由入场动画（.route-anim）带 `transform: translateY(6px)`，动画期间量到的矩形整体偏 6px；
+ *   · 内容变高后主内容区出现滚动条，可用宽度少 8px，16:9 盒子跟着变窄。
+ * 这两个都会让「首帧量到的矩形」与稳定后的实际位置不一致（实测 y 差 6px、宽差 8px），
+ * 于是遮罩与 mpv 的画面会错位。syncHole 自带去重，多调几次几乎没有成本。
+ */
+let settleTimers = []
+function settleHole() {
+  for (const t of settleTimers) clearTimeout(t)
+  settleTimers = [0, 130, 320, 640, 1000].map(ms => setTimeout(syncHole, ms))
+}
+
+/** 盒子尺寸变化（滚动条出现、窗口缩放、全屏切换）时自动重算 —— 事件驱动，比轮询可靠 */
+let holeObs = null
+function startHoleWatch() {
+  stopHoleWatch()
+  if (typeof ResizeObserver === 'undefined' || !boxRef.value) return
+  holeObs = new ResizeObserver(() => syncHole())
+  holeObs.observe(boxRef.value)
+}
+function stopHoleWatch() {
+  try { holeObs?.disconnect() } catch { /* 忽略 */ }
+  holeObs = null
+}
+
+/** 把契约事件映射到控件条的响应式状态（mpv 模式才需要） */
+function bindMpvUi() {
+  const pull = () => {
+    mpvUi.t = player.currentTime || 0
+    mpvUi.dur = player.duration || 0
+    mpvUi.vol = player.volume
+    mpvUi.muted = player.muted
+    mpvUi.rate = player.playbackRate || 1
+  }
+  player.on('timeupdate', pull)
+  player.on('loadedmetadata', pull)
+  player.on('canplay', pull)
+  player.on('volumechange', pull)
+  player.on('ended', pull)
+  player.on('playing', () => { mpvUi.paused = false; pull() })
+  player.on('pause', () => { mpvUi.paused = true; pull() })
+  pull()
+}
+
+function onCtlToggle() { player.toggle() }
+/** 拖进度条：传进来的是 0~1 的比例 */
+function onCtlSeek(frac) {
+  const d = player.duration || 0
+  if (!d) return
+  player.currentTime = Math.max(0, Math.min(d - 0.1, frac * d))
+}
+function onCtlVolume(v) { player.volume = v }
+function onCtlRate(r) { player.playbackRate = r }
+function onCtlFullscreen() { player.fullscreen = !player.fullscreen }
+
+/** 全屏进出会改变视口尺寸 → 镂空矩形要重算（DOM 全屏在透明窗口下可用，见 mpv-backend.js） */
+function onFullscreenChange() { syncHole() }
 
 // ====== 播放器铺满（消除边角黑边）======
 // 视频层由 GPU 合成且像素对齐取整：只要「盒子宽高比 ≠ 视频宽高比」，object-fit:contain
@@ -385,7 +588,7 @@ function endHold() {
 // 黑边在四角圆弧处收成黑楔，最显眼）。偏差 ≤ 8% 时改用 cover 裁掉一点画面（肉眼不可见）
 // 铺满盒子；偏差大（如 4:3 老片）则保留 contain 的有意留黑。
 function fitVideoObject() {
-  const v = art && art.video
+  const v = player.element
   const box = boxRef.value
   if (!v || !box || !v.videoWidth || !v.videoHeight || !box.clientWidth || !box.clientHeight) return
   const vAr = v.videoWidth / v.videoHeight
@@ -419,17 +622,17 @@ function fitRecRows() {
 }
 
 // ====== 进度记忆 ======
-// 记账 id 必须用 playingId（art 实例真正在播的那部），不能用 m.value：
+// 记账 id 必须用 playingId（内核实例真正在播的那部），不能用 m.value：
 // 换片流程是「先改 m.value（新片）→ 再 switchUrl」，而 ArtPlayer 的 switchUrl
 // 内部第一件事就是 pause() —— pause 事件异步触发时若按 m.value 记账，
 // 就会把旧片的播放位置写到新片的 play_pos 上（新片下次进入会直接跳到旧片的位置）。
 function saveProgress(force = false) {
-  if (!art || !playingId || switchSuppress) return
+  if (!player.isMounted || !playingId || switchSuppress) return
   const now = Date.now()
   if (!force && now - lastSaveTs < 5000) return
   lastSaveTs = now
-  pendingPos = art.currentTime || 0
-  pendingDur = art.duration || 0
+  pendingPos = player.currentTime || 0
+  pendingDur = player.duration || 0
   window.api?.savePlayProgress({ id: playingId, pos: pendingPos, dur: pendingDur }).catch(() => {})
 }
 
@@ -453,10 +656,11 @@ function saveProgress(force = false) {
 const ERR_GRACE_MS = 1800
 let errTimer = null        // 宽限定时器：等待 ArtPlayer 自愈
 
-/** 元素当前是否处于「可播的健康态」：没有挂错误 且 已拿到元数据 */
+/** 当前是否处于「可播的健康态」。
+ *  判据收在内核后端里（Chromium 看 `<video>.error/readyState`；mpv 看是否已拿到元数据且未报错），
+ *  因为 mpv 后端**没有 `<video>` 元素**，页面侧不能再用元素判据。 */
 function mediaHealthy() {
-  const v = art?.template?.$video
-  return !!v && v.error == null && v.readyState >= 2
+  return typeof player.isPlayable === 'function' ? player.isPlayable() : false
 }
 
 /** 清空错误态（换片 / 重试 / 恢复播放时调用） */
@@ -469,7 +673,7 @@ function resetMediaErr() {
 }
 
 function onMediaError() {
-  const v = art?.template?.$video
+  const v = player.element
   const e = v && v.error
   if (e) { mediaErrCode.value = e.code; mediaErrRaw.value = String(e.message || '') }
   if (errTimer) return                 // 已在宽限窗口内，等它到点统一复核
@@ -483,7 +687,7 @@ function onMediaError() {
 function recheckMediaErr(extended) {
   errTimer = null
   if (mediaHealthy()) return           // 已自愈：当作瞬时故障，不上报
-  const v = art?.template?.$video
+  const v = player.element
   // 仍在加载中（ArtPlayer 的重连正在进行、NAS/SMB 首包慢）→ 再给一次机会。
   // 这一支只在「真在加载」时命中：文件确实打不开时元素是 networkState=NO_SOURCE，不走这里。
   if (!extended && v && v.error == null && v.networkState === 2) {
@@ -508,17 +712,19 @@ function onMediaRecovered() {
   }
 }
 
-/** 兜底面板正文：按错误码分化，不确定的绝不断言（见本段顶部注释） */
+/** 兜底面板正文：按错误码分化，不确定的绝不断言（见本段顶部注释）。
+ *  措辞保持书面、中性：不臆断原因、不用口语（「放不了」「多半」这类），
+ *  也不把「资源读不到」说成「格式不支持」。 */
 const mediaErrText = computed(() => {
   const f = ext.value
   if (mediaErrKind.value === 'nopath') {
-    return '这部影片在库里没有可播放的文件路径，可能是入库时没关联到视频文件。可以到「详情页」看一眼，或用外部播放器手动打开。'
+    return '该影片在资料库中没有可用的视频文件路径，可能是在入库时未能关联到源文件。可在「详情页」中核对，或使用外部播放器手动打开。'
   }
   switch (mediaErrCode.value) {
-    case 2: return `读取中断，没能从磁盘 / 网络共享把这部影片（${f}）读完。多半是暂时性的，可以重试。`
-    case 3: return `视频数据无法解码（${f}）。文件可能没下载完整，也可能是这个编码浏览器放不了。`
-    case 4: return `打不开这个文件（${f}）：可能是磁盘 / 网络共享暂时不可用，也可能是浏览器解码器放不了它的容器或编码。可以重试，或用外部播放器打开。`
-    default: return `播放没能开始（${f}）。可以重试，或用外部播放器打开。`
+    case 2: return `读取中断，未能从磁盘或网络共享完整读取该影片（${f}）。此情况通常是暂时性的，可尝试重试。`
+    case 3: return `视频数据无法解码（${f}）。文件可能未完整下载，或该编码格式不受浏览器支持。`
+    case 4: return `无法打开该文件（${f}）：磁盘或网络共享可能暂时不可用，也可能是该文件的容器或编码超出浏览器的解码能力。可尝试重试，或使用外部播放器打开。`
+    default: return `播放未能开始（${f}）。可尝试重试，或使用外部播放器打开。`
   }
 })
 
@@ -531,10 +737,68 @@ const mediaErrDetail = computed(() => {
   return parts.join(' · ')
 })
 
+// ====== 播放质量自检（2026-10-07）======
+// 背景：少数影片的容器时间戳不标准 —— 码流用了 B 帧（需要重排序）但 MP4 容器缺少 ctts
+// （composition time offset）盒，容器里 PTS == DTS。Chromium 的呈现时间轴完全取自容器，
+// 于是解码器按 POC 输出的「呈现顺序」帧配着「解码顺序」的时间戳送到渲染器 → 渲染器判定
+// 帧序错乱 → **恒定丢掉约 20% 的帧**，画面「一卡一卡」；同一文件用 PotPlayer / mpv 完全正常
+// （它们按码流自带的重排信息还原时间轴，不看容器）。
+// 内置播放器换不了内核（Electron 只有 Chromium 一套媒体栈），所以这里做**非阻塞提示**：
+// 丢帧率持续偏高时说明原因，并给一键「用外部播放器打开」。
+// ⚠️ 判据必须用**滑动窗口**而不是累计值 —— 累计值会被开头的正常片段稀释，永远到不了阈值。
+// ⚠️ 与 mediaErr（硬失败面板）互斥：真放不出来时由那个面板负责，这里不重复打扰。
+const QUALITY_SAMPLE_MS = 2000    // 采样间隔
+const QUALITY_WINDOW = 3          // 窗口采样数（3 × 2s ≈ 4~6s）
+const QUALITY_MIN_FRAMES = 90     // 窗口内至少这么多帧才判定（约 3s @30fps），避免样本太少误报
+const QUALITY_DROP_PCT = 10       // 丢帧率阈值（%）。真问题片实测在 18~25%，留足余量；
+                                  // 阈值定太低会把「机器一时忙 / 窗口被遮挡降频」误判成文件问题。
+const qualityWarn = ref(false)
+const qualityPct = ref(0)
+let qualityTimer = null
+let qualityHist = []              // [{t,d}] 累计 totalVideoFrames / droppedVideoFrames
+let qualityMutedFor = null        // 用户点过「忽略」的影片 id（同一会话内不再提示）
+
+function stopQualityWatch() {
+  if (qualityTimer) { clearInterval(qualityTimer); qualityTimer = null }
+  qualityHist = []
+}
+
+function startQualityWatch() {
+  stopQualityWatch()
+  qualityTimer = setInterval(() => {
+    if (!player.isMounted || mediaErr.value || qualityWarn.value) return
+    if (qualityMutedFor != null && qualityMutedFor === playingId) return
+    // ⚠️ 页面不可见（最小化 / 被遮挡）时 Chromium 会降频，丢帧是环境造成的、不是文件问题。
+    //    此时必须丢弃采样窗口，否则切出去再切回来就会误报（实测踩到过）。
+    if (document.visibilityState !== 'visible') { qualityHist = []; return }
+    const v = player.element
+    if (!v || typeof v.getVideoPlaybackQuality !== 'function') return
+    const q = v.getVideoPlaybackQuality()
+    qualityHist.push({ t: q.totalVideoFrames || 0, d: q.droppedVideoFrames || 0 })
+    if (qualityHist.length > QUALITY_WINDOW) qualityHist.shift()
+    if (qualityHist.length < QUALITY_WINDOW) return
+    const a = qualityHist[0]
+    const b = qualityHist[qualityHist.length - 1]
+    const total = b.t - a.t
+    const dropped = b.d - a.d
+    if (total < QUALITY_MIN_FRAMES) return
+    const pct = (dropped / total) * 100
+    if (pct < QUALITY_DROP_PCT) return
+    qualityPct.value = Math.round(pct)
+    qualityWarn.value = true
+  }, QUALITY_SAMPLE_MS)
+}
+
+/** 忽略：本次会话不再对这部影片提示（换片后重新开始判断） */
+function dismissQualityWarn() {
+  qualityWarn.value = false
+  qualityMutedFor = playingId
+}
+
 // ====== 数据加载 ======
 async function loadMovie(id) {
   const r = await window.api.getMovie(id).catch(() => null)
-  if (!r || !r.ok) { ElMessage.error(r?.error || '影片加载失败'); router.replace('/library'); return }
+  if (!r || !r.ok) { ElMessage.error(r?.error || '无法加载该影片的资料'); router.replace('/library'); return }
   m.value = r.data
   resetMediaErr()
 
@@ -551,87 +815,88 @@ async function loadMovie(id) {
 }
 
 function initOrSwitchPlayer() {
-  const url = resolveMedia(m.value?.py)
+  // 换片：清掉上一部的质量提示与采样窗口（否则新片会被旧片的丢帧数据误判）
+  qualityWarn.value = false
+  qualityHist = []
+  const url = mediaUrl()
   if (!url) {
     // 新片没有视频路径：旧播放器必须先停掉并销毁。
     // 否则上一部的画面/声音会继续播，而标题、标签已经切成了新片（2026-09-30 审计 P1）。
-    if (art) {
+    if (player.isMounted) {
       endHold()
-      try { art.destroy(false) } catch {}
-      art = null
+      player.destroy()
       playingId = null
     }
     mediaErrKind.value = 'nopath'
     mediaErr.value = true
     return
   }
-  if (art) {
+  if (player.isMounted) {
     endHold()
     // 换片前先把旧片的最后进度落库（此刻 playingId 仍指向旧片，记的是旧片的账）
     saveProgress(true)
-    // 挡住换片过程中 pause / timeupdate 触发的记账（它们拿到的 art.currentTime 还是旧片的），
+    // 挡住换片过程中 pause / timeupdate 触发的记账（它们拿到的 currentTime 还是旧片的），
     // 新片 loadedmetadata 后自动恢复记账。
     switchSuppress = true
-    // 换片失败时 ArtPlayer 会让这个 Promise 变成 rejected（内部 t.once('video:error') 分支），
-    // 不接住会变成 unhandled rejection；真正的失败判定交给 onMediaError 的宽限复核。
-    Promise.resolve(art.switchUrl(url)).catch(() => {})
+    // 换片失败时内核会让这个 Promise 变成 rejected，不接住会变成 unhandled rejection；
+    // 真正的失败判定交给 onMediaError 的宽限复核。
+    player.load(url).catch(() => {})
     playingId = m.value.id
     return
   }
   if (!boxRef.value) return
-  art = new Artplayer({
-    container: boxRef.value,
+  // mpv 模式：先把镂空矩形定下来 —— mount 时会把它一并带给 mpv（避免起播瞬间画面位置不对）
+  if (isMpv.value) syncHole()
+  player.mount(boxRef.value, {
     url,
     autoplay: true,
     volume: Number(localStorage.getItem('jt-vol') || 0.8),
     muted: false,
-    playbackRate: true,
-    aspectRatio: false,
-    flip: false,
-    fullscreen: true,
-    fullscreenWeb: false,
-    miniProgressBar: true,
-    pip: true,
-    setting: true,
-    mutex: false,
-    // backdrop: false —— 控制条毛玻璃（backdrop-filter: blur(20px)）压在视频上时每帧都要
-    // 重算模糊，是播放卡顿的主要来源之一，这里关掉（控制条仍有半透明黑底，观感不变）。
-    backdrop: false,
-    hotkey: false,          // 内置键盘关闭：方向键长按/单击语义由本页面接管
-    // preload=auto：让浏览器尽可能多缓冲，连续快进时命中已缓冲区间即可瞬时跳转，
-    // 减少 waiting 事件触发的加载图标闪烁
-    moreVideoAttr: { playsInline: true, preload: 'auto' }
+    // mpv 模式：长按徽标挂在 .player-wrap 上（.player-box 没有定位，且 mpv 没有内核根节点）
+    overlayEl: wrapRef.value || boxRef.value,
+    // mpv 起不来（exe 缺失/被拦截/管道连不上）→ 自动退回 Chromium 内核，绝不留「点了播不了」
+    onFatal: fallbackToChromium
   })
-  playingId = m.value.id        // 首次构造：art 从此刻起播的就是当前影片
+  playingId = m.value.id        // 首次构造：内核从此刻起播的就是当前影片
   switchSuppress = false
 
-  art.on('video:timeupdate', () => saveProgress(false))
-  art.on('video:pause', () => saveProgress(true))
-  art.on('video:ended', () => { if (playingId) { art && (art.currentTime = 0); window.api?.savePlayProgress({ id: playingId, pos: 0, dur: art?.duration || 0 }).catch(() => {}) } })
+  player.on('timeupdate', () => saveProgress(false))
+  player.on('pause', () => saveProgress(true))
+  player.on('ended', () => {
+    if (!playingId) return
+    if (player.isMounted) player.currentTime = 0
+    window.api?.savePlayProgress({ id: playingId, pos: 0, dur: player.duration || 0 }).catch(() => {})
+  })
   // 播放失败：先宽限复核再上报；canplay/playing 一到就撤销（见本文件「播放错误」段注释）
-  art.on('video:error', onMediaError)
-  art.on('video:canplay', onMediaRecovered)
-  art.on('video:playing', onMediaRecovered)
-  art.on('video:volumechange', () => { try { localStorage.setItem('jt-vol', String(art.volume)) } catch {} })
-  art.on('video:loadedmetadata', resumeIfNeeded)
-  art.on('video:loadedmetadata', fitVideoObject)
-  // 换源（点右侧推荐）后自动起播：switchUrl 不保证自动播放（上一部处于暂停/播完时尤其），
+  player.on('error', onMediaError)
+  player.on('canplay', onMediaRecovered)
+  player.on('playing', onMediaRecovered)
+  player.on('volumechange', () => { try { localStorage.setItem('jt-vol', String(player.volume)) } catch {} })
+  player.on('loadedmetadata', resumeIfNeeded)
+  player.on('loadedmetadata', fitVideoObject)
+  // 换源（点右侧推荐）后自动起播：内核不保证换源后自动播放（上一部处于暂停/播完时尤其），
   // 这里统一在元数据就绪后补一次 play；被浏览器自动播放策略拒绝时静默忽略。
-  art.on('video:loadedmetadata', () => { try { art.play()?.catch?.(() => {}) } catch {} })
+  player.on('loadedmetadata', () => { try { player.play()?.catch?.(() => {}) } catch {} })
   // 新片元数据就绪 = 换片完成：解除换片期的记账抑制（见 initOrSwitchPlayer 的 switchSuppress）
-  art.on('video:loadedmetadata', () => { switchSuppress = false })
+  player.on('loadedmetadata', () => { switchSuppress = false })
   // 窗口尺寸变化会改变盒子宽高比（max-height 参与钳制时尤其），铺满方式需要重算
   window.addEventListener('resize', fitVideoObject)
+
+  // mpv 模式：控件条的响应式状态 + 镂空矩形（挂载后立刻算一次，遮罩就位后再关整窗底色）
+  if (isMpv.value) {
+    bindMpvUi()
+    nextTick(() => { syncHole(); settleHole() })
+  }
 
 
   // 续播：超过 15 秒且不在结尾附近才跳
   async function resumeIfNeeded() {
-    if (!art || !m.value || resumedFor === m.value.id) return
+    if (!player.isMounted || !m.value || resumedFor === m.value.id) return
     resumedFor = m.value.id
     try {
       const r = await window.api.getPlayProgress(m.value.id)
-      if (r?.ok && r.pos > 15 && (!art.duration || r.pos < art.duration - 20)) {
-        art.currentTime = r.pos
+      if (r?.ok && r.pos > 15 && (!player.duration || r.pos < player.duration - 20)) {
+        player.currentTime = r.pos
         ElMessage({ message: `已从 ${fmtPos(r.pos)} 继续播放`, duration: 2500 })
       }
     } catch {}
@@ -669,23 +934,24 @@ function goDetail() { if (m.value) router.push(`/detail/${m.value.id}`) }
 /** 进入该女优的影片页（与详情页/演员页的跳转方式保持一致） */
 function goActor(name) { if (name) router.push(`/actor/${encodeURIComponent(name)}`) }
 async function playExternal() {
-  if (!m.value?.py) return ElMessage.warning('未设置视频路径')
+  if (!m.value?.py) return ElMessage.warning('该影片未设置视频文件路径')
   const r = await window.api.playVideo(m.value.py).catch(() => null)
-  if (!r || !r.ok) return ElMessage.error(r?.error || '播放失败')
+  if (!r || !r.ok) return ElMessage.error(r?.error || '无法通过外部播放器打开该影片')
 }
 /**
  * 重试：强制重新加载当前影片。
- * 必须走 `art.url = url` 而不是 `switchUrl(url)` —— 后者对同一个地址会提前
- * `return`（`if (e === t.url) void a()`），拿它重试等于什么都没做；
+ * 必须走 `player.reload()`（内核内部用 `art.url = url` 而非 `switchUrl(url)`）——
+ * 后者对同一个地址会提前 `return`（`if (e === t.url) void a()`），拿它重试等于什么都没做；
  * `url` 的 setter 则是无条件 `$video.src = a`，能真正触发一次重新加载。
+ * 这段内核细节已收进 chromium-backend.js，本页只调 reload()。
  */
 function retryPlay() {
-  const url = resolveMedia(m.value?.py)
+  const url = mediaUrl()
   resetMediaErr()
-  if (!art || !url) { initOrSwitchPlayer(); return }
+  if (!player.isMounted || !url) { initOrSwitchPlayer(); return }
   endHold()
   switchSuppress = true          // 重新加载期间先挡住记账，loadedmetadata 后自动恢复
-  try { art.url = url } catch { switchSuppress = false }
+  try { player.reload(url) } catch { switchSuppress = false }
   playingId = m.value?.id ?? null
 }
 async function toggleFav() {
@@ -713,14 +979,27 @@ watch(() => Number(route.params.id), (id) => { if (id) loadMovie(id) })
 /** 换影片时给新女优的头像一次加载机会（上一张的失败标记不能沿用到下一部） */
 watch(() => m.value?.id, () => { brokenAvatars.value = {} })
 
+// 内核确定后（onMounted 里读设置才知道）把挖洞遮罩的矩形补上：等遮罩渲染出来再算。
+// 少了这一条，直接进播放页时遮罩会停在 0×0（首帧没有 resize 事件来触发 syncHole）。
+watch(isMpv, async (on) => {
+  if (!on) return
+  await nextTick()
+  startHoleWatch()
+  syncHole()
+  settleHole()
+})
+
 onMounted(async () => {
   // 标签分类配置（体型/行为/玩法）来自 store；直接进播放页时可能尚未初始化
   store.initIfNeeded().catch(() => {})
-  await loadHotkeys()
+  await loadPlayerSettings()
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
   window.addEventListener('resize', fitRecRows)
+  window.addEventListener('resize', syncHole)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
   fitRecRows()
+  startQualityWatch()          // 播放质量自检（mpv 模式下没有 <video> 元素，内部会自动跳过）
   if (dataDirRef.value) window.__dataDir = dataDirRef.value
   loadMovie(Number(route.params.id))
 })
@@ -730,13 +1009,19 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', onKeyUp, true)
   window.removeEventListener('resize', fitVideoObject)
   window.removeEventListener('resize', fitRecRows)
+  window.removeEventListener('resize', syncHole)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  for (const t of settleTimers) clearTimeout(t)
+  settleTimers = []
+  stopHoleWatch()
+  clearHole()                  // 恢复窗口底色（否则离开播放页后会透出桌面）
   endHold()
+  stopQualityWatch()
   // 兜底保存进度（route 切走/关页都会走这里）；记账同样以 playingId 为准（换片流程见 saveProgress 注释）
-  if (art && playingId && art.currentTime > 0) {
-    try { window.api?.savePlayProgress({ id: playingId, pos: art.currentTime, dur: art.duration || 0 }).catch(() => {}) } catch {}
+  if (player.isMounted && playingId && player.currentTime > 0) {
+    try { window.api?.savePlayProgress({ id: playingId, pos: player.currentTime, dur: player.duration || 0 }).catch(() => {}) } catch {}
   }
-  try { art?.destroy(false) } catch {}
-  art = null
+  player.destroy()
 })
 </script>
 
@@ -771,6 +1056,30 @@ onBeforeUnmount(() => {
   outline: none;
 }
 
+/* mpv 高兼容模式：页面自己不再画底色 —— 底色交给「挖洞遮罩」去画（它会把视频那一块留空）。
+   本元素若继续画 --bg，就会把镂空处填上，mpv 的画面就透不出来了。
+   （窗口是 transparent: true，见 electron/main/index.js；祖先链的底色由 global.css
+    的 html.mpv-hole 规则一并关掉。） */
+.player-page.mpv-on { background: transparent; }
+
+/* mpv 模式的挖洞遮罩（teleport 到 body，所以这里的 scoped 样式仍会生效 —— Vue 会把
+   scope 属性打在 teleport 出去的元素上）。
+   原理：元素自身不画任何东西，靠 box-shadow 的 spread 把「除了洞以外」的整屏涂成页面底色。
+   位置尺寸由 syncHole() 用内联 CSS 变量下发；圆角让 box-shadow 跟着走 → 洞也是圆角的。 */
+.mpv-shield {
+  --hx: 0px; --hy: 0px; --hw: 0px; --hh: 0px;
+  position: fixed;
+  left: var(--hx);
+  top: var(--hy);
+  width: var(--hw);
+  height: var(--hh);
+  border-radius: var(--r-md);
+  box-shadow: 0 0 0 100vmax var(--bg);
+  pointer-events: none;
+  /* 落在所有页面内容之下：只提供底色，不遮挡任何 UI（TopNav / 标题 / 标签行照常显示） */
+  z-index: -1;
+}
+
 /* ====== 左列 ====== */
 .main-col { flex: 1; min-width: 0; }
 
@@ -779,6 +1088,7 @@ onBeforeUnmount(() => {
    窗口够宽时上面这个 max-width 会生效（盒子居中收窄），若这些行仍铺满 .main-col，
    就会左右各超出盒子一大截 —— 就是「最大化下两行跟播放器对不齐」的原因。 */
 .info-head,
+.player-wrap,
 .player-box,
 .tag-row,
 .actress-row,
@@ -788,12 +1098,18 @@ onBeforeUnmount(() => {
   margin-inline: auto;
 }
 
-/* 标题行：位于播放器上方；高度锁死 --head-h（内部标题单行截断，不会被长片名撑高） */
+/* 播放器外层：只为「播放质量提示」浮层提供定位参照。自身不产生额外高度（浮层是 absolute），
+   所以「播放器顶边 = 右列第一张海报顶边」这条对齐关系不受影响。 */
+.player-wrap { position: relative; }
+
+/* 标题行：位于播放器上方；高度锁死 --head-h（内部标题单行截断，不会被长片名撑高）。
+   2026-10-07 加 BackButton：原 space-between 会让按钮贴左、标题贴右（间距过大），
+   改 flex-start + gap:16px 让二者紧挨；.info-title 的 flex:1 仍撑满右侧，视觉与原来一致。 */
 .info-head {
   height: var(--head-h);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
   overflow: hidden;
 }
@@ -853,8 +1169,10 @@ onBeforeUnmount(() => {
   opacity: 1 !important;
 }
 
-/* 长按倍速 / 快退角标（挂在 ArtPlayer 根节点上，非 scoped —— 用 :global 穿透） */
-.player-box :deep(.jt-hold-badge) {
+/* 长按倍速 / 快退角标：Chromium 模式挂在 ArtPlayer 根节点上（:deep 穿透），
+   mpv 模式挂在 .player-wrap 上（内核没有根节点，由 mount 的 overlayEl 指定）。 */
+.player-box :deep(.jt-hold-badge),
+.player-wrap :deep(.jt-hold-badge) {
   position: absolute;
   top: 16px;
   left: 50%;
@@ -899,6 +1217,48 @@ onBeforeUnmount(() => {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* 播放质量提示（浮层，2026-10-07）：贴在播放器左上角。
+   为什么不放在播放器下方那一列：.main-col 的纵向预算按视口高反算死（--box-max-w），
+   往列里插元素会把标签行/女优行顶出视口。浮层不参与布局，几何零影响。
+   为什么靠左上而不是左下：左下会被 ArtPlayer 的控制条（进度条/按钮）压住。
+   右上留给内核自带按钮组（设置/画中画/全屏），所以 max-width 收到 62% 让开。 */
+.quality-warn {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  max-width: 62%;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--overlay-strong);
+  color: #fff;
+  box-shadow: var(--sh-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.qw-text { opacity: 0.94; }
+.qw-actions { display: flex; gap: 8px; }
+.qw-btn {
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+.qw-btn:hover { background: rgba(255, 255, 255, 0.14); }
+/* 主操作（用外部播放器打开）：用品牌红实底，与页面其它主按钮一致 */
+.qw-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.qw-primary:hover { background: var(--accent); filter: brightness(1.08); }
 
 /* 标题行：番号在前 + 片名（番号不参与截断） */
 .info-title {

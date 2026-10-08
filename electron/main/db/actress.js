@@ -22,7 +22,7 @@ const { COVER_DIR, IMAGE_DIR } = require('../constants')
 // 头像来源（JAVDB 演员页）+ 图片下载/内容校验（含主站图床走代理的判断）
 // isGifRenamed 统一放在 scraper.js（与 isImageFile 同处，图片判定只此一份）：
 // 女优头像与封面/预览图共用同一条「GIF 伪装成 .jpg」判据，避免两处口径漂移。
-const { fetchActorAvatar, downloadImage, isImageFile, isGifRenamed, tmpPathFor } = require('../scraper')
+const { fetchActorAvatar, fetchActressInfo, downloadImage, isImageFile, isGifRenamed, tmpPathFor } = require('../scraper')
 
 /**
  * 热度分档（演员页火焰配色）：按「前 X%」从热到冷。
@@ -897,6 +897,25 @@ function registerActressIpc(ipcMain, db, dataDir) {
       invalidateActorCaches()
       return { ok: true, data: { path: rel } }
     } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // IPC: actress:scrapeInfo — 从 theidolbase.com 检索演员资料（2026-10-07）。
+  // 由演员编辑弹窗「从 TheIdolBase 检索」按钮调用；返回的字段供前端填入表单，不直接写库
+  // （让用户审阅后手动点保存，与"自动填表但不自动保存"的交互约定一致）。
+  ipcMain.handle(IPC.ACTRESS_SCRAPE_INFO, async (_e, name) => {
+    const nm = String(name || '').trim()
+    if (!nm) return { ok: false, error: '演员名为空' }
+    // 代理设置：与 scraper:scrape / actress:avatarFill 同源读 settings 表
+    // （TheIdolBase 直连可达，但用户开了代理就一并走代理，避免"开代理却直连 → DNS 污染"）
+    const st = {}
+    try {
+      const rs = db.exec(`SELECT key, value FROM settings WHERE key IN ('proxy_enabled','proxy_url')`)
+      for (const row of (rs[0]?.values || [])) st[row[0]] = row[1]
+    } catch {}
+    const proxy = st.proxy_enabled === 'y' ? (st.proxy_url || '') : ''
+    const got = await fetchActressInfo(nm, { proxy })
+    if (!got.ok) return { ok: false, error: got.error }
+    return { ok: true, data: got.data }
   })
 }
 

@@ -16,15 +16,15 @@ JavTube 是一个 **Windows 桌面端的本地影片库管理工具**。把硬�
 
 - **纯本机应用**：所有数据只在 `data/` 目录（SQLite + 封面缓存），**不上传任何内容**；除刮削外无需联网。
 - **没有后端、没有账号**、没有云同步。单进程 Electron 应用。
-- 分发形态：Windows x64 便携版 zip，解压即用（含 Electron 运行时，约 102 MB）。
+- 分发形态：Windows x64 便携版 zip，解压即用（含 Electron 运行时 + mpv 播放内核，约 174 MB）。
 
 | 层 | 选型 | 说明 |
 |---|---|---|
-| 外壳 | Electron 30.5.1 | 主进程 + 渲染进程，`contextIsolation` 开启 |
+| 外壳 | Electron 40.10.6 | 主进程 + 渲染进程，`contextIsolation` 开启。**窗口 `transparent: true`**（mpv 内核的画面从页面镂空处透出，见 §2.2 的 `src/player/`） |
 | 渲染层 | Vue 3 `<script setup>` + Vue Router 4 + Pinia 2 + Element Plus 2.8 | 路由用 **Hash 模式**，组件全静态引入（不懒加载） |
 | 构建 | Vite 5.4（`vite.config.mjs`）+ electron-builder 24 | dev 模式下 Vite 自己 spawn Electron |
 | 数据库 | **sql.js 1.10**（SQLite 的 WASM 版） | **全内存 + 同步 API**，靠 `persistSoon` 定时整库写盘 —— 见 §4 |
-| 播放器 | ArtPlayer 5.4（内置播放页）+ 可配置外部播放器 | 由设置项 `use_builtin_player` 切换 |
+| 播放器 | 内置播放页有**两套内核**：mpv（默认，「兼容模式」）+ ArtPlayer 5.4（「标准模式」）；另有可配置外部播放器 | 内核由设置项 `player_kernel` 切换，内置/外置由 `use_builtin_player` 切换。**页面只准依赖 `src/player/` 的契约** |
 | 网络 | **系统 `curl.exe`**，不是 Node 的 http | 见 `electron/main/net-curl.js`；原因写在 HANDOFF §6 |
 | 样式 | 手写 CSS + `src/styles/global.css` 里的设计令牌 | 全站颜色/圆角/阴影都取自令牌，不要硬编码色值 |
 
@@ -106,7 +106,7 @@ npm run verify:player-ui       # 播放页 UI 套件（CDP 探针，屏外窗口
 | `router/index.js` | 路由表（Hash 模式）。见下方路由表 |
 | `store/movies.js` | **核心 store**：影片列表、分页、排序、标签筛选、批量选择、与 `window.api` 的交互 |
 | `store/scrape.js` | 刮削任务进度与「待刮削」队列 |
-| `utils/global.js` | 工具函数集合：封面路径解析、番号提取、刮削结果映射、全局响应式数据目录引用 |
+| `utils/global.js` | 工具函数集合：封面路径解析、番号提取、刮削结果映射、全局响应式数据目录引用；`resolveMedia()`（自定义协议 URL）与 **`resolveMediaPath()`（真实路径，mpv 用）** |
 | `utils/playback.js` | **统一的「打开影片」入口** —— 内置/外置播放器的分派都走这里，不要各处直接 `push('/play/:id')` |
 | `composables/useMovieList.js` | 列表页（片库/喜欢/记录）的公共交互：批量选择切换、翻页回顶 |
 | `composables/useImageRepair.js` | 图片检查与修复的前端逻辑（设置页按钮 + 启动自动检查共用） |
@@ -116,10 +116,14 @@ npm run verify:player-ui       # 播放页 UI 套件（CDP 探针，屏外窗口
 | `views/Favorite.vue` | 喜欢页 |
 | `views/History.vue` | 观看记录页（按播放时间倒序） |
 | `views/Detail.vue` | 影片详情页（信息 + 预览图画廊 + 演员 + 操作） |
-| `views/Player.vue` | **内置播放页**（ArtPlayer + 右侧相关推荐 + 键盘控制 + 播放失败提示）。全项目最大的单文件 |
+| `views/Player.vue` | **内置播放页**（播放内核 + 右侧相关推荐 + 键盘控制 + 播放失败提示 + mpv 模式的挖洞遮罩）。全项目最大的单文件 |
 | `views/Actresses.vue` | 演员页（头像墙 ⇄ 热度排行 双视图） |
 | `views/ActorFilms.vue` | 某位演员的全部影片页 |
 | `components/*` | 见下 |
+
+**播放内核（`src/player/`）**：播放页与内核之间的唯一接口层，2026-10-07 抽象、10-08 接入 mpv。
+`backend.js`（契约 + `PLAYER_EVENTS` + `PLAYER_KINDS`）、`chromium-backend.js`（ArtPlayer，**全项目唯一**允许出现 `Artplayer` 的文件）、`mpv-backend.js`（mpv 独立进程）、`index.js`（`createBackend(kind)` 工厂）。
+**改播放相关代码前必读 `docs/MPV_INTEGRATION_PLAN.md`**（内部文档）。三条硬约束：① 页面不得直接 import 任何内核；② 契约里 `element` 允许为 null（mpv 没有 `<video>`），健康检查一律用 `isPlayable()`；③ 契约的状态属性是同步读的，外部内核必须自己缓存。
 
 **公共组件**：`TopNav`（顶部导航+搜索）、`MovieGrid` / `MovieCard`（网格与卡片）、`TagFilter` / `TagChip`（标签筛选）、
 `SortDropdown`（排序）、`StatusBar`（总数/批量操作/分页）、`SettingsDialog`（设置弹窗，**第二大的单文件**）、

@@ -21,10 +21,10 @@ import { ElMessage } from 'element-plus'
  * @returns {Promise<void>}
  */
 export async function playMovie(m, settings, push) {
-  if (!m?.py) { ElMessage.warning('未设置视频路径'); return }
+  if (!m?.py) { ElMessage.warning('该影片未设置视频文件路径'); return }
   // 缺省按「使用内置播放器」处理：老库没有这个键也能正常工作
   const builtin = (settings?.use_builtin_player ?? 'y') !== 'n'
   if (builtin) { push(`/play/${m.id}`); return }
   const r = await window.api?.playVideo(m.py).catch(() => null)
-  if (!r || !r.ok) ElMessage.error(r?.error || '外部播放器打开失败')
+  if (!r || !r.ok) ElMessage.error(r?.error || '无法通过外部播放器打开该影片')
 }

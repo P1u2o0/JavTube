@@ -104,18 +104,15 @@ export function resolveCover(cover, key) {
 }
 
 /**
- * 把视频文件绝对路径解析为 <video>/播放器可加载的 URL（2026-09-29 内置播放页）。
- * 走 javtube-media:// 协议（主进程支持 Range 206，拖进度条必需），
- * 编码方式与 resolveCover 完全一致（base64url + 占位 host '0'）。
- * @param {string} py - movies.py（视频文件绝对路径）
- * @returns {string} javtube-media://0/<base64url>；空路径返回空串
+ * 把 movies.py 归一化成**本地绝对路径**（去掉 file:// 前缀等）。
+ * 与 resolveMedia 共用同一套还原规则；mpv 播放内核需要真实路径 —— 它读不了
+ * javtube-media:// 这种只在本应用内注册的自定义协议（见 src/player/mpv-backend.js）。
+ * @param {string} py - movies.py
+ * @returns {string} 本地绝对路径（UNC 保留 \\host\share\... 形式）；空路径返回空串
  */
-export function resolveMedia(py) {
+export function resolveMediaPath(py) {
   if (!py) return ''
-  if (/^javtube-media:\/\//i.test(py)) return py
   let abs = String(py)
-  // 兼容 file:// 前缀（理论上 py 存的就是绝对路径，这里只是兜底）。
-  // 2026-10-02：与 resolveCover 同一套还原规则（盘符/Unix 绝对/UNC host 都要正确）
   if (/^file:\/\//i.test(abs)) {
     try {
       const u = new URL(abs)
@@ -125,6 +122,21 @@ export function resolveMedia(py) {
       else abs = p
     } catch { abs = abs.replace(/^file:\/\/\//i, '') }
   }
+  return abs
+}
+
+/**
+ * 把视频文件绝对路径解析为 <video>/播放器可加载的 URL（2026-09-29 内置播放页）。
+ * 走 javtube-media:// 协议（主进程支持 Range 206，拖进度条必需），
+ * 编码方式与 resolveCover 完全一致（base64url + 占位 host '0'）。
+ * ⚠️ 只有 Chromium 内核能用它；mpv 内核要用 resolveMediaPath 给真实路径。
+ * @param {string} py - movies.py（视频文件绝对路径）
+ * @returns {string} javtube-media://0/<base64url>；空路径返回空串
+ */
+export function resolveMedia(py) {
+  if (!py) return ''
+  if (/^javtube-media:\/\//i.test(py)) return py
+  const abs = resolveMediaPath(py)
   const enc = btoa(unescape(encodeURIComponent(abs)))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')

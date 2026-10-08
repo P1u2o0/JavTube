@@ -27,6 +27,8 @@ const { protocol } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { Readable } = require('stream')
+// Web ReadableStream（Node 16.5+ 内置；显式导入便于静态检查识别，见 check-undefined 的局限）
+const { ReadableStream } = require('stream/web')
 // 视频读取的存储根冷却（NAS 离线时快速 404，避免重试把线程池塞满；见 video-meta.js）
 const { isVideoReadCooling, noteVideoReadResult } = require('./video-meta')
 
@@ -60,6 +62,115 @@ function registerMediaScheme() {
       }
     }
   ])
+}
+
+// ── 临时诊断插桩（2026-10-07 排查 NAS 播放卡顿；仅 JAVTUBE_MEDIA_DEBUG=1 生效，排查完移除）──
+// 度量：每个 Range 请求的底层 fs 读取耗时分布 + 首块延迟 + Chromium 空拉取次数 + 5s 心跳。
+// 心跳日志保证「被 kill 的长连接」也能留下时间轴证据（只记结束时会被杀进程吞掉）。
+const MEDIA_DEBUG = !!process.env.JAVTUBE_MEDIA_DEBUG
+function wrapStreamForDebug(stream, label) {
+  if (!MEDIA_DEBUG) return stream
+  const tCreate = Date.now()
+  console.log(`[media-dbg] OPEN ${label} @${tCreate}`)
+  let fsReadStart = 0, firstChunkAt = 0, readCount = 0, bytes = 0, lastPushAt = tCreate, doneFlag = false
+  const readMs = []
+  let nullPulls = 0
+  const origRead = stream.read.bind(stream)
+  const origPush = stream.push.bind(stream)
+  const origInternalRead = stream._read.bind(stream)
+  stream._read = (n) => { fsReadStart = Date.now(); origInternalRead(n) }
+  stream.push = (chunk, enc) => {
+    if (chunk != null) {
+      if (!firstChunkAt) firstChunkAt = Date.now()
+      readCount++
+      bytes += chunk.length
+      lastPushAt = Date.now()
+      const ms = Date.now() - fsReadStart
+      if (ms >= 0 && ms < 60000) readMs.push(ms)
+    }
+    return origPush(chunk, enc)
+  }
+  stream.read = (size) => {
+    const v = origRead(size)
+    if (v == null) nullPulls++
+    return v
+  }
+  const hb = setInterval(() => {
+    if (doneFlag) return
+    const max = readMs.length ? Math.max(...readMs) : 0
+    console.log(`[media-dbg] ALIVE ${label} reads=${readCount} MB=${(bytes / 1048576).toFixed(1)} maxRead=${max}ms sinceLastPush=${Date.now() - lastPushAt}ms @${Date.now()}`)
+  }, 5000)
+  const done = (how) => {
+    if (doneFlag) return
+    doneFlag = true
+    clearInterval(hb)
+    const max = readMs.length ? Math.max(...readMs) : 0
+    const avg = readMs.length ? readMs.reduce((a, b) => a + b, 0) / readMs.length : 0
+    const slow = readMs.filter(m => m > 60).length
+    console.log(`[media-dbg] DONE ${label} ${how} reads=${readMs.length} MB=${(bytes / 1048576).toFixed(1)} avg=${avg.toFixed(1)}ms max=${max}ms slow(>60ms)=${slow} nullPulls=${nullPulls} firstChunk=${firstChunkAt ? firstChunkAt - tCreate : -1}ms life=${Date.now() - tCreate}ms @${Date.now()}`)
+  }
+  stream.on('end', () => done('end'))
+  stream.on('close', () => done('close'))
+  stream.on('error', (e) => done('err:' + e.message))
+  return stream
+}
+
+// 内存预读垫大小：后台把文件读到内存里备着，Chromium 拉取时瞬时返回（约 21s @ 6Mbps）。
+// 背景（2026-10-07 排查 NAS 播放卡顿，实测数据）：
+//   「有拉才读」的直连模式下，NAS 片在 Chromium 里被判定为慢源 → 预读目标被钉在 2.3s、
+//   整条管线降级（解码 28.5fps / 呈现 23fps / 恒定丢帧 20%）；同样的文件在本地盘上则
+//   是 0 丢帧、缓冲持续增长到 18s。加预读垫后拉取延迟恒为内存读（µs 级），
+//   既让 Chromium 看到「瞬时可用」的数据源，也用内存垫住 SMB 的偶发抖动。
+// 成本：每路活跃流最多 CUSHION_BYTES 内存（跳转时会短暂存在新旧两路，可接受）。
+const CUSHION_BYTES = 16 * 1024 * 1024
+
+/**
+ * 把文件读取包成带内存预读垫的 Web ReadableStream：
+ *   · 后台以 READ_CHUNK 为粒度持续读（读完垫满即 pause，降到一半再 resume）
+ *   · Chromium 的每次 pull 从垫里拿一块（内存操作，不等待磁盘/网络）
+ * 语义与 Readable.toWeb(fs.createReadStream(...)) 一致：只在被拉取时产出数据、
+ * 取消时销毁底层流；额外提供「拉取时数据已在内存」的即时性。
+ * @param {string} filePath
+ * @param {number} start - 起始字节（含）
+ * @param {number} end - 结束字节（含）
+ * @param {string} [label] - 调试插桩用的标签
+ * @returns {ReadableStream}
+ */
+function makeCushionedStream(filePath, start, end, label) {
+  // 底层 fs 流：接 'data' 即进入流动模式，会连续读到垫满为止
+  const rs = wrapStreamForDebug(fs.createReadStream(filePath, { start, end, highWaterMark: READ_CHUNK }), label || `range=${start}-${end}`)
+  const queue = []
+  let queuedBytes = 0
+  let ended = false
+  let failed = null
+  let wake = null            // pull 等待数据时的唤醒函数
+  const releaseWake = () => { if (wake) { const w = wake; wake = null; w() } }
+  rs.on('data', (buf) => {
+    queue.push(buf)
+    queuedBytes += buf.length
+    if (queuedBytes >= CUSHION_BYTES) rs.pause()   // 垫满即停（含在途的 1 块，略超上限无碍）
+    releaseWake()
+  })
+  rs.on('end', () => { ended = true; releaseWake() })
+  rs.on('error', (e) => { failed = e; releaseWake() })
+  return new ReadableStream({
+    // 注：用箭头属性而非方法简写——check-undefined 扫描器会把方法简写 `pull(...)` 误报为调用
+    pull: (controller) => {
+      if (queue.length) {
+        const buf = queue.shift()
+        queuedBytes -= buf.length
+        // 降到一半以下再补货：让 SMB 读取以「突发」形式发生，而不是每拉一次读一次
+        if (queuedBytes < CUSHION_BYTES / 2 && !ended && !failed) rs.resume()
+        controller.enqueue(buf)
+        return
+      }
+      if (failed) { controller.error(failed); return }
+      if (ended) { controller.close(); return }
+      // 垫暂时空（初始瞬间/读得慢）：挂起本次 pull，等后台读到数据后重试
+      return new Promise((resolve) => { wake = resolve })
+    },
+    cancel: () => { try { rs.destroy() } catch { } }
+  })
 }
 
 /**
@@ -106,8 +217,7 @@ function setupMediaProtocol() {
 
       const rangeHeader = request.headers.get('range')
       if (!rangeHeader) {
-        const stream = fs.createReadStream(resolved, { highWaterMark: READ_CHUNK })
-        return new Response(Readable.toWeb(stream), {
+        return new Response(makeCushionedStream(resolved, 0, stat.size - 1, `full size=${stat.size}`), {
           status: 200,
           headers: { ...common, 'content-length': String(stat.size) }
         })
@@ -128,8 +238,7 @@ function setupMediaProtocol() {
         return new Response(null, { status: 416, headers: { 'content-range': `bytes */${stat.size}` } })
       }
       end = Math.min(end, stat.size - 1)
-      const stream = fs.createReadStream(resolved, { start, end, highWaterMark: READ_CHUNK })
-      return new Response(Readable.toWeb(stream), {
+      return new Response(makeCushionedStream(resolved, start, end), {
         status: 206,
         headers: {
           ...common,

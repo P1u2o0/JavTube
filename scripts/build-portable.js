@@ -435,6 +435,15 @@ function checkSelfContained(outDir) {
   for (const m of ['data', '使用说明.txt']) {
     if (!fs.existsSync(path.join(outDir, m))) problems.push('缺少 ' + m)
   }
+  // 内置播放内核 mpv（2026-10-08「高兼容模式」）：
+  // electron-builder 的 extraResources 会把 vendor/mpv 复制到 resources/mpv。
+  // 缺了不会「打不开」，但默认播放内核会静默退回 Chromium —— 那 13 部时间戳不规范的影片
+  // 又会卡，且用户完全看不出原因。所以这里按**硬性问题**处理。
+  const mpvDir = path.join(outDir, 'resources', 'mpv')
+  const mpvExe = path.join(mpvDir, 'mpv.exe')
+  if (!fs.existsSync(mpvExe)) problems.push('缺少 resources/mpv/mpv.exe（内置播放内核，缺失会导致兼容模式静默降级）')
+  else if (fs.statSync(mpvExe).size < 50 * 1048576) problems.push(`resources/mpv/mpv.exe 体积异常（${(fs.statSync(mpvExe).size / 1048576).toFixed(1)} MB，正常约 116 MB）`)
+  if (!fs.existsSync(path.join(mpvDir, 'd3dcompiler_43.dll'))) problems.push('缺少 resources/mpv/d3dcompiler_43.dll（d3d11 视频输出需要）')
   const asarPath = path.join(outDir, 'resources', 'app.asar')
   if (fs.existsSync(asarPath)) {
     let appFiles = []

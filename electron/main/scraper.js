@@ -334,6 +334,89 @@ async function fetchActorAvatar(name, { proxy = '', cookie = '' } = {}) {
   }
 }
 
+const IDOL_BASE = 'https://www.theidolbase.com'
+
+/**
+ * 从 theidolbase.com 详情页 HTML 提取身高 / 三围 / 出生日期。
+ * - 身高：`身高155cm`（始终存在）
+ * - 三围：`B95(K)-W58-H90`（部分演员无此行 → 全 null）
+ * - 出生日期：`出生日期2002年6月16日`（部分演员无 → null）
+ *
+ * 先去掉 HTML 标签再匹配：详情页的出生日期被 <a> 标签分隔（如 `2002年<a>6月16日</a>`），
+ * 直接在原始 HTML 上跑正则会失配；去标签后所有字段都能干净匹配。
+ * @param {string} html
+ * @returns {{height:number|null, bust:number|null, waist:number|null, hip:number|null, zb:string|null, birthday:string|null}}
+ */
+function parseIdolDetail(html) {
+  // 去掉 HTML 标签，避免 <span>/<a> 等标签分隔导致正则失配
+  const text = html.replace(/<[^>]+>/g, '')
+  const out = { height: null, bust: null, waist: null, hip: null, zb: null, birthday: null }
+  // 身高：取第一次出现的「身高<数字>cm」
+  const mh = text.match(/身高\s*(\d+)\s*cm/i)
+  if (mh) out.height = Number(mh[1]) || null
+  // 三围：B<胸围>(<罩杯>)-W<腰围>-H<臀围>。
+  // B-W-H 模式本身足够特异，不会误匹配（描述段里的 `B95cm（K）` 因 cm 和全角括号不会命中）
+  const ms = text.match(/B\s*(\d+)\s*\(\s*([A-Z]+)\s*\)\s*-\s*W\s*(\d+)\s*-\s*H\s*(\d+)/i)
+  if (ms) {
+    out.bust = Number(ms[1]) || null
+    out.zb = ms[2].toUpperCase()
+    out.waist = Number(ms[3]) || null
+    out.hip = Number(ms[4]) || null
+  }
+  // 出生日期：`出生日期<年>年<月>月<日>日`（去标签后是连续文本，直接匹配）
+  const mb = text.match(/出生日期\s*(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/)
+  if (mb) {
+    out.birthday = `${mb[1]}-${mb[2].padStart(2, '0')}-${mb[3].padStart(2, '0')}`
+  }
+  return out
+}
+
+/**
+ * 按演员名从 theidolbase.com 检索身高 / 三围 / 出道日期，供演员编辑弹窗"一键填表"使用。
+ *
+ * 流程：
+ *   ① 站内搜索 `/search/<keyword>` → 取首个结果的 slug（站方已做模糊匹配 + 相关度排序）
+ *   ② 详情页 `/actress/<slug>` 提取身高 / 三围 / 出道
+ *
+ * 该站无 Cloudflare 防护、无 Cookie 要求；代理尊重用户设置。
+ * 站方搜索引擎支持日文汉字 / 简繁体 / Romaji，无需前端再做繁简转换或子串匹配。
+ * @param {string} name - 演员名（数据库里的显示名）
+ * @param {Object} [opts] - { proxy }
+ * @returns {Promise<{ok:boolean, data?:{height,bust,waist,hip,zb,birthday,slug,matchedName}, error?:string}>}
+ */
+async function fetchActressInfo(name, { proxy = '' } = {}) {
+  const q = String(name || '').trim()
+  if (!q) return { ok: false, error: '演员名为空' }
+  try {
+    // ① 站内搜索：/search/<URL-encoded-keyword>
+    const searchUrl = `${IDOL_BASE}/search/${encodeURIComponent(q)}`
+    const html = await fetchHtml(searchUrl, { proxy, referer: IDOL_BASE + '/' })
+    // 搜索结果：<a href="/actress/<slug>"><h4>...<small>[<percentage>%]</small></h4></a>
+    // 取首个结果（相关度最高）；匹配率 < 50% 时提示匹配度低
+    const re = /href="\/actress\/([a-z0-9][a-z0-9-]*)"[^>]*>[\s\S]*?\[(\d+)%\]/i
+    const sm = re.exec(html)
+    if (!sm) return { ok: false, error: `TheIdolBase 搜索「${q}」无结果` }
+    const slug = sm[1]
+    const pct = Number(sm[2]) || 0
+    // 提取搜索结果里的名字文本（去掉 <em> 高亮标签）作为 matchedName
+    // <h4> 在 <a href="/actress/..."> 内，需锚定到 actress 链接
+    const nameMatch = html.match(/href="\/actress\/[a-z0-9-]+"[^>]*><h4>([\s\S]*?)<\/h4>/i)
+    let matchedName = q
+    if (nameMatch) {
+      matchedName = nameMatch[1].replace(/<[^>]+>/g, '').replace(/^\d+\.\s*/, '').replace(/\[\d+%\]/, '').trim()
+    }
+    // ② 详情页提取
+    const detailHtml = await fetchHtml(`${IDOL_BASE}/actress/${slug}`, { proxy, referer: IDOL_BASE + '/search' })
+    const info = parseIdolDetail(detailHtml)
+    return {
+      ok: true,
+      data: { ...info, slug, matchedName: `${matchedName}（匹配度 ${pct}%）` }
+    }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+}
+
 /**
  * 按内容魔数判断图片类型：'jpeg' | 'png' | 'gif' | 'webp' | ''（不是图片）。
  * 用于识别「文件在但不是可用照片」的坏头像：全零的截断下载（实测见过 7086 字节全 0）、
@@ -1064,4 +1147,4 @@ async function scrapeMovie(ph, {
   return { ok: false, error: lastError || '未找到该番号的信息' }
 }
 
-module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, downloadImage, imageKind, isImageFile, isGifRenamed, inspectImage, tmpPathFor }
+module.exports = { scrapeMovie, scrapeJavBus, scrapeJavDb, WEB_SOURCES, twToCn, applyTagMapping, fetchActorAvatar, fetchActressInfo, downloadImage, imageKind, isImageFile, isGifRenamed, inspectImage, tmpPathFor }
