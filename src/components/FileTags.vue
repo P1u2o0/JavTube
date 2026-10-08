@@ -54,5 +54,5 @@ const list = computed(() => props.badges || fileBadgesOf(props.py))
 .ft-cnsub { background: var(--filetag-purple-soft); color: var(--filetag-purple); }
 .ft-uhd { background: var(--filetag-gold-soft); color: var(--filetag-gold); }
 /* 卡片里的缩小版（窄卡片，跟随 11px 小字层级） */
-.file-tag-sm { padding: 1px 8px; font-size: 11px; border-radius: 8px; }
+.file-tag-sm { padding: 1px 8px; font-size: 11px; border-radius: var(--r-sm); }
 </style>

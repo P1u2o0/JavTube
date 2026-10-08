@@ -56,6 +56,9 @@ export class MpvBackend {
     /** @type {((reason:string)=>void)|null} mpv 起不来时的回调（页面据此退回 Chromium） */
     this._onFatal = null
     this._fatalSent = false
+    /** mpv 的视频输出是否已就绪（真的开始往窗口画了）。
+     *  页面据此决定何时把视频区域「镂空」—— 早于它镂空就会透出桌面（见 Player.vue）。 */
+    this._videoReady = false
   }
 
   /** 内核标识 */
@@ -219,6 +222,9 @@ export class MpvBackend {
    */
   isPlayable() { return this._meta && !this._failed }
 
+  /** mpv 是否已开始出画（页面用它决定何时把视频区域镂空） */
+  get isVideoReady() { return this._videoReady }
+
   // ── mpv 专属：镂空矩形同步（不属于契约，页面在支持时调用）────────────────
 
   /**
@@ -286,10 +292,21 @@ export class MpvBackend {
     switch (type) {
       case 'started':
         break
+      case 'voready':
+        // mpv 的视频输出就绪 = 真的开始画了。**必须在这里把镂空矩形重发一次**：
+        // 页面首次算矩形时 mpv 进程往往还没起来（或还没接管窗口），那次 setHole 会失败/被丢弃；
+        // 而 syncHole 有「矩形没变就不重发」的去重，于是 mpv 会一直用着最初那个（可能偏了 6px 的）
+        // 矩形 —— 实测就是「画面跟窗口差一条黑边」的根因。
+        this._videoReady = true
+        this.setHole()
+        this._emit('videoready', {})
+        break
       case 'loadedmetadata':
         this._meta = true
         this._failed = false
         if (typeof data.duration === 'number' && data.duration > 0) this._dur = data.duration
+        // 换片后 mpv 会重新配置视频输出，镂空矩形再保险地重发一次
+        this.setHole()
         this._readBackState()
         this._emit('loadedmetadata', { duration: this._dur })
         break

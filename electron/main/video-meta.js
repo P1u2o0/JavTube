@@ -92,7 +92,10 @@ async function readVideoSize(filePath) {
 /**
  * MP4 家族：顶层 box 顺序扫描找 moov，再在 moov 的 trak 里找 tkhd 取宽高。
  * 只读 moov 前 512KB —— tkhd 是每个 trak 的首个子 box（在前部），没必要把整个 moov
- * （可能几 MB）拖过网络；极端情况下找不到就按未知处理。
+ * （可能几 MB）拖过网络。
+ * ⚠️ 但**窗口被截断不等于读不到**：trak 常因采样表（stbl/stsz）大到几 MB，而 tkhd 一定在最前面。
+ *    下钻时按「box 声明的长度」走、只把读取范围夹到窗口内 —— 这一点 2026-10-08 才修对，
+ *    在那之前长片一律返回 null（见 parseMp4Size 的注释）。
  */
 async function readMp4Size(fh, size) {
   let offset = 0
@@ -125,9 +128,14 @@ function parseMp4Size(body) {
   while (off + 8 <= len) {
     const subSize = body.readUInt32BE(off)
     const subType = body.toString('ascii', off + 4, off + 8)
-    if (subSize < 8 || off + subSize > len) break
+    if (subSize < 8) break
     if (subType === 'trak') {
-      const r = readTkhd(body, off + 8, off + subSize)
+      // ⚠️ 不要因为「trak 声明的长度超出读取窗口」就 break（2026-10-08 修）：
+      //    长片的 trak 常有几 MB（stbl/stsz 的采样表很大），而 **tkhd 是 trak 的首个子 box**，
+      //    一定落在窗口内。原来这里一 break 就整个放弃 → 长片一律返回 null，
+      //    播放页的「4K 真实分辨率补探」形同虚设（白白读了 NAS 上的文件头）。
+      //    现在按「声明的长度」继续下钻，只把**读取范围**夹到窗口内。
+      const r = readTkhd(body, off + 8, Math.min(off + subSize, len))
       if (r && r.width > 0 && (!best || r.width * r.height > best.width * best.height)) best = r
     }
     off += subSize

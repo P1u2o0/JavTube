@@ -386,7 +386,7 @@ onMounted(load)
   display: flex; align-items: center; justify-content: space-between; gap: 6px;
   padding: 14px 8px 5px;
   /* 用暖黑（22,21,19）替代纯黑，符合本项目「不用纯黑」的自定规范 */
-  background: linear-gradient(transparent, rgba(22, 21, 19, .62));
+  background: linear-gradient(transparent, var(--overlay-badge));
   color: #fff; font-size: var(--fs-xs);
 }
 .r-mv-ph2 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

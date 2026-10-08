@@ -628,9 +628,9 @@ onBeforeUnmount(() => {
 .cat-shade {
   position: absolute; inset: 0;
   background: linear-gradient(to right,
-    rgba(22, 21, 19, 0.78) 0%,
-    rgba(22, 21, 19, 0.52) 50%,
-    rgba(22, 21, 19, 0.30) 100%);
+    var(--scrim-strong) 0%,
+    var(--scrim-mid) 50%,
+    var(--scrim-weak) 100%);
   pointer-events: none;
 }
 /* 类别名：靠左显示、垂直居中（字号 20px，不含数量） */
@@ -639,7 +639,7 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: flex-start;
   padding-left: 14px;
   color: #fff;
-  text-shadow: 0 1px 4px rgba(22, 21, 19, 0.55);   /* 增强对比（暖黑，遵循"不用纯黑"规范） */
+  text-shadow: 0 1px 4px var(--scrim-text);   /* 增强对比（暖黑，遵循"不用纯黑"规范） */
   pointer-events: none;
 }
 .cat-label .cat-main {

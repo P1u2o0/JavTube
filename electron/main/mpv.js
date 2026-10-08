@@ -48,7 +48,9 @@ const ALLOWED_GET = new Set([
   'cache-buffering-state', 'paused-for-cache', 'vo-configured',
   // 镂空矩形（诊断用：探针要能核对「页面算出的矩形」与「mpv 实际收到的 margin」是否一致）
   'video-margin-ratio-left', 'video-margin-ratio-top',
-  'video-margin-ratio-right', 'video-margin-ratio-bottom'
+  'video-margin-ratio-right', 'video-margin-ratio-bottom',
+  // 画面几何诊断（排查「画面没对齐窗口」用）：osd-dimensions 给出画面在窗口里的实际矩形
+  'osd-dimensions', 'video-params', 'video-out-params', 'video-zoom', 'video-aspect-override'
 ])
 /** 允许直接调用的 mpv 命令 */
 const ALLOWED_CMD = new Set([
@@ -198,6 +200,10 @@ function onMpvEvent(m) {
       case 'eof-reached':
         if (m.data === true) emit('ended', {})
         break
+      case 'vo-configured':
+        // 视频输出就绪（mpv 开始往窗口画了）。渲染层收到它才把视频区域镂空 —— 见下面 startMpv 的注释。
+        if (m.data === true) emit('voready', {})
+        break
       case 'volume':
       case 'mute':
         emit('volumechange', {})
@@ -263,12 +269,47 @@ function holeToMargins(hole) {
   ]
 }
 
-async function applyHole(hole) {
+/** 上一次**确认下发成功**的四个 margin（只下发变化项用；滚动时每帧都要同步，必须省） */
+const lastMargins = { left: null, top: null, right: null, bottom: null }
+let holeRetryTimer = null
+
+/**
+ * 把镂空矩形下发给 mpv。
+ * ⚠️ 只下发**值真的变了**的那些 margin：窗口滚动时渲染层会高频调用本方法，
+ *    而每次 set_property 都会让 mpv 重新配置一次视频输出；四个全发会白白抖四倍。
+ *    （竖向滚动只改 top/bottom，横向不动 → 每次实际只发 2 条。）
+ *
+ * ⚠️⚠️ **只有发送成功才记进缓存**，失败必须留空等下次重试。
+ *    踩过的坑：一开始无论成败都记缓存 → 启动阶段 mpv 还没接管窗口、set_property 失败，
+ *    但缓存已被写上「这个值已下发」→ 之后所有 syncHole 都跳过它 → 画面比窗口低 6px
+ *    且**再也纠不回来**（渲染层有去重，不会再发同样的矩形）。现在失败会安排重试。
+ *
+ * @param {{x:number,y:number,w:number,h:number,winW:number,winH:number}} hole
+ * @param {number} [attempt] 第几次尝试（内部重试用）
+ */
+async function applyHole(hole, attempt = 0) {
   lastHole = hole || null
   if (!client) return { ok: false, error: 'not-running' }
+  const failed = []
   for (const [k, v] of holeToMargins(hole)) {
-    await client.request(['set_property', k, v])
+    const name = k.replace('video-margin-ratio-', '')
+    if (lastMargins[name] !== null && Math.abs(lastMargins[name] - v) < 1e-6) continue
+    const r = await client.request(['set_property', k, v])
+    if (r.error === 'success') lastMargins[name] = v
+    else failed.push(`${name}:${r.error}`)
   }
+  if (failed.length && attempt < 6) {
+    console.warn(`[mpv] 镂空矩形下发失败（第 ${attempt + 1} 次）：${failed.join(', ')}，稍后重试`)
+    // 失败项留空 → 下次全量重算时会重新下发。这里再安排几次重试，
+    // 因为渲染层对「矩形没变」有去重，它不会再主动发同样的矩形。
+    if (holeRetryTimer) clearTimeout(holeRetryTimer)
+    holeRetryTimer = setTimeout(() => {
+      holeRetryTimer = null
+      if (lastHole && client) applyHole(lastHole, attempt + 1)
+    }, 400)
+    return { ok: false, error: failed.join(',') }
+  }
+  if (failed.length) console.warn(`[mpv] 镂空矩形下发重试次数用尽，仍有失败：${failed.join(', ')}`)
   return { ok: true }
 }
 
@@ -296,6 +337,10 @@ async function stopMpv() {
     }, 1000)
   }
   lastTimePos = -1
+  if (holeRetryTimer) { clearTimeout(holeRetryTimer); holeRetryTimer = null }
+  // ⚠️ 必须清掉 margin 缓存：新进程是白纸，靠「只发变化项」的差分会把四个 margin 全跳过，
+  //    结果新起的 mpv 拿不到镂空矩形（画面铺满整窗）。
+  lastMargins.left = lastMargins.top = lastMargins.right = lastMargins.bottom = null
   return { ok: true }
 }
 
@@ -332,6 +377,8 @@ async function startMpv(o) {
       '--keep-open=no',
       '--idle=yes',
       '--keepaspect=yes',
+      // 不要因为片子宽高比去改窗口尺寸 —— 窗口归 Electron 管，mpv 只是嵌在里面画
+      '--keepaspect-window=no',
       '--video-align-x=0',
       '--video-align-y=0',
       '--panscan=0',
@@ -389,7 +436,9 @@ async function startMpv(o) {
     }
 
     // 订阅需要的属性变化（property-change 事件里只带 id，所以要自己记映射）
-    for (const name of ['duration', 'pause', 'core-idle', 'eof-reached', 'volume', 'mute']) {
+    // vo-configured：视频输出就绪 = mpv 真的开始画画面了。渲染层据此才把视频区域「镂空」——
+    // 否则从页面进来到 mpv 出画之间会有一段「洞是透明的、mpv 还没画」的空窗，透出桌面。
+    for (const name of ['duration', 'pause', 'core-idle', 'eof-reached', 'volume', 'mute', 'vo-configured']) {
       const id = nextObserveId++
       observeMap.set(id, name)
       await client.request(['observe_property', id, name])

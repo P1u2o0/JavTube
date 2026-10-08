@@ -7,12 +7,15 @@
                  长按 →    = holdSpeed 倍速播放（松开恢复）
                  长按 ←    = 加速倒带（HTML5 不支持负倍速，用连续 seek 模拟，越按越快）
                  空格/M/F/↑/↓ = 播放暂停 / 静音 / 全屏 / 音量（键位可在设置→快捷键里改）
-               进度记忆：每 5 秒 + 暂停/切页时落库（movies.play_pos），再次进入自动续播。
-  @dependencies artplayer, vue-router, window.api (getPlayProgress/savePlayProgress/getRecommendations/playVideo)
+               进度记忆：每 5 秒 + 暂停/切页时把位置写进 movies.play_pos（供「观看记录」用）。
+               **续播规则（2026-10-08 按用户要求改）**：只有「在播放页里点进详情页 / 演员页再返回」
+               才续播；回片库/首页、从别处重新进入、关掉软件再打开都从头开始 ——
+               所以续播点只放在内存里（src/utils/playResume.js），不再读库里的 play_pos。
+  @dependencies artplayer, vue-router, window.api (savePlayProgress/getRecommendations/playVideo)
 -->
 
 <template>
-  <div class="player-page" :class="{ 'mpv-on': isMpv }" tabindex="-1">
+  <div class="player-page" :class="{ 'mpv-on': isMpv, 'mpv-wait': isMpv && !mpvReady }" tabindex="-1">
     <!-- mpv 高兼容模式的「挖洞遮罩」（2026-10-08）：
          一个自身透明的元素 + 超大 box-shadow spread，把「除视频区域以外」的整屏涂成页面底色。
          视频那一块不绘制 → mpv 的画面从洞里透出来。teleport 到 body 是为了让它落在所有页面
@@ -38,6 +41,13 @@
            （两者都是 absolute），所以「播放器顶边 = 右列第一张海报顶边」这条对齐关系不受影响。 -->
       <div class="player-wrap" ref="wrapRef">
         <div class="player-box" ref="boxRef"></div>
+
+        <!-- mpv 出画之前的占位（2026-10-08）：mpv 起进程到真的画出第一帧要 0.4~1s，
+             这段时间视频区域**还不能镂空**（否则直接透出桌面），所以先盖一层黑底 + 转圈。
+             mpv 报 vo-configured 之后才开洞（见 syncHole 的 mpvReady 判断）。 -->
+        <div v-if="isMpv && !mpvReady && !mediaErr" class="mpv-loading">
+          <span class="mpv-spin"></span>
+        </div>
 
         <!-- mpv 模式的控制条（2026-10-08）：mpv 不参与页面渲染，ArtPlayer 的控制条用不上了，
              这一条由页面自己画、经 @/player 契约驱动 mpv。只铺在视频区域内（HTML 绘制在 mpv 之上）。 -->
@@ -159,6 +169,7 @@ import BackButton from '@/components/BackButton.vue'
 import PlayerControls from '@/components/PlayerControls.vue'
 import { createBackend, isBackendAvailable, PLAYER_KINDS } from '@/player'
 import { resolveMedia, resolveMediaPath, resolveCover, splitTags, dataDirRef, favLock, favUnlock, fileBadgesOf, is4kSize } from '@/utils/global'
+import { setResumePoint, getResumePoint, installResumeGuard } from '@/utils/playResume'
 import { useMoviesStore } from '@/store/movies'
 
 const route = useRoute()
@@ -184,6 +195,10 @@ const mediaErrRaw = ref('')    // 原始错误信息（Chromium 原文，回报�
 let player = createBackend()
 // mpv 模式（高兼容模式，2026-10-08）：窗口镂空 + 自制控件条，见本文件 mpv 相关段落
 const isMpv = ref(false)
+// mpv 的视频输出是否已就绪。**开洞（html.mpv-hole）必须等它** ——
+// 早开洞的话，从进页面到 mpv 画出第一帧之间有一段「洞是透明的、mpv 还没画」的空窗，
+// 会直接透出桌面（用户报的「播放窗口变透明闪一下」）。
+const mpvReady = ref(false)
 // 控件条读的播放状态（契约里的状态是同步读的，mpv 后端已做缓存，这里只做响应式镜像）
 const mpvUi = reactive({ t: 0, dur: 0, paused: false, vol: 0.8, muted: false, rate: 1 })
 let playingId = null           // player 当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
@@ -492,9 +507,10 @@ let lastHoleKey = ''
  * ⚠️ 必须是**同步**的，不能用 requestAnimationFrame 包起来：窗口被遮挡/最小化时
  *    Chromium 会把 rAF 节流甚至暂停，那样遮罩会永远停在 0×0、整窗透明也永远挂不上
  *    （实测踩到：探针里窗口被挡住时 mpv-hole=false、遮罩矩形 0×0，画面自然出不来）。
- * 反复调用是安全的：矩形没变就直接返回（resize 事件很密集，靠这个去重）。
+ * 反复调用是安全的：矩形没变就直接返回（resize / 滚动事件很密集，靠这个去重）。
+ * @param {boolean} [force] 忽略去重强制下发（mpv 出画、换片后需要重发一次）
  */
-function syncHole() {
+function syncHole(force = false) {
   if (!isMpv.value) return
   const box = boxRef.value
   const el = shieldRef.value
@@ -505,21 +521,39 @@ function syncHole() {
   const hole = { x: r.left, y: r.top, w, h, winW: window.innerWidth, winH: window.innerHeight }
   const key = [hole.x, hole.y, hole.w, hole.h, hole.winW, hole.winH]
     .map(n => Math.round(n * 10) / 10).join(',')
-  if (key === lastHoleKey) return
+  if (!force && key === lastHoleKey) return
   lastHoleKey = key
   el.style.setProperty('--hx', hole.x + 'px')
   el.style.setProperty('--hy', hole.y + 'px')
   el.style.setProperty('--hw', hole.w + 'px')
   el.style.setProperty('--hh', hole.h + 'px')
   player.setHole?.(hole)
-  // ⚠️ 遮罩尺寸就绪之后才把整窗底色关掉（html.mpv-hole）。提前关会有一瞬整窗透明、透出桌面。
-  document.documentElement.classList.add('mpv-hole')
+  // ⚠️ 遮罩尺寸就绪 **且 mpv 已经出画** 之后才把整窗底色关掉（html.mpv-hole）。
+  //    早关会有一瞬整窗透明、透出桌面（见 mpvReady 的注释）。
+  if (mpvReady.value) document.documentElement.classList.add('mpv-hole')
 }
 
 /** 退出播放页时把窗口底色恢复成不透明（否则其它页面会透出桌面） */
 function clearHole() {
   lastHoleKey = ''
   document.documentElement.classList.remove('mpv-hole')
+}
+
+/**
+ * 页面滚动时重新对齐。
+ * 为什么必须做：挖洞遮罩是 `position: fixed`（不随内容滚），而播放器盒子会随内容滚 ——
+ * 不重算的话，用户一滚动，画面就**停在原地、脱离播放器盒子**（实测：滚 12px 画面就与盒子差 12px）。
+ * 滚动事件很密集，所以做「节流 + 收尾补一次」：滚动中约 16 次/秒跟随，停下后再精确对齐一次。
+ */
+const SCROLL_THROTTLE_MS = 60
+let scrollSyncTs = 0
+let scrollSettleTimer = null
+function onAnyScroll() {
+  if (!isMpv.value) return
+  const now = Date.now()
+  if (now - scrollSyncTs >= SCROLL_THROTTLE_MS) { scrollSyncTs = now; syncHole() }
+  if (scrollSettleTimer) clearTimeout(scrollSettleTimer)
+  scrollSettleTimer = setTimeout(() => { scrollSettleTimer = null; syncHole() }, 90)
 }
 
 /**
@@ -565,6 +599,13 @@ function bindMpvUi() {
   player.on('ended', pull)
   player.on('playing', () => { mpvUi.paused = false; pull() })
   player.on('pause', () => { mpvUi.paused = true; pull() })
+  // mpv 出画 → 这时才可以开洞（并把矩形重发一次，修「画面差一条黑边」）
+  player.on('videoready', () => {
+    mpvReady.value = true
+    nextTick(() => syncHole(true))
+  })
+  // 订阅晚于出画时（理论上有）直接补一次
+  if (player.isVideoReady) { mpvReady.value = true; nextTick(() => syncHole(true)) }
   pull()
 }
 
@@ -633,6 +674,8 @@ function saveProgress(force = false) {
   lastSaveTs = now
   pendingPos = player.currentTime || 0
   pendingDur = player.duration || 0
+  // 落库只服务「观看记录」；续播走内存里的续播点（规则见 src/utils/playResume.js）
+  setResumePoint(playingId, pendingPos)
   window.api?.savePlayProgress({ id: playingId, pos: pendingPos, dur: pendingDur }).catch(() => {})
 }
 
@@ -860,7 +903,11 @@ function initOrSwitchPlayer() {
   playingId = m.value.id        // 首次构造：内核从此刻起播的就是当前影片
   switchSuppress = false
 
-  player.on('timeupdate', () => saveProgress(false))
+  // 续播点跟着播放位置实时更新（只写内存，不做 IPC）；落库仍走 5 秒节流
+  player.on('timeupdate', () => {
+    if (playingId) setResumePoint(playingId, player.currentTime || 0)
+    saveProgress(false)
+  })
   player.on('pause', () => saveProgress(true))
   player.on('ended', () => {
     if (!playingId) return
@@ -889,17 +936,18 @@ function initOrSwitchPlayer() {
   }
 
 
-  // 续播：超过 15 秒且不在结尾附近才跳
-  async function resumeIfNeeded() {
+  // 续播（2026-10-08 按用户要求重做）：**只在「站内往返」时续播** ——
+  // 即「播放页 → 详情页/演员页 → 播放页」这条往返路径。判定由 playResume.js 的导航守卫维持：
+  // 中途只要去过列表页/首页，续播点就被清掉了，这里自然拿不到、从头开始。
+  // ⚠️ 不能读库里的 play_pos：那是跨启动的，等于「永远记得」，与要求相反。
+  function resumeIfNeeded() {
     if (!player.isMounted || !m.value || resumedFor === m.value.id) return
     resumedFor = m.value.id
-    try {
-      const r = await window.api.getPlayProgress(m.value.id)
-      if (r?.ok && r.pos > 15 && (!player.duration || r.pos < player.duration - 20)) {
-        player.currentTime = r.pos
-        ElMessage({ message: `已从 ${fmtPos(r.pos)} 继续播放`, duration: 2500 })
-      }
-    } catch {}
+    const pos = getResumePoint(m.value.id)
+    if (!(pos > 15)) return                                     // 没有往返记录 / 刚开头 → 从头
+    if (player.duration && pos >= player.duration - 20) return  // 已在结尾附近，不跳
+    player.currentTime = pos
+    ElMessage({ message: `已从 ${fmtPos(pos)} 继续播放`, duration: 2500 })
   }
 }
 
@@ -992,11 +1040,14 @@ watch(isMpv, async (on) => {
 onMounted(async () => {
   // 标签分类配置（体型/行为/玩法）来自 store；直接进播放页时可能尚未初始化
   store.initIfNeeded().catch(() => {})
+  installResumeGuard(router)   // 续播点的存活范围（只在播放页 ⇄ 详情/演员页之间）
   await loadPlayerSettings()
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
   window.addEventListener('resize', fitRecRows)
   window.addEventListener('resize', syncHole)
+  // 页面滚动 → 画面要跟着播放器盒子走（capture：滚动发生在 .main-content 上，不冒泡到 window）
+  document.addEventListener('scroll', onAnyScroll, true)
   document.addEventListener('fullscreenchange', onFullscreenChange)
   fitRecRows()
   startQualityWatch()          // 播放质量自检（mpv 模式下没有 <video> 元素，内部会自动跳过）
@@ -1010,7 +1061,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', fitVideoObject)
   window.removeEventListener('resize', fitRecRows)
   window.removeEventListener('resize', syncHole)
+  document.removeEventListener('scroll', onAnyScroll, true)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  if (scrollSettleTimer) { clearTimeout(scrollSettleTimer); scrollSettleTimer = null }
   for (const t of settleTimers) clearTimeout(t)
   settleTimers = []
   stopHoleWatch()
@@ -1061,6 +1114,35 @@ onBeforeUnmount(() => {
    （窗口是 transparent: true，见 electron/main/index.js；祖先链的底色由 global.css
     的 html.mpv-hole 规则一并关掉。） */
 .player-page.mpv-on { background: transparent; }
+
+/* mpv 出画之前：视频区域**还不能镂空**（否则透出桌面），先盖一层黑底。
+   这时整窗底色还是由 html/body 提供的，所以页面看上去与平时一致，只是播放器是黑的。 */
+.player-page.mpv-wait .player-box { background: #000; }
+
+/* 出画前的转圈：放在 .player-wrap 里而不是 .player-box 内 ——
+   Chromium 模式下 .player-box 是 ArtPlayer 的容器，往里塞子节点会干扰它。 */
+.mpv-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 30;
+}
+.mpv-spin {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: mpv-spin 0.9s linear infinite;
+}
+@keyframes mpv-spin { to { transform: rotate(360deg); } }
+/* 减少动态效果：不做旋转，改成静态的半透明圆环（仍然表示「在加载」） */
+@media (prefers-reduced-motion: reduce) {
+  .mpv-spin { animation: none; border-top-color: rgba(255, 255, 255, 0.28); }
+}
 
 /* mpv 模式的挖洞遮罩（teleport 到 body，所以这里的 scoped 样式仍会生效 —— Vue 会把
    scope 属性打在 teleport 出去的元素上）。
@@ -1179,7 +1261,7 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   z-index: 60;
   padding: 6px 14px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-size: 14px;

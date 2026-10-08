@@ -795,7 +795,7 @@ async function clearDb() {
 .about-actions { display: flex; align-items: center; gap: 10px; padding: 8px 0 2px; }
 .gh-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface-2); color: var(--text);
   font-size: var(--fs-md); cursor: pointer;
 }
@@ -811,7 +811,7 @@ async function clearDb() {
   min-width: 110px;
   padding: 5px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   /* 2026-10-02：原为 var(--bg-1, #f5f5f5)，但 --bg-1 全项目未定义 → 实际落到冷灰 #f5f5f5，
      与暖纸白体系不符。改用「输入底」令牌 --surface-2 */
   background: var(--surface-2);

@@ -83,6 +83,10 @@ function prewarmPlayer() {
   if (playerPrewarmed) return
   // 关闭了内置播放器（设置→播放设置→使用内置播放器=关）就没有预热的意义
   if ((store.settings?.use_builtin_player ?? 'y') === 'n') return
+  // ⚠️ 播放内核是 mpv（现在的默认「兼容模式」）时也**不要预热**：
+  //    那种模式下播放页根本不构造 ArtPlayer（mpv 是独立进程），
+  //    预热等于白做一次离屏构造 + 销毁（约 130ms 的主线程开销）。
+  if ((store.settings?.player_kernel ?? 'mpv') !== 'chromium') return
   playerPrewarmed = true
   let box = null
   let art = null
