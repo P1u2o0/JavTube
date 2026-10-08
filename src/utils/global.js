@@ -35,6 +35,30 @@ export function bumpCover(key) {
 }
 
 /**
+ * 女优头像的版本键（与影片封面**共用** coverVersions 这张表，前缀区分，互不冲突）。
+ * 头像和封面是同一个坑：本地头像一律按「名字」固定文件名覆盖写入
+ * （`data/images/actress/<名字>.<ext>`），替换头像后 URL 一个字符都没变 →
+ * `<img>` 的 src 不变 → 浏览器认为无需重新请求 → 界面上还是旧头像
+ * （2026-10-08 用户反馈「女优信息页里替换头像图片时不能及时更新」）。
+ * @param {string} name - 女优名字
+ * @returns {string} 传给 resolveCover 第二参数的键（名字为空时返回 ''，即不带版本号）
+ */
+export function actressAvatarKey(name) {
+  return name ? `actress:${name}` : ''
+}
+
+/**
+ * 标记某位女优的头像「刚换过」：之后所有 `resolveCover(头像路径, actressAvatarKey(名字))`
+ * 的地方（女优影片页头部 / 演员页头像墙 / 编辑弹窗预览）都会自动带上新的 `?v=`，
+ * src 变化即触发重新请求（同 bumpCover 的机制）。
+ * @param {string} name - 女优名字
+ */
+export function bumpActressAvatar(name) {
+  if (!name) return
+  coverVersions[actressAvatarKey(name)] = Date.now()
+}
+
+/**
  * 获取封面图解析为 <img> 可加载的 URL
  * 功能：根据封面字段值，将其转换为浏览器可显示的 URL
  * 支持的输入格式：HTTP/HTTPS URL、javtube-cover:// 自定义协议、file:// URL、

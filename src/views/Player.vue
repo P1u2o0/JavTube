@@ -54,6 +54,7 @@
         <PlayerControls
           v-if="isMpv && !mediaErr"
           :state="mpvUi"
+          :fullscreen="mpvFs"
           @toggle="onCtlToggle"
           @seek="onCtlSeek"
           @volume="onCtlVolume"
@@ -61,6 +62,12 @@
           @fullscreen="onCtlFullscreen"
           @external="playExternal"
         />
+
+        <!-- 退出全屏时的过渡遮罩（2026-10-09）：
+             窗口与页面的切换是瞬时的，但 **mpv 把画面重配到新矩形要 100~300ms**
+             （重建 swapchain 时还会闪一两帧黑），那几帧里画面会「跳一下 + 露黑边」。
+             这层用页面底色盖住视频区，等 mpv 配好再淡出 —— 用户看到的是「播放区淡入画面」。 -->
+        <div class="mpv-fs-cover" :class="{ on: fsCover }" aria-hidden="true"></div>
 
         <!-- 播放质量提示（非阻塞，2026-10-07）：
              少数影片的容器时间戳不标准（码流用了 B 帧但 MP4 缺 ctts 盒），Chromium 的渲染器
@@ -199,6 +206,12 @@ const isMpv = ref(false)
 // 早开洞的话，从进页面到 mpv 画出第一帧之间有一段「洞是透明的、mpv 还没画」的空窗，
 // 会直接透出桌面（用户报的「播放窗口变透明闪一下」）。
 const mpvReady = ref(false)
+// mpv 模式的「窗口级全屏」状态（2026-10-08）。全屏时整页只剩播放器（html.mpv-fs），
+// 由后端的 fullscreenchange 事件驱动 —— 见 mpv-backend.js 的 fullscreen 与 global.css 的说明。
+const mpvFs = ref(false)
+// 退出全屏时的过渡遮罩（见模板里 .mpv-fs-cover 的注释）
+const fsCover = ref(false)
+let fsCoverTimer = null
 // 控件条读的播放状态（契约里的状态是同步读的，mpv 后端已做缓存，这里只做响应式镜像）
 const mpvUi = reactive({ t: 0, dur: 0, paused: false, vol: 0.8, muted: false, rate: 1 })
 let playingId = null           // player 当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
@@ -435,14 +448,38 @@ function seekBy(sec) {
   player.currentTime = Math.min(Math.max(0, player.currentTime + sec), d ? d - 0.1 : Infinity)
 }
 
+/** HTML `<input>` 里真正会产生文字输入的类型；其余（range/checkbox/…）都不该吞掉快捷键 */
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'email', 'password', 'number', 'tel', 'url',
+  'date', 'datetime-local', 'month', 'week', 'time'])
+
+/**
+ * 「文字输入类」控件：只有这些才让出键盘。
+ * ⚠️ 不能按 `tagName === 'INPUT'` 一概让键（2026-10-08 修）：
+ *    mpv 模式的音量条是 `<input type="range">`，鼠标拖过它之后它会**一直持有焦点**，
+ *    而焦点在它身上时每个 keydown 的 target 都是这个 input —— 于是空格/←→/↑↓/M/F
+ *    全部被这条守卫吞掉，表现为「调完音量后快捷键失效，点一下页面才恢复」。
+ *    range / checkbox / radio / button 这类控件不产生文字输入，快捷键必须照常生效。
+ * @param {EventTarget|null} el
+ * @returns {boolean} 是否应当让出按键
+ */
+function isTextEntry(el) {
+  if (!el) return false
+  const tag = el.tagName || ''
+  if (tag === 'TEXTAREA' || el.isContentEditable) return true
+  if (tag !== 'INPUT') return false
+  return TEXT_INPUT_TYPES.has(((el.type || 'text') + '').toLowerCase())
+}
+
 function onKeyDown(e) {
   if (!player.isMounted || mediaErr.value) return
-  // 输入控件聚焦时不抢键（播放页本身没有输入框，防御性处理）
-  const tag = (e.target && e.target.tagName) || ''
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+  // 只有文字输入框聚焦时才不抢键（见 isTextEntry）
+  if (isTextEntry(e.target)) return
   if (e.repeat) { e.preventDefault(); return }  // OS 自动重复忽略，长按节奏由我们自己控制
   const k = (e.key || '').toLowerCase()
   const { keys } = hk.value
+  // 窗口级全屏（mpv 模式，见 onPlayerFullscreenChange）没有原生 Esc 退出，
+  // 这里补一个；Chromium 模式的全屏由 ArtPlayer 自己的 Esc 处理，不重复接管。
+  if (isMpv.value && k === 'escape' && player.fullscreen) { e.preventDefault(); player.fullscreen = false; return }
   if (k === keys.forward || k === keys.back) {
     e.preventDefault()
     if (HOLD.key) return                       // 已按住一个方向键时忽略另一个
@@ -453,6 +490,18 @@ function onKeyDown(e) {
   else if (k === keys.fullscreen) { e.preventDefault(); player.fullscreenWeb = false; player.fullscreen = !player.fullscreen }
   else if (k === keys.volUp) { e.preventDefault(); player.volume = Math.min(1, Math.round((player.volume + 0.05) * 100) / 100) }
   else if (k === keys.volDown) { e.preventDefault(); player.volume = Math.max(0, Math.round((player.volume - 0.05) * 100) / 100) }
+  // 处理完快捷键后，把焦点从「非文字输入」的控件上摘掉（2026-10-09）。
+  // 为什么：持焦的按钮/滑块会被浏览器画上 :focus-visible 描边（本项目是墨黑 2px），
+  // 而控件条按钮点过一次、音量条拖过一次之后都会一直持焦 —— 之后不管按哪个快捷键，
+  // 那圈黑框都挂在上面（用户反馈的「用快捷键时按钮上出现黑框」）。
+  // ⚠️ 只处理**播放页内部**的焦点：设置弹窗（el-dialog 挂在 body）里的控件一概不碰 ——
+  //    「键位绑定」的录制框就是 `<button @keydown>`，靠焦点录键，一旦在这里被 blur，
+  //    它的 @blur 会立刻取消录制（用户实测「快捷键无法修改」，2026-10-09）。
+  // ⚠️ 文字输入类不摘（见 isTextEntry）：将来若在播放页加输入框，打字不能被打断。
+  const ae = document.activeElement
+  const pageRoot = document.querySelector('.player-page')
+  if (ae && ae !== document.body && typeof ae.blur === 'function' &&
+    !isTextEntry(ae) && pageRoot && pageRoot.contains(ae)) ae.blur()
 }
 
 function onKeyUp(e) {
@@ -537,6 +586,9 @@ function syncHole(force = false) {
 function clearHole() {
   lastHoleKey = ''
   document.documentElement.classList.remove('mpv-hole')
+  // 全屏状态也一并复位（离开播放页 / mpv 崩溃退回 Chromium 时都要回到窗口态）
+  mpvFs.value = false
+  document.documentElement.classList.remove('mpv-fs')
 }
 
 /**
@@ -604,6 +656,21 @@ function bindMpvUi() {
     mpvReady.value = true
     nextTick(() => syncHole(true))
   })
+  // 全屏变化（2026-10-08）：mpv 的「全屏」是**窗口级**的，不产生 document 的 fullscreenchange，
+  // 由后端广播（见 backend.js 的 PLAYER_EVENTS）。全屏时挂 html.mpv-fs → 整页只剩播放器，
+  // 其余面板不参与绘制（否则会盖在 mpv 画面之上）；视口尺寸变了必须重算镂空矩形并重下发。
+  player.on('fullscreenchange', ({ fullscreen }) => {
+    const on = !!fullscreen
+    mpvFs.value = on
+    document.documentElement.classList.toggle('mpv-fs', on)
+    nextTick(() => { syncHole(true); settleHole() })
+    // 退出全屏：先盖住视频区，等 mpv 把画面重配好再淡出（见模板里 .mpv-fs-cover 的注释）。
+    // 盖住的时长取 320ms：mpv 换 swapchain 实测在这个量级，太短会露出「跳一下」的中间帧。
+    if (fsCoverTimer) { clearTimeout(fsCoverTimer); fsCoverTimer = null }
+    if (on) { fsCover.value = false; return }
+    fsCover.value = true
+    fsCoverTimer = setTimeout(() => { fsCoverTimer = null; fsCover.value = false }, 320)
+  })
   // 订阅晚于出画时（理论上有）直接补一次
   if (player.isVideoReady) { mpvReady.value = true; nextTick(() => syncHole(true)) }
   pull()
@@ -618,9 +685,11 @@ function onCtlSeek(frac) {
 }
 function onCtlVolume(v) { player.volume = v }
 function onCtlRate(r) { player.playbackRate = r }
-function onCtlFullscreen() { player.fullscreen = !player.fullscreen }
+/** 全屏开关：两个内核都走契约的 `fullscreen`（Chromium = ArtPlayer 页面内全屏；
+ *  mpv = 窗口级全屏 + 页面铺满，见 mpv-backend.js）。`fullscreenWeb` 只是契约占位。 */
+function onCtlFullscreen() { player.fullscreenWeb = false; player.fullscreen = !player.fullscreen }
 
-/** 全屏进出会改变视口尺寸 → 镂空矩形要重算（DOM 全屏在透明窗口下可用，见 mpv-backend.js） */
+/** Chromium（ArtPlayer）进/出 DOM 全屏会改变视口尺寸 → 镂空矩形要重算（mpv 走 fullscreenchange 事件） */
 function onFullscreenChange() { syncHole() }
 
 // ====== 播放器铺满（消除边角黑边）======
@@ -1066,7 +1135,11 @@ onBeforeUnmount(() => {
   if (scrollSettleTimer) { clearTimeout(scrollSettleTimer); scrollSettleTimer = null }
   for (const t of settleTimers) clearTimeout(t)
   settleTimers = []
+  if (fsCoverTimer) { clearTimeout(fsCoverTimer); fsCoverTimer = null }
   stopHoleWatch()
+  // 离开播放页时若还处于窗口级全屏（mpv），必须把窗口还原 ——
+  // 否则整个应用停在无边框全屏里，而退出用的 Esc 已随本页卸载（后端 destroy 里另有一层兜底）。
+  if (player.fullscreen) { try { player.fullscreen = false } catch { /* 忽略 */ } }
   clearHole()                  // 恢复窗口底色（否则离开播放页后会透出桌面）
   endHold()
   stopQualityWatch()
@@ -1133,7 +1206,7 @@ onBeforeUnmount(() => {
 .mpv-spin {
   width: 34px;
   height: 34px;
-  border: 3px solid rgba(255, 255, 255, 0.28);
+  border: 3px solid var(--overlay-line);
   border-top-color: #fff;
   border-radius: 50%;
   animation: mpv-spin 0.9s linear infinite;
@@ -1141,7 +1214,7 @@ onBeforeUnmount(() => {
 @keyframes mpv-spin { to { transform: rotate(360deg); } }
 /* 减少动态效果：不做旋转，改成静态的半透明圆环（仍然表示「在加载」） */
 @media (prefers-reduced-motion: reduce) {
-  .mpv-spin { animation: none; border-top-color: rgba(255, 255, 255, 0.28); }
+  .mpv-spin { animation: none; border-top-color: var(--overlay-line); }
 }
 
 /* mpv 模式的挖洞遮罩（teleport 到 body，所以这里的 scoped 样式仍会生效 —— Vue 会把
@@ -1161,6 +1234,64 @@ onBeforeUnmount(() => {
   /* 落在所有页面内容之下：只提供底色，不遮挡任何 UI（TopNav / 标题 / 标签行照常显示） */
   z-index: -1;
 }
+
+/* 退出全屏的过渡遮罩：盖住视频区（页面底色），`on` 时立刻不透明，摘掉时按 240ms 淡出。
+   为什么不淡入：淡入期间 mpv 还没配好画面，会看到「跳一下」的中间帧。 */
+.mpv-fs-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 36;
+  background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms var(--ease-out);
+}
+.mpv-fs-cover.on { opacity: 1; transition: none; }
+
+/* ====== mpv 全屏（2026-10-08）：窗口级全屏 + 页面内把播放器铺满视口 ======
+   为什么不用 DOM 全屏：DOM 全屏只绘制全屏元素及其后代，而 mpv 的画面必须靠「挖洞遮罩」
+   （teleport 到 body）留出空隙才透得出来 —— 全屏后遮罩与控制条都被排除在绘制之外，
+   屏幕上只剩全屏背景，而它盖在 mpv 子窗口之上 ⇒ 纯黑（用户反馈：点全屏直接黑掉）。
+   所以这里改成「窗口全屏（由主进程 win.setFullScreen 完成）+ 页面把播放器铺满视口」，
+   渲染路径与平时完全一致，mpv 侧再由 fullscreenchange 触发 syncHole 重下发 margin。
+   ⚠️ 只隐藏「与视频无关的面板」，**错误面板与质量提示保留** ——
+      全屏途中若播放失败，用户必须还能看到提示与「使用外部播放器打开」。 */
+html.mpv-fs .info-head,
+html.mpv-fs .tag-row,
+html.mpv-fs .actress-row,
+html.mpv-fs .rec-col {
+  display: none;
+}
+html.mpv-fs .player-page {
+  margin: 0;
+  padding: 0;
+  display: block;
+  min-height: 100vh;
+  /* ⚠️ 必须一起清掉「入场动画残留的 transform」：`.route-anim`（App.vue）是
+     `animation: route-in … both`，动画结束后 **仍保留一个 identity 矩阵**
+     （`matrix(1,0,0,1,0,0)`，不是 `none`），而**任何非 none 的 transform 都会成为
+     position: fixed 的包含块** —— 那样下面的 fixed 会以「播放页」而不是「视口」为参照。
+     实测后果：全屏时盒子落在 (24,12)、宽度少 56px、底边被裁到视口之外，
+     表现就是「画面没铺满、四周留出页面底色」。
+     （这也是挖洞遮罩 .mpv-shield 当初要 teleport 到 body 的同一个原因。） */
+  transform: none !important;
+  animation: none !important;
+}
+html.mpv-fs .main-col { display: block; }
+/* 播放器及其外框铺满视口：盒子即屏幕，16:9 的取景交给 mpv 的 margin 去算 */
+html.mpv-fs .player-wrap,
+html.mpv-fs .player-box {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+/* 洞 = 整屏 → 遮罩不再需要圆角（否则屏幕四角会露出 mpv 的黑底） */
+html.mpv-fs .mpv-shield { border-radius: 0; }
 
 /* ====== 左列 ====== */
 .main-col { flex: 1; min-width: 0; }
@@ -1325,7 +1456,7 @@ onBeforeUnmount(() => {
 .qw-text { opacity: 0.94; }
 .qw-actions { display: flex; gap: 8px; }
 .qw-btn {
-  border: 1px solid rgba(255, 255, 255, 0.32);
+  border: 1px solid var(--overlay-line);
   background: transparent;
   color: #fff;
   font-size: var(--fs-sm);
@@ -1333,7 +1464,7 @@ onBeforeUnmount(() => {
   border-radius: var(--r-pill);
   cursor: pointer;
 }
-.qw-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.qw-btn:hover { background: var(--overlay-glass); }
 /* 主操作（用外部播放器打开）：用品牌红实底，与页面其它主按钮一致 */
 .qw-primary {
   background: var(--accent);

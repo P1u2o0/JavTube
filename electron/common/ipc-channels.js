@@ -78,6 +78,10 @@ module.exports = {
   UTILS_READ_VIDEO_SIZE: 'utils:readVideoSize',
   // 打开外部链接（系统浏览器；仅 http/https，2026-10-05 关于页 GitHub 按钮）
   UTILS_OPEN_EXTERNAL: 'utils:openExternal',
+  // 切换主窗口的「窗口级全屏」（2026-10-08，mpv 播放页全屏）。
+  // 不用 DOM 全屏的原因见 ipc-utils.js 的 handler 注释（DOM 全屏会把挖洞遮罩与控制条
+  // 排除在绘制之外 → mpv 的画面被全屏背景挡成纯黑）。
+  UTILS_SET_WINDOW_FULLSCREEN: 'utils:setWindowFullscreen',
   // 检查更新（查询 GitHub Releases 最新版本并比较，2026-10-05）
   UPDATE_CHECK: 'update:check',
 

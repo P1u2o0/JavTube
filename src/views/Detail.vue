@@ -717,7 +717,7 @@ onMounted(async () => {
 .play-btn {
   width: 56px; height: 56px;
   border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--overlay-solid);
   color: var(--primary);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
@@ -864,7 +864,7 @@ onMounted(async () => {
   width: 48px; height: 48px;
   border: none; border-radius: 50%;
   background: var(--overlay-glass);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--overlay-text);
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
   transition: background var(--dur-fast) ease, transform var(--dur-fast) ease;
@@ -877,7 +877,7 @@ onMounted(async () => {
 .lb-count {
   position: absolute; bottom: 22px; left: 50%;
   transform: translateX(-50%);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--overlay-text);
   font-size: var(--fs-base);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--ls-caps);   /* 叠层页码计数：小字放开（原 0.06em → 令牌 0.02em，去掉第 4 种字距写法） */

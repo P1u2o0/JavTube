@@ -54,11 +54,11 @@
       </button>
       <input class="pc-vol" type="range" min="0" max="1" step="0.05"
              :value="state.muted ? 0 : state.vol" title="音量"
-             @input="onVolInput" />
+             @input="onVolInput" @pointerup="onVolRelease" />
 
-      <!-- 全屏 / 外部播放器 -->
-      <button type="button" class="pc-btn" title="全屏" @click="$emit('fullscreen')">
-        <AppIcon name="fullscreen" :size="18" />
+      <!-- 全屏 / 外部播放器。图标随状态切换（mpv 的「全屏」是窗口级全屏，Esc 也能退） -->
+      <button type="button" class="pc-btn" :title="fullscreen ? '退出全屏' : '全屏'" @click="$emit('fullscreen')">
+        <AppIcon :name="fullscreen ? 'fullscreen-exit' : 'fullscreen'" :size="18" />
       </button>
       <button type="button" class="pc-btn" title="使用外部播放器打开" @click="$emit('external')">
         <AppIcon name="external" :size="16" />
@@ -73,7 +73,9 @@ import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps({
   /** 播放状态镜像（由播放页从契约事件维护）：{ t, dur, paused, vol, muted, rate } */
-  state: { type: Object, required: true }
+  state: { type: Object, required: true },
+  /** 是否处于全屏（mpv 模式为窗口级全屏）—— 只影响全屏按钮的图标与提示文案 */
+  fullscreen: { type: Boolean, default: false }
 })
 const emit = defineEmits(['toggle', 'seek', 'volume', 'rate', 'fullscreen', 'external'])
 
@@ -142,6 +144,13 @@ function pickRate(r) { rateOpen.value = false; emit('rate', r) }
 
 // ====== 音量 ======
 function onVolInput(e) { emit('volume', Number(e.target.value)) }
+/**
+ * 拖完音量松手时主动 blur（2026-10-09 用户反馈）。
+ * 为什么：`<input type="range">` 是**即使鼠标操作也会匹配 `:focus-visible`** 的控件，
+ * 拖一次它就持焦，之后一直挂着一圈墨黑描边（既难看，也让用户以为界面坏了）。
+ * 松手即摘焦点即可；键盘用户用 Tab 聚焦到滑块时不会触发 pointerup，焦点环照常保留。
+ */
+function onVolRelease(e) { try { e.target.blur() } catch { /* 忽略 */ } }
 
 // ====== 点画面：单击 = 播放/暂停，双击 = 全屏 ======
 // 单击必须等一个双击间隔再执行，否则双击会先触发一次暂停。与 ArtPlayer 的做法一致。
@@ -210,7 +219,7 @@ function fmtRate(r) {
   cursor: pointer;
   opacity: 0.92;
 }
-.pc-btn:hover { background: rgba(255, 255, 255, 0.16); opacity: 1; }
+.pc-btn:hover { background: var(--overlay-glass); opacity: 1; }
 
 .pc-time {
   flex: none;
@@ -236,7 +245,7 @@ function fmtRate(r) {
   left: 0; right: 0;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--overlay-line);
 }
 .pc-fill {
   position: absolute;
@@ -280,7 +289,7 @@ function fmtRate(r) {
   cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
-.pc-rate-item:hover { background: rgba(255, 255, 255, 0.16); }
+.pc-rate-item:hover { background: var(--overlay-glass); }
 .pc-rate-item.on { color: var(--accent); font-weight: 600; }
 
 /* 音量滑块：细、低调，与控件条同高 */

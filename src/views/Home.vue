@@ -567,7 +567,7 @@ onBeforeUnmount(() => {
   color: var(--text);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), var(--sh-1);
+  box-shadow: inset 0 1px 0 var(--overlay-highlight), var(--sh-1);
   transition: background var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out);
   z-index: var(--z-base);          /* 叠层阶梯：页内局部浮层 */
 }

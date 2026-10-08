@@ -349,6 +349,14 @@ contextBridge.exposeInMainWorld('api', {
   checkUpdate: () => ipcRenderer.invoke(IPC.UPDATE_CHECK),
   openExternal: (url) => ipcRenderer.invoke(IPC.UTILS_OPEN_EXTERNAL, url),
 
+  /**
+   * 切换主窗口的窗口级全屏（2026-10-08，mpv 播放页的「全屏」）。
+   * 为什么不用 DOM 全屏：DOM 全屏会把 mpv 的画面挡成纯黑，见 main/ipc-utils.js 的 handler 注释。
+   * @param {boolean} on
+   * @returns {Promise<{ok:boolean, data?:boolean, error?:string}>}
+   */
+  setWindowFullscreen: (on) => ipcRenderer.invoke(IPC.UTILS_SET_WINDOW_FULLSCREEN, !!on),
+
   // === 系统对话框接口 ===
 
   /** 打开目录选择对话框，返回选中目录路径 */

@@ -64,57 +64,6 @@ function registerMediaScheme() {
   ])
 }
 
-// ── 临时诊断插桩（2026-10-07 排查 NAS 播放卡顿；仅 JAVTUBE_MEDIA_DEBUG=1 生效，排查完移除）──
-// 度量：每个 Range 请求的底层 fs 读取耗时分布 + 首块延迟 + Chromium 空拉取次数 + 5s 心跳。
-// 心跳日志保证「被 kill 的长连接」也能留下时间轴证据（只记结束时会被杀进程吞掉）。
-const MEDIA_DEBUG = !!process.env.JAVTUBE_MEDIA_DEBUG
-function wrapStreamForDebug(stream, label) {
-  if (!MEDIA_DEBUG) return stream
-  const tCreate = Date.now()
-  console.log(`[media-dbg] OPEN ${label} @${tCreate}`)
-  let fsReadStart = 0, firstChunkAt = 0, readCount = 0, bytes = 0, lastPushAt = tCreate, doneFlag = false
-  const readMs = []
-  let nullPulls = 0
-  const origRead = stream.read.bind(stream)
-  const origPush = stream.push.bind(stream)
-  const origInternalRead = stream._read.bind(stream)
-  stream._read = (n) => { fsReadStart = Date.now(); origInternalRead(n) }
-  stream.push = (chunk, enc) => {
-    if (chunk != null) {
-      if (!firstChunkAt) firstChunkAt = Date.now()
-      readCount++
-      bytes += chunk.length
-      lastPushAt = Date.now()
-      const ms = Date.now() - fsReadStart
-      if (ms >= 0 && ms < 60000) readMs.push(ms)
-    }
-    return origPush(chunk, enc)
-  }
-  stream.read = (size) => {
-    const v = origRead(size)
-    if (v == null) nullPulls++
-    return v
-  }
-  const hb = setInterval(() => {
-    if (doneFlag) return
-    const max = readMs.length ? Math.max(...readMs) : 0
-    console.log(`[media-dbg] ALIVE ${label} reads=${readCount} MB=${(bytes / 1048576).toFixed(1)} maxRead=${max}ms sinceLastPush=${Date.now() - lastPushAt}ms @${Date.now()}`)
-  }, 5000)
-  const done = (how) => {
-    if (doneFlag) return
-    doneFlag = true
-    clearInterval(hb)
-    const max = readMs.length ? Math.max(...readMs) : 0
-    const avg = readMs.length ? readMs.reduce((a, b) => a + b, 0) / readMs.length : 0
-    const slow = readMs.filter(m => m > 60).length
-    console.log(`[media-dbg] DONE ${label} ${how} reads=${readMs.length} MB=${(bytes / 1048576).toFixed(1)} avg=${avg.toFixed(1)}ms max=${max}ms slow(>60ms)=${slow} nullPulls=${nullPulls} firstChunk=${firstChunkAt ? firstChunkAt - tCreate : -1}ms life=${Date.now() - tCreate}ms @${Date.now()}`)
-  }
-  stream.on('end', () => done('end'))
-  stream.on('close', () => done('close'))
-  stream.on('error', (e) => done('err:' + e.message))
-  return stream
-}
-
 // 内存预读垫大小：后台把文件读到内存里备着，Chromium 拉取时瞬时返回（约 21s @ 6Mbps）。
 // 背景（2026-10-07 排查 NAS 播放卡顿，实测数据）：
 //   「有拉才读」的直连模式下，NAS 片在 Chromium 里被判定为慢源 → 预读目标被钉在 2.3s、
@@ -133,12 +82,11 @@ const CUSHION_BYTES = 16 * 1024 * 1024
  * @param {string} filePath
  * @param {number} start - 起始字节（含）
  * @param {number} end - 结束字节（含）
- * @param {string} [label] - 调试插桩用的标签
  * @returns {ReadableStream}
  */
-function makeCushionedStream(filePath, start, end, label) {
+function makeCushionedStream(filePath, start, end) {
   // 底层 fs 流：接 'data' 即进入流动模式，会连续读到垫满为止
-  const rs = wrapStreamForDebug(fs.createReadStream(filePath, { start, end, highWaterMark: READ_CHUNK }), label || `range=${start}-${end}`)
+  const rs = fs.createReadStream(filePath, { start, end, highWaterMark: READ_CHUNK })
   const queue = []
   let queuedBytes = 0
   let ended = false
@@ -217,7 +165,7 @@ function setupMediaProtocol() {
 
       const rangeHeader = request.headers.get('range')
       if (!rangeHeader) {
-        return new Response(makeCushionedStream(resolved, 0, stat.size - 1, `full size=${stat.size}`), {
+        return new Response(makeCushionedStream(resolved, 0, stat.size - 1), {
           status: 200,
           headers: { ...common, 'content-length': String(stat.size) }
         })

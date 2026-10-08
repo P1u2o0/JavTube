@@ -290,7 +290,7 @@ JavTube/
 │  │     ├─ cleanup.js       # 删记录后的本地图片清理
 │  │     └─ util.js          # rows/firstRow/nowLocal/persistSoon 等公共工具
 │  ├─ preload/index.js       # contextBridge 暴露 window.api（**唯一通信桥梁**）
-│  └─ common/ipc-channels.js # IPC 通道名常量（40 条，main / preload 共享唯一来源）
+│  └─ common/ipc-channels.js # IPC 通道名常量（52 条，main / preload 共享唯一来源）
 └─ src/
    ├─ main.js  App.vue
    ├─ router/index.js        # 静态引入全部页面（性能优化，勿改回懒加载）
@@ -332,7 +332,7 @@ JavTube/
 | 机制 | 说明 |
 |---|---|
 | **★ 接线审计** | 「按钮点了没反应」这类问题一律先跑 `npm run audit:wiring`（检查 ①`window.api.X` 是否暴露 ②接口→通道→`ipcMain.handle` 三方对齐 ③组件 emit 是否有人监听 ④`safeCall` 用法）。改事件/接口后必跑 |
-| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。**当前 40 条常量 ↔ 40 个 handler 一一配对（双向无孤儿）**，返回格式 `{ ok, data?, error? }` |
+| **IPC 通道** | 新增通道三步：`ipc-channels.js` 常量 → `preload/index.js` invoke → `electron/main/**` handle。**当前 52 条常量 ↔ 51 个 handler（差的那条 `MPV_EVENT` 是 main→渲染层的单向下行，没有 handler）**，返回格式 `{ ok, data?, error? }` |
 | **★ `loadMovies` 的返回契约** | `store/movies.js` 的 `loadMovies` 返回 `{ ok, total?, stale?, error? }`，三个出口语义不同：<br>· `ok:true` 结果已写入 store；<br>· `ok:false, stale:true` = **被更晚发出的请求取代**（静默，调用方**不要**据此提示用户）；<br>· `ok:false, error` = **最新请求但失败**（弹一次提示）。<br>越界重试的递归分支**必须透传**内层返回值，否则失败被吞掉（v2.9.0 前就是这样，界面「点不动」且无任何提示） |
 | **设置批量保存** | 渲染端 `updateSettingsBatch(obj)`（`settings:updateBatch` 通道）一次事务写多键只落盘一次；不要逐键调 `updateSetting`（会卡） |
 | **三视图共享 store** | 片库 / 喜欢 / 历史共用 `store.movies`——各视图挂载时必须重新加载自己视图的全量语义（片库=全量、喜欢=onlyFavorite、历史=historyOnly） |

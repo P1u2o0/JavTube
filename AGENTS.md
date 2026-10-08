@@ -78,7 +78,7 @@ npm run verify:player-ui       # 播放页 UI 套件（CDP 探针，屏外窗口
 | 文件 | 职责 |
 |---|---|
 | `main/index.js` | 入口与启动时序：数据目录定位/迁移 → 数据库初始化 → 注册各 IPC 模块 → 建窗口。**具体 IPC 已拆走**，这里只做编排 |
-| `common/ipc-channels.js` | **所有 IPC 通道名的唯一事实来源**（40 个）。新增通道必须在这里加一行，preload 与 main 都引用它 |
+| `common/ipc-channels.js` | **所有 IPC 通道名的唯一事实来源**（52 个）。新增通道必须在这里加一行，preload 与 main 都引用它 |
 | `main/constants.js` | 跨文件共享常量：视频扩展名白名单、排序白名单、标签分隔符、封面目录名等 |
 | `main/db/init.js` | 数据库加载/创建、**表结构定义**、默认设置、建索引、`persistSoon` 脏标记落盘机制 |
 | `main/db/movies.js` | 影片增删改查、批量操作、搜索；`recordPlay`（播放次数） |

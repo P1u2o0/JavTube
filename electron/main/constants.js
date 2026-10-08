@@ -40,4 +40,15 @@ const previewRelPath = (ph, n, ext) => `${IMAGE_DIR}/${ph}/${ph}-${n}${ext}`
 /** 女优头像相对路径：images/actress/<名字><ext> */
 const actressRelPath = (name, ext) => `${IMAGE_DIR}/actress/${name}${ext}`
 
-module.exports = { VIDEO_EXTS, SORTABLE_COLUMNS, TAG_DELIM, FAV_Y, FAV_N, COVER_DIR, IMAGE_DIR, PREVIEW_MIN_BYTES, posterRelPath, previewRelPath, actressRelPath }
+// ====== 标题栏覆盖层（Windows 右上角的三个原生窗口按钮）======
+// 窗口用 titleBarStyle:'hidden' + titleBarOverlay 把系统标题栏换成自绘顶栏，
+// 右上角保留最小化/最大化/关闭。**进 mpv 播放页的全屏时必须把它藏掉**
+// （用户 2026-10-08 要求：全屏就只留播放器，不要软件样式的三个按钮）。
+// 为什么要显式切换：透明窗口上 Electron 自己的全屏态判断是坏的（`isFullScreen()` 恒 false），
+// 它不会像常规窗口那样在进全屏时自动隐藏覆盖层 —— 那三个原生按钮会一直压在画面上。
+// HIDDEN 的 height 取 1（而不是 0）：覆盖层只剩 1px 高 → 按钮既不可见、也几乎点不到，
+// 等价于「藏起来」，又不依赖 Electron 是否允许 height=0。
+const TITLEBAR_OVERLAY = { color: '#ffffff', symbolColor: '#22211f', height: 48 }
+const TITLEBAR_OVERLAY_HIDDEN = { color: '#00000000', symbolColor: '#00000000', height: 1 }
+
+module.exports = { VIDEO_EXTS, SORTABLE_COLUMNS, TAG_DELIM, FAV_Y, FAV_N, COVER_DIR, IMAGE_DIR, PREVIEW_MIN_BYTES, posterRelPath, previewRelPath, actressRelPath, TITLEBAR_OVERLAY, TITLEBAR_OVERLAY_HIDDEN }

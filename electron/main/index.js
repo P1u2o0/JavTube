@@ -33,6 +33,8 @@ const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
 const { registerMediaScheme, setupMediaProtocol } = require('./media-protocol')
 // mpv 播放内核（内置播放页「高兼容模式」，2026-10-08）：进程管理 + JSON IPC 桥
 const { registerMpvIpc, disposeMpv } = require('./mpv')
+// 标题栏覆盖层的两套取值（正常 / 全屏时隐藏，见 constants.js 的说明）
+const { TITLEBAR_OVERLAY } = require('./constants')
 
 // ====== 渲染性能相关 ======
 // 关闭 Chromium 沙箱：在部分 Windows 环境下沙箱会导致 GPU 进程反复崩溃，
@@ -180,11 +182,9 @@ function createWindow() {
       //   hidden 隐藏系统原生标题栏；titleBarOverlay 绘制白色覆盖层，
       //   右上角保留最小化/最大化/关闭（符号用墨黑），高度与 TopNav 一致
       titleBarStyle: 'hidden',
-      titleBarOverlay: {
-        color: '#ffffff',        // 底色：与 TopNav 的 --surface 白一致
-        symbolColor: '#22211f',  // 按钮符号：墨黑（--text）
-        height: 48               // 与 .topnav 高度一致
-      },
+      // 底色/符号色/高度取自 constants.js —— 全屏时要换另一套值把它藏起来，
+      // 两处必须是同一份常量，否则全屏退出后恢复不到位（见 ipc-utils 的窗口全屏 handler）
+      titleBarOverlay: { ...TITLEBAR_OVERLAY },
       // ===== 透明窗口（2026-10-08，mpv 播放内核的前提）=====
       // 内置播放页的「高兼容模式」把播放内核换成 mpv，做法是让页面把视频区域**镂空**、
       // mpv 的画面从洞里透出来（详见 docs/MPV_INTEGRATION_PLAN.md）。

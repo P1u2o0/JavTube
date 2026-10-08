@@ -29,7 +29,10 @@
  *   volume       0~1（可读写）
  *   muted        布尔（可读写）
  *   playbackRate 倍速（可读写）
- *   fullscreen   布尔（可读写，页面内全屏）
+ *   fullscreen   布尔（可读写）。Chromium 后端 = ArtPlayer 的页面内全屏（DOM 全屏）；
+ *                mpv 后端 = **窗口级**全屏（`win.setFullScreen`，2026-10-08），并广播
+ *                `fullscreenchange` 事件 —— 因为 mpv 的画面是独立子窗口，DOM 全屏会把
+ *                挖洞遮罩排除在绘制之外、屏幕变成纯黑（详见 electron/main/ipc-utils.js）。
  * 只读信息
  *   isMounted            是否已创建实例
  *   element              底层 <video> 元素（供几何计算）；**没有 <video> 的内核返回 null**
@@ -60,7 +63,12 @@ export const PLAYER_EVENTS = Object.freeze([
   'ended',
   'timeupdate',
   'volumechange',
-  'error'
+  'error',
+  // 全屏状态变化（2026-10-08，仅 mpv 后端发）：负载 { fullscreen: boolean }。
+  // mpv 的「全屏」是**窗口级**的（`win.setFullScreen`），不产生 document 的 fullscreenchange
+  // 事件，所以由后端自己通报；页面据此把播放器铺满视口并重算镂空矩形。
+  // Chromium 后端用 ArtPlayer 自己的全屏（会产生原生 fullscreenchange，页面另有监听），不发此事件。
+  'fullscreenchange'
 ])
 
 /**

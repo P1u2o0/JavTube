@@ -145,6 +145,14 @@ onMounted(async () => {
     if (el instanceof HTMLElement && el !== document.body) el.blur()
   })
 
+  // 注（2026-10-09）：这里一度加过「鼠标按下按钮类元素时 preventDefault，不让它获得焦点」，
+  // 用来消除「用快捷键时按钮上出现黑框」。**已撤销** —— 它把依赖焦点的控件一起打死了：
+  // 设置页「键位绑定」的录制框是 `<button @keydown>`，**必须先获得焦点才能录到新按键**，
+  // 于是快捷键完全改不了（用户实测反馈）。
+  // 正确做法放在「真正会画黑框的地方」：
+  //   · 播放页 `onKeyDown` 处理完快捷键后主动 blur 非文字输入控件（Player.vue）；
+  //   · 音量条鼠标松手即 blur（PlayerControls.vue）。
+
   // 注（2026-09-15）：此处原先有一段「弹窗遮罩同步窗口按钮区配色」的逻辑
   // （MutationObserver 监听 .el-overlay → 调 setTitleBarOverlay 切换颜色）。
   // 因 Windows 的 titleBarOverlay 忽略 alpha、且需处理 overlay 常驻 DOM 的可见性判断，

@@ -51,6 +51,8 @@ export class MpvBackend {
     this._playing = false
     this._failed = false     // mpv 报错 / 进程异常退出
     this._destroyed = false
+    /** 窗口级全屏状态（透明窗口上 win.isFullScreen() 读值不可靠，自己持有，见 fullscreen） */
+    this._fs = false
     /** 最近一次下发的镂空矩形（窗口缩放时重算用） */
     this._hole = null
     /** @type {((reason:string)=>void)|null} mpv 起不来时的回调（页面据此退回 Chromium） */
@@ -143,6 +145,12 @@ export class MpvBackend {
     if (!this._mounted) return
     this._mounted = false
     this._destroyed = true
+    // 兜底：销毁时若还处于窗口级全屏，必须把窗口还原 —— 否则离开播放页后
+    // 整个应用停在无边框全屏里，用户没有退出的入口（Esc 已随页面卸载）。
+    if (this._fs) {
+      this._fs = false
+      try { window.api?.setWindowFullscreen?.(false)?.catch?.(() => { }) } catch { /* 忽略 */ }
+    }
     try { this._offEvent?.() } catch { /* 忽略 */ }
     this._offEvent = null
     this._handlers.clear()
@@ -190,19 +198,28 @@ export class MpvBackend {
   }
 
   /**
-   * 全屏：**走 DOM 全屏**，不是 `win.setFullScreen`。
-   * 透明窗口上 Electron 的窗口级全屏是失效的（`isFullScreen()` 恒 false），
-   * 而 DOM 全屏在透明窗口下完全正常（实测，见 tmp/mpv-spike/test-transparent-window.js）。
-   * 全屏后容器铺满整屏 → Player.vue 会把镂空矩形重算成整屏并重新下发给 mpv。
+   * 全屏：**走窗口级全屏**（`win.setFullScreen`），不是 DOM 全屏。
+   * 2026-10-08 修（用户反馈「点全屏直接黑掉、什么都没有」）：
+   *   mpv 的画面来自**独立子窗口**、靠页面把视频区域「镂空」透出来，而 DOM 全屏只会绘制
+   *   全屏元素及其后代 —— 挖洞遮罩（teleport 到 body）与控制条（在 .player-wrap 里）都被
+   *   排除在绘制之外，屏幕上只剩全屏背景，而它盖在 mpv 子窗口之上 ⇒ 纯黑。
+   *   窗口级全屏只是把窗口放大：页面照常绘制、mpv 照常从镂空处透出，画面与控制条都还在。
+   * 页面侧收到 `fullscreenchange` 后把播放器铺满视口（html.mpv-fs）并重算镂空矩形。
+   * ⚠️ 透明窗口上 `win.isFullScreen()` 的读值不可靠（实测恒 false），所以状态在这里自己持有。
    */
-  get fullscreen() {
-    return !!document.fullscreenElement && document.fullscreenElement === this._container
-  }
+  get fullscreen() { return this._fs }
   set fullscreen(v) {
-    try {
-      if (v) this._container?.requestFullscreen?.()?.catch?.(() => { })
-      else if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => { })
-    } catch { /* 用户手势缺失等，忽略 */ }
+    const on = !!v
+    if (this._fs === on) return
+    this._fs = on
+    // 通道不在场（旧 preload / 极端降级）时退化为「只做页面内铺满」：
+    // 画面仍然可见，只是不覆盖任务栏，绝不回到「全黑」那条路。
+    try { window.api?.setWindowFullscreen?.(on)?.catch?.(() => { }) } catch { /* 忽略 */ }
+    // 进出都**立即**广播，不要等窗口 —— 主进程现在是瞬时 setBounds（不是系统全屏动画），
+    // 窗口与页面会在同一帧里一起切，用户看到的是一次干净的动作。
+    // （曾经试过「退出时等窗口缩回去再切页面」，结果是「先变成窗口形式的画面、再回到软件界面」
+    //   这种两步动作，用户 2026-10-09 明确反馈更别扭。）
+    this._emit('fullscreenchange', { fullscreen: on })
   }
   /** 契约兼容：Chromium 后端有 fullscreenWeb（网页全屏），mpv 后端没有这个概念 */
   set fullscreenWeb(_v) { /* no-op */ }

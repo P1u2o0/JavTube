@@ -205,7 +205,7 @@ import { computed, onMounted, ref, toRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
-import { resolveCover, splitTags, favLock, favUnlock } from '@/utils/global'
+import { resolveCover, splitTags, favLock, favUnlock, actressAvatarKey, bumpActressAvatar } from '@/utils/global'
 import { playMovie } from '@/utils/playback'
 import AppIcon from '@/components/AppIcon.vue'
 import MovieCard from '@/components/MovieCard.vue'
@@ -257,9 +257,11 @@ const DEFAULT_AVATAR = {
 /** 头像文件缺失/损坏时置真 → 回落本地剪影（统一显示：没有可用的真实照片就显示剪影，不留破图） */
 const avatarBroken = ref(false)
 
-/** 演员头像：有本地头像走封面协议，否则按性别用默认剪影 */
+/** 演员头像：有本地头像走封面协议，否则按性别用默认剪影。
+ *  第二个参数是「头像版本」键 —— 换过头像但文件名没变时，靠它让 URL 带上 ?v=，
+ *  否则 <img> 的 src 不变、浏览器不会重新请求，界面就一直是旧头像（见 bumpActressAvatar）。 */
 const avatarUrl = computed(() => (avatar.value && !avatarBroken.value)
-  ? resolveCover(avatar.value)
+  ? resolveCover(avatar.value, actressAvatarKey(name.value))
   : (gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f))
 
 /**
@@ -478,10 +480,19 @@ const editAvatar = ref('')            // 相对路径（images/actress/xxx.jpg�
 const editAvatarBroken = ref(false)
 const editInfo = ref({ height: null, bust: null, waist: null, hip: null, zb: '', birthday: '', debut: '', remark: '' })
 
+/** 编辑弹窗头像预览的版本号：每次导入新图片自增。
+ *  为什么不用全局版本表：导入是「按名字覆盖写入同一个文件」，路径不变 → URL 不变 →
+ *  预览一直显示旧图（2026-10-08 用户反馈）。本地版本号与名字无关，改名后预览也照样刷新。 */
+const editAvatarVer = ref(0)
+
 /** 编辑弹窗内的头像预览 URL */
-const editAvatarUrl = computed(() => (editAvatar.value && !editAvatarBroken.value)
-  ? resolveCover(editAvatar.value)
-  : (gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f))
+const editAvatarUrl = computed(() => {
+  if (!editAvatar.value || editAvatarBroken.value) {
+    return gender.value === 'm' ? DEFAULT_AVATAR.m : DEFAULT_AVATAR.f
+  }
+  const u = resolveCover(editAvatar.value)
+  return editAvatarVer.value ? `${u}${u.includes('?') ? '&' : '?'}v=${editAvatarVer.value}` : u
+})
 
 /** 打开编辑弹窗：用当前演员的数据回填 */
 function openEditDialog() {
@@ -518,6 +529,12 @@ async function pickAvatar() {
     if (r?.ok) {
       editAvatar.value = r.data.path
       editAvatarBroken.value = false
+      // 关键：导入是「覆盖写入同一个文件名」，路径没变 → 必须让 URL 带上新版本号，
+      // 否则预览（以及保存后的页头头像）都还是旧图。预览用本地版本号，
+      // 页头/演员页头像墙用「按名字」的全局版本键（见 utils/global.js 的 bumpActressAvatar）。
+      editAvatarVer.value = Date.now()
+      bumpActressAvatar(nm)
+      if (nm !== name.value) bumpActressAvatar(name.value)
       ElMessage.success('头像已导入')
     } else {
       ElMessage.error(r?.error || '导入失败')
@@ -585,6 +602,10 @@ async function saveEdit() {
     if (r?.ok) {
       ElMessage.success('保存成功')
       editVisible.value = false
+      // 保存后页头/演员页头像墙要重新拉图：头像文件名可能没变（原地覆盖写），
+      // 只有版本号变才能让 <img> 重新请求（见 utils/global.js 的 bumpActressAvatar）
+      bumpActressAvatar(nm)
+      bumpActressAvatar(name.value)
       // 改名后跳转到新名字的演员页（路由参数变了，本页数据不会自动刷新）
       if (nm !== name.value) {
         router.push({ path: `/actor/${encodeURIComponent(nm)}` })

@@ -97,7 +97,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { resolveCover } from '@/utils/global'
+import { resolveCover, actressAvatarKey } from '@/utils/global'
 import AppIcon from '@/components/AppIcon.vue'
 import CoverImg from '@/components/CoverImg.vue'
 
@@ -137,7 +137,9 @@ const highlight = ref(String(route.query.hl || ''))
  */
 const wallList = computed(() => list.value.map(a => ({
   ...a,
-  avatarSrc: a.avatar ? resolveCover(a.avatar) : ''
+  // 带上「头像版本」键：女优影片页里换过头像后，这里的 URL 会自动带 ?v= → 重新拉图，
+  // 否则头像墙仍显示浏览器缓存的旧图（机制见 utils/global.js 的 bumpActressAvatar）
+  avatarSrc: a.avatar ? resolveCover(a.avatar, actressAvatarKey(a.name)) : ''
 })))
 
 /** 排行视图顺序：名次升序（无名次即无人数数据，排最后按名字）；影片封面同样预解析 */

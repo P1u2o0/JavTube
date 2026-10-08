@@ -11,10 +11,10 @@
  */
 
 // ipcMain 由 registerUtilsIpc 的参数注入（index.js 传入的即同一对象），此处不再导入
-const { dialog, shell, app } = require('electron')
+const { dialog, shell, app, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { VIDEO_EXTS } = require('./constants')
+const { VIDEO_EXTS, TITLEBAR_OVERLAY, TITLEBAR_OVERLAY_HIDDEN } = require('./constants')
 const IPC = require('../common/ipc-channels')
 const { scrapeMovie } = require('./scraper')
 const { readMp4DurationMinutes, readVideoSize, isVideoReadCooling, noteVideoReadResult } = require('./video-meta')
@@ -33,6 +33,40 @@ const EXEC_EXTS = ['.exe', '.bat', '.cmd', '.com', '.scr', '.pif', '.msi', '.lnk
  */
 const videoSizeCache = new Map()
 const NEG_TTL_MS = 5 * 60 * 1000
+// ⚠️ 必须设上限：键是影片路径，长期运行会随「打开过多少部影片」一直增长（只增不删）。
+//    用 Map 的插入顺序当 LRU：命中/写入时把它挪到队尾，超限就丢最旧的一条。
+//    （封面协议 cover-protocol.js 早就有 CACHE_MAX_ENTRIES，这里补齐。）
+const VIDEO_SIZE_CACHE_MAX = 500
+/** 写入缓存并维持上限（同时刷新它的「最近使用」位置） */
+function cacheVideoSize(p, size) {
+  if (videoSizeCache.has(p)) videoSizeCache.delete(p)
+  videoSizeCache.set(p, { size, ts: Date.now() })
+  while (videoSizeCache.size > VIDEO_SIZE_CACHE_MAX) {
+    videoSizeCache.delete(videoSizeCache.keys().next().value)
+  }
+}
+
+/**
+ * 进入全屏前的窗口状态（`{ bounds, onTop }`），退出时据此还原。
+ * 因为「全屏」现在是**我们自己 setBounds 铺满**的（见 UTILS_SET_WINDOW_FULLSCREEN），
+ * 系统不会替我们记住/还原窗口矩形，所以必须自己记。
+ */
+let fsPrev = null
+
+/**
+ * 全屏时把窗口矩形相对屏幕**外扩**的像素数。
+ * 为什么需要：Win11 的 DWM 会给普通窗口画约 8~12px 的圆角，而 mpv 模式下页面不画底色
+ * （视频从「镂空」处透出）→ 圆角那四处会**直接漏出桌面**（用户反馈的「角落还有圆角」）。
+ * 把窗口放到「屏幕矩形外扩 12px」的位置，圆角就落到了屏幕之外，视觉上完全无缝。
+ */
+const FS_OVERHANG = 12
+
+/**
+ * 全屏期间「失焦即取消置顶」的监听是否已挂上（窗口只监听一次，避免反复进出全屏时叠加 listener）。
+ * 用户规则（2026-10-09）：全屏时置顶（压过任务栏），**一旦失去焦点就取消置顶**（不挡着别的窗口），
+ * 重新聚焦时再置顶。
+ */
+let fsTopMostBound = false
 
 /**
  * 注册工具类 IPC 处理器。
@@ -182,6 +216,8 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       for (const p of list) {
         const hit = videoSizeCache.get(p)
         if (hit && (hit.size !== null || Date.now() - hit.ts < NEG_TTL_MS)) {
+          // 命中：挪到队尾当「最近使用」，但**不改 ts** —— 负结果的 TTL 要从首次失败算起
+          videoSizeCache.delete(p); videoSizeCache.set(p, hit)
           data[p] = hit.size
           continue
         }
@@ -192,7 +228,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
         while (cursor < todo.length) {
           const p = todo[cursor++]
           const size = await readVideoSize(p).catch(() => null)
-          videoSizeCache.set(p, { size, ts: Date.now() })
+          cacheVideoSize(p, size)
           data[p] = size
         }
       }
@@ -285,6 +321,99 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       shell.openExternal(s)
       return { ok: true }
     } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // 渲染进程 → 主进程：切换主窗口的**窗口级全屏**（2026-10-08，mpv 播放页的「全屏」）。
+  //
+  // 为什么不用 DOM 全屏（element.requestFullscreen）：mpv 的画面是**独立子窗口**、由页面把
+  // 视频区域「镂空」透出来的（见 docs/MPV_INTEGRATION_PLAN.md）。进入 DOM 全屏后，Chromium
+  // 只绘制全屏元素及其后代 —— 挖洞遮罩（teleport 到 body）和控制条（在 .player-wrap 里）
+  // 全被排除在绘制之外，屏幕上只剩全屏背景，而它盖在 mpv 子窗口之上
+  // ⇒ 用户看到的是**纯黑，什么都没有**（2026-10-08 用户反馈）。
+  // 窗口级全屏只是把窗口放大，页面照常绘制、mpv 照常从镂空处透出，画面和控制条都还在；
+  // 页面侧再用 html.mpv-fs 把播放器铺满视口（见 src/views/Player.vue 与 global.css）。
+  //
+  // ★ 三档递进（2026-10-08 真机反馈后重做）：
+  // ★ 实现方式（2026-10-09 第二次返工后定稿）：**自己 setBounds 铺满，不用 win.setFullScreen**。
+  //   为什么不用系统全屏（三个理由，都是实测出来的）：
+  //   ① **它有 150~300ms 的缩放动画，而页面切布局是瞬时的** —— 两者永远对不齐：
+  //      先切页面则「窗口还大、播放器已经缩回小盒子」（中间露 mpv 的黑边）；
+  //      等窗口缩完再切页面则「先看到一个只有画面的窗口、再回到软件界面」（两步动作）。
+  //      两版用户都反馈别扭（2026-10-08 / 10-09）。自己 setBounds 是**瞬时**的，
+  //      窗口与页面能在同一帧里一起切 → 一次干净的动作。
+  //   ② 透明窗口上它本来就不可靠（探针实测 3 次里 1 次被完全忽略）。
+  //   ③ 它走的全屏态会让 `isFullScreen()` 与实际不一致，退出时容易留下「内部仍以为在全屏」的
+  //      残态，导致**下次进入全屏变成空操作**（实测踩过）。
+  //   代价与对策：任务栏靠 `setAlwaysOnTop(true,'screen-saver')` 压过；DWM 圆角靠外扩 FS_OVERHANG 推出屏幕。
+  //   仅当手动铺满没生效（多显示器 / 被系统夹住尺寸）时才退回系统全屏兜底。
+  //   ⚠️ 进入前的窗口矩形/置顶态记在模块级 `fsPrev`，退出时由我们自己还原。
+  ipcMain.handle(IPC.UTILS_SET_WINDOW_FULLSCREEN, async (_e, on) => {
+    try {
+      const win = getMainWindow()
+      if (!win) return { ok: false, error: '窗口不存在' }
+      const want = !!on
+      const readCovers = () => {
+        const b = win.getBounds()
+        const d = screen.getDisplayMatching(b).bounds
+        // 判据容差 14px（手动铺满会外扩 12px）
+        const covers = b.x <= d.x + 14 && b.y <= d.y + 14 &&
+          b.x + b.width >= d.x + d.width - 14 && b.y + b.height >= d.y + d.height - 14
+        return { covers, bounds: b, display: d }
+      }
+
+      if (want) {
+        // 记下进入前的状态：setBounds 会把「最大化」状态丢掉，所以单独记一个标志，退出时补回来
+        if (!fsPrev) fsPrev = { bounds: win.getBounds(), onTop: win.isAlwaysOnTop(), maximized: win.isMaximized() }
+        const d = screen.getDisplayMatching(fsPrev.bounds).bounds
+        // 全屏时把右上角那三个原生窗口按钮（titleBarOverlay）藏掉：只留播放器画面。
+        // 为什么必须显式做：透明窗口上 Electron 的全屏态判断是坏的（`isFullScreen()` 恒 false），
+        // 它不会自动隐藏覆盖层 —— 那三个按钮会一直压在画面上（用户 2026-10-08 反馈）。
+        try { win.setTitleBarOverlay(TITLEBAR_OVERLAY_HIDDEN) } catch { /* 不支持则保持原样 */ }
+        let mode = 'manual'
+        // 全屏期间：置顶压过任务栏；**失焦即取消置顶**（用户规则 2026-10-09：别挡着别的窗口），
+        // 重新聚焦再置顶。`fsPrev` 非空即代表「当前处于全屏」，两个回调都据此判断。
+        if (!fsTopMostBound) {
+          fsTopMostBound = true
+          try {
+            win.on('blur', () => { if (fsPrev) { try { win.setAlwaysOnTop(false) } catch { /* 忽略 */ } } })
+            win.on('focus', () => { if (fsPrev) { try { win.setAlwaysOnTop(true, 'screen-saver') } catch { /* 忽略 */ } } })
+          } catch { /* 忽略 */ }
+        }
+        try { win.setAlwaysOnTop(true, 'screen-saver') } catch { /* 忽略 */ }
+        win.setBounds({ x: d.x - FS_OVERHANG, y: d.y - FS_OVERHANG, width: d.width + FS_OVERHANG * 2, height: d.height + FS_OVERHANG * 2 })
+        let st = readCovers()
+        if (!st.covers) {
+          // 极端情况（多显示器 / 被系统夹住尺寸）：退回系统全屏兜底
+          try { win.setFullScreen(true) } catch { /* 忽略 */ }
+          await new Promise(r => setTimeout(r, 220))
+          st = readCovers()
+          mode = st.covers ? 'native' : 'failed'
+        }
+        if (!st.covers) console.warn(`[fullscreen] 没能铺满屏幕：bounds=${JSON.stringify(st.bounds)} display=${JSON.stringify(st.display)}`)
+        console.log(`[fullscreen] 进入全屏 → mode=${mode} covers=${st.covers} bounds=${JSON.stringify(st.bounds)}`)
+        return { ok: true, data: { fullscreen: true, mode, covers: st.covers, bounds: st.bounds, display: st.display } }
+      }
+
+      // 退出全屏：**一次性瞬时还原**，中途不 await —— 页面与窗口必须在同一帧里一起切回窗口布局，
+      // 否则用户会看到「先变成窗口形式的画面、再回到软件界面」这种两步动作（2026-10-09 用户反馈）。
+      // 先还原覆盖层与置顶，再还原矩形；档①②（真进了系统全屏）额外补一次 setFullScreen(false)。
+      const prev = fsPrev
+      fsPrev = null
+      try { win.setTitleBarOverlay(TITLEBAR_OVERLAY) } catch { /* 忽略 */ }
+      try { win.setFullScreen(false) } catch { /* 忽略（幂等：没进过系统全屏时是空操作） */ }
+      if (prev) {
+        try { win.setAlwaysOnTop(!!prev.onTop) } catch { /* 忽略 */ }
+        // setBounds 会丢掉「最大化」状态（进入全屏时那次 setBounds 已经把它抹掉了），
+        // 所以退出时按标志补一次 maximize()，让窗口回到用户原来的状态。
+        try { if (prev.maximized) win.maximize(); else win.setBounds(prev.bounds) } catch { /* 忽略 */ }
+      }
+      const stOff = readCovers()
+      console.log(`[fullscreen] 退出 → bounds=${JSON.stringify(stOff.bounds)}`)
+      return { ok: true, data: { fullscreen: false, mode: 'off', ...stOff } }
+    } catch (e) {
+      console.warn('[fullscreen] 切换失败:', e.message)
+      return { ok: false, error: e.message }
+    }
   })
 
   // === 刮削功能 ===

@@ -164,8 +164,15 @@
   --overlay-hover: rgba(29, 28, 26, 0.42);        /* 卡片悬停遮罩 */
   --overlay-badge: rgba(29, 28, 26, 0.62);        /* 角标底 */
   --overlay-strong: rgba(29, 28, 26, 0.7);        /* 深角标底 */
-  --overlay-glass: rgba(255, 255, 255, 0.14);     /* 灯箱玻璃钮底 */
+  --overlay-glass: rgba(255, 255, 255, 0.14);     /* 深色底上的玻璃钮（灯箱箭头 / 控件条按钮 hover） */
   --overlay-glass-hover: rgba(255, 255, 255, 0.26);/* 灯箱玻璃钮 hover */
+  /* 2026-10-08 收敛：白色叠加此前散落 9 种 alpha，其中三组是同角色重复。
+     现在按「角色」定档，每档一个令牌（另有三档本就自洽：玻璃高光 0.35 / 播放按钮 0.94 / 内发丝线 0.12）。 */
+  --overlay-line: rgba(255, 255, 255, 0.30);      /* 深色底上的描边 / 分隔线 */
+  --overlay-text: rgba(255, 255, 255, 0.90);      /* 深色底上的次要文字 */
+  --overlay-solid: rgba(255, 255, 255, 0.94);     /* 图上实心白钮（海报/详情页的播放按钮） */
+  --overlay-highlight: rgba(255, 255, 255, 0.35); /* 玻璃/卡片顶部 1px 高光（内阴影） */
+  --overlay-hairline: rgba(255, 255, 255, 0.12);  /* 玻璃内发丝描边（0.5px 内阴影） */
   /* 卡片渐变遮罩（2026-10-08 重新收成令牌）：此前这几个令牌因「0 引用」被删、
      改由组件内联写死，但内联时用的暖黑基色是 rgba(22,21,19) —— 与上面 --overlay-*
      的 rgba(29,28,26) **不是同一个暖黑**，同类遮罩出现了两种底色。
@@ -175,9 +182,11 @@
   --scrim-weak: rgba(29, 28, 26, 0.30);
   --scrim-text: rgba(29, 28, 26, 0.55);           /* 图上文字投影 */
 
-  /* ====== 磨砂玻璃钮（浅色海报上的圆钮统一材质） ====== */
-  --glass: rgba(255, 255, 255, 0.22);             /* 磨砂底 */
-  --glass-hover: rgba(255, 255, 255, 0.42);       /* 磨砂 hover */
+  /* ====== 磨砂玻璃钮（**浅色海报上**的圆钮统一材质） ======
+     ⚠️ 与上面的 --overlay-glass 是**两套、不是重复**：这一套压在浅色海报上（首页轮播左右钮），
+        必须更实（0.22/0.42）才看得清；--overlay-glass 压在深色遮罩上，更淡即可。别合并。 */
+  --glass: rgba(255, 255, 255, 0.22);             /* 磨砂底（浅色图上） */
+  --glass-hover: rgba(255, 255, 255, 0.42);       /* 磨砂 hover（浅色图上） */
 
   /* ====== 叠层阶梯（此前只有 20/100/3000 三个裸值，无注释、扩展时容易打架） ====== */
   --z-base: 20;        /* 页内局部浮层（首页轮播左右按钮等） */
@@ -280,6 +289,22 @@ html.mpv-hole body,
 html.mpv-hole #app {
   background: transparent;
 }
+
+/* mpv 播放页的「窗口级全屏」（2026-10-08，class 由 src/views/Player.vue 挂/摘）。
+   为什么不用 DOM 全屏：mpv 的画面是独立子窗口、靠页面「镂空」透出来，而 DOM 全屏只绘制
+   全屏元素及其后代（挖洞遮罩 teleport 在 body、控制条在 .player-wrap）→ 整屏只剩全屏背景 = 纯黑。
+   全屏靠主进程 win.setFullScreen 完成；这里只负责把页面「收拾干净」：
+   顶栏让位（它是 TopNav 的元素，播放页的 scoped 样式管不到，只能放全局）、禁用整页滚动。 */
+html.mpv-fs,
+html.mpv-fs body { overflow: hidden; }
+html.mpv-fs .topnav { display: none; }
+/* 右列那条上下滑条来自**应用自己的滚动容器** `.main-content`（`overflow-y: auto`），
+   只把 html/body 的 overflow 关掉是不够的 —— 全屏时会看到画面右侧挂着一条滚动条（用户反馈）。
+   顺带禁掉滚动：全屏下播放器是 fixed 铺满，滚动的只可能是被隐藏的遗留内容。 */
+html.mpv-fs .main-content { overflow: hidden; }
+/* 控件条原本带「下圆角」（.pc-bar 的 border-radius: 0 0 var(--r-md) var(--r-md)），
+   全屏时它贴在屏幕底边 → 左下角/右下角会缺出两块圆角（用户反馈）。全屏一律直角。 */
+html.mpv-fs .pc-bar { border-radius: 0; }
 
 /* 键盘可达性：统一焦点描边（不加 border-radius，避免圆形控件聚焦时被改成方角） */
 :focus-visible {

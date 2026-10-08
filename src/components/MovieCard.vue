@@ -209,7 +209,7 @@ watch(dataDirRef, () => { errd.value = false })
 .play-btn {
   width: var(--icon-btn-lg); height: var(--icon-btn-lg);
   border: none; border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--overlay-solid);
   color: var(--primary);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
@@ -259,15 +259,15 @@ watch(dataDirRef, () => { errd.value = false })
 /* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为品牌红实心 */
 .check {
   position: absolute; top: 8px; left: 8px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--overlay-glass);
   backdrop-filter: blur(12px) saturate(1.5);
   -webkit-backdrop-filter: blur(12px) saturate(1.5);
   border: none;
   border-radius: 50%;
   width: var(--icon-btn-sm); height: var(--icon-btn-sm);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-              inset 0 0 0 0.5px rgba(255, 255, 255, 0.12),
+  box-shadow: inset 0 1px 0 var(--overlay-highlight),
+              inset 0 0 0 0.5px var(--overlay-hairline),
               var(--sh-1);
   cursor: pointer;
   transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;

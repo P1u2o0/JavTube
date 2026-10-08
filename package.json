@@ -1,6 +1,6 @@
 {
   "name": "javtube",
-  "version": "5.1.1",
+  "version": "5.1.2",
   "description": "JavTube - 本地影片管理软件",
   "main": "electron/main/index.js",
   "author": "JavTube",
@@ -12,6 +12,7 @@
     "build:win": "vite build && electron-builder --win --x64",
     "release": "node scripts/build-portable.js",
     "clean": "node scripts/clean.js",
+    "clean:task": "node scripts/clean-task.js",
     "preview": "vite preview",
     "start": "electron .",
     "check:undefined": "node scripts/check-undefined.js",
