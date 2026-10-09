@@ -63,12 +63,6 @@
           @external="playExternal"
         />
 
-        <!-- 退出全屏时的过渡遮罩（2026-10-09）：
-             窗口与页面的切换是瞬时的，但 **mpv 把画面重配到新矩形要 100~300ms**
-             （重建 swapchain 时还会闪一两帧黑），那几帧里画面会「跳一下 + 露黑边」。
-             这层用页面底色盖住视频区，等 mpv 配好再淡出 —— 用户看到的是「播放区淡入画面」。 -->
-        <div class="mpv-fs-cover" :class="{ on: fsCover }" aria-hidden="true"></div>
-
         <!-- 播放质量提示（非阻塞，2026-10-07）：
              少数影片的容器时间戳不标准（码流用了 B 帧但 MP4 缺 ctts 盒），Chromium 的渲染器
              会因此丢掉约 20% 的帧 → 画面「一卡一卡」；同一文件用外部播放器完全正常。
@@ -209,9 +203,6 @@ const mpvReady = ref(false)
 // mpv 模式的「窗口级全屏」状态（2026-10-08）。全屏时整页只剩播放器（html.mpv-fs），
 // 由后端的 fullscreenchange 事件驱动 —— 见 mpv-backend.js 的 fullscreen 与 global.css 的说明。
 const mpvFs = ref(false)
-// 退出全屏时的过渡遮罩（见模板里 .mpv-fs-cover 的注释）
-const fsCover = ref(false)
-let fsCoverTimer = null
 // 控件条读的播放状态（契约里的状态是同步读的，mpv 后端已做缓存，这里只做响应式镜像）
 const mpvUi = reactive({ t: 0, dur: 0, paused: false, vol: 0.8, muted: false, rate: 1 })
 let playingId = null           // player 当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
@@ -550,6 +541,25 @@ function endHold() {
 // 所以窗口缩放 / 进全屏都只是「重算一次矩形」，不需要重启 mpv。
 let lastHoleKey = ''
 
+/** 把矩形写到挖洞遮罩的 CSS 变量上（syncHole 与全屏过渡动画共用同一份几何） */
+function applyShieldRect(r) {
+  const el = shieldRef.value
+  if (!el) return
+  el.style.setProperty('--hx', r.x + 'px')
+  el.style.setProperty('--hy', r.y + 'px')
+  el.style.setProperty('--hw', r.w + 'px')
+  el.style.setProperty('--hh', r.h + 'px')
+}
+
+/** 当前播放器盒子的矩形（转成镂空矩形的形状）；没布局出来时返回 null */
+function measureBox() {
+  const box = boxRef.value
+  if (!box) return null
+  const r = box.getBoundingClientRect()
+  if (!(r.width > 0) || !(r.height > 0)) return null
+  return { x: r.left, y: r.top, w: r.width, h: r.height, winW: window.innerWidth, winH: window.innerHeight }
+}
+
 /**
  * 重算镂空矩形，同时下发给「挖洞遮罩」与 mpv。
  *
@@ -561,27 +571,26 @@ let lastHoleKey = ''
  */
 function syncHole(force = false) {
   if (!isMpv.value) return
-  const box = boxRef.value
-  const el = shieldRef.value
-  if (!box || !el) return
-  const r = box.getBoundingClientRect()
-  const w = Math.max(0, r.width), h = Math.max(0, r.height)
-  if (!(w > 0) || !(h > 0)) return          // 还没布局出来，等下一次
-  const hole = { x: r.left, y: r.top, w, h, winW: window.innerWidth, winH: window.innerHeight }
+  const hole = measureBox()
+  if (!hole) return                           // 还没布局出来，等下一次
   const key = [hole.x, hole.y, hole.w, hole.h, hole.winW, hole.winH]
     .map(n => Math.round(n * 10) / 10).join(',')
   if (!force && key === lastHoleKey) return
   lastHoleKey = key
-  el.style.setProperty('--hx', hole.x + 'px')
-  el.style.setProperty('--hy', hole.y + 'px')
-  el.style.setProperty('--hw', hole.w + 'px')
-  el.style.setProperty('--hh', hole.h + 'px')
+  applyShieldRect(hole)
   player.setHole?.(hole)
   // ⚠️ 遮罩尺寸就绪 **且 mpv 已经出画** 之后才把整窗底色关掉（html.mpv-hole）。
   //    早关会有一瞬整窗透明、透出桌面（见 mpvReady 的注释）。
   if (mpvReady.value) document.documentElement.classList.add('mpv-hole')
 }
 
+// 全屏进出的画面处理：**不做任何画面动画**（用户的最终要求，2026-10-09）——
+//   · 进入：直接到位（放大过程本身不刺眼，加动画只是拖慢）；
+//   · 退出：由**主进程平滑地把窗口移回原尺寸**（见 ipc-utils 的 animateWindowTo），
+//     页面同时切回窗口布局，画面（= 洞）**始终等于播放器盒子本身**：盒子跟着窗口连续变化，
+//     mpv 的 margin 每帧跟着走 —— 全程没有「比盒子大的画面浮在页面内容之上」。
+// 历史：先是窗口/页面各自瞬跳（用户：有明显归位动作 + 黑边），再试过白色遮罩遮丑（用户：遮丑），
+//       再试给画面做缩放动画（用户：有明显的遮罩/画面残留）。最终定成「只让窗口平滑归位」。
 /** 退出播放页时把窗口底色恢复成不透明（否则其它页面会透出桌面） */
 function clearHole() {
   lastHoleKey = ''
@@ -657,19 +666,15 @@ function bindMpvUi() {
     nextTick(() => syncHole(true))
   })
   // 全屏变化（2026-10-08）：mpv 的「全屏」是**窗口级**的，不产生 document 的 fullscreenchange，
-  // 由后端广播（见 backend.js 的 PLAYER_EVENTS）。全屏时挂 html.mpv-fs → 整页只剩播放器，
-  // 其余面板不参与绘制（否则会盖在 mpv 画面之上）；视口尺寸变了必须重算镂空矩形并重下发。
+  // 由后端广播（见 backend.js 的 PLAYER_EVENTS）。进出都**不做画面动画**（见本文件上方说明）：
+  // 退出的顺滑由主进程「平滑移动窗口」（ipc-utils 的 animateWindowTo）提供。
   player.on('fullscreenchange', ({ fullscreen }) => {
     const on = !!fullscreen
     mpvFs.value = on
     document.documentElement.classList.toggle('mpv-fs', on)
-    nextTick(() => { syncHole(true); settleHole() })
-    // 退出全屏：先盖住视频区，等 mpv 把画面重配好再淡出（见模板里 .mpv-fs-cover 的注释）。
-    // 盖住的时长取 320ms：mpv 换 swapchain 实测在这个量级，太短会露出「跳一下」的中间帧。
-    if (fsCoverTimer) { clearTimeout(fsCoverTimer); fsCoverTimer = null }
-    if (on) { fsCover.value = false; return }
-    fsCover.value = true
-    fsCoverTimer = setTimeout(() => { fsCoverTimer = null; fsCover.value = false }, 320)
+    // 进出都只做「切布局 + 重算镂空矩形」——画面不做任何动画：
+    // 退出时窗口由主进程平滑移回（animateWindowTo），盒子跟着窗口连续变化，画面自然跟随。
+    nextTick(() => { lastHoleKey = ''; syncHole(true); settleHole() })
   })
   // 订阅晚于出画时（理论上有）直接补一次
   if (player.isVideoReady) { mpvReady.value = true; nextTick(() => syncHole(true)) }
@@ -1135,7 +1140,6 @@ onBeforeUnmount(() => {
   if (scrollSettleTimer) { clearTimeout(scrollSettleTimer); scrollSettleTimer = null }
   for (const t of settleTimers) clearTimeout(t)
   settleTimers = []
-  if (fsCoverTimer) { clearTimeout(fsCoverTimer); fsCoverTimer = null }
   stopHoleWatch()
   // 离开播放页时若还处于窗口级全屏（mpv），必须把窗口还原 ——
   // 否则整个应用停在无边框全屏里，而退出用的 Esc 已随本页卸载（后端 destroy 里另有一层兜底）。
@@ -1235,24 +1239,11 @@ onBeforeUnmount(() => {
   z-index: -1;
 }
 
-/* 退出全屏的过渡遮罩：盖住视频区（页面底色），`on` 时立刻不透明，摘掉时按 240ms 淡出。
-   为什么不淡入：淡入期间 mpv 还没配好画面，会看到「跳一下」的中间帧。 */
-.mpv-fs-cover {
-  position: absolute;
-  inset: 0;
-  z-index: 36;
-  background: var(--bg);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 240ms var(--ease-out);
-}
-.mpv-fs-cover.on { opacity: 1; transition: none; }
-
 /* ====== mpv 全屏（2026-10-08）：窗口级全屏 + 页面内把播放器铺满视口 ======
    为什么不用 DOM 全屏：DOM 全屏只绘制全屏元素及其后代，而 mpv 的画面必须靠「挖洞遮罩」
    （teleport 到 body）留出空隙才透得出来 —— 全屏后遮罩与控制条都被排除在绘制之外，
    屏幕上只剩全屏背景，而它盖在 mpv 子窗口之上 ⇒ 纯黑（用户反馈：点全屏直接黑掉）。
-   所以这里改成「窗口全屏（由主进程 win.setFullScreen 完成）+ 页面把播放器铺满视口」，
+   所以这里改成「窗口级全屏（主进程手动 setBounds 铺满屏幕）+ 页面把播放器铺满视口」，
    渲染路径与平时完全一致，mpv 侧再由 fullscreenchange 触发 syncHole 重下发 margin。
    ⚠️ 只隐藏「与视频无关的面板」，**错误面板与质量提示保留** ——
       全屏途中若播放失败，用户必须还能看到提示与「使用外部播放器打开」。 */

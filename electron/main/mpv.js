@@ -250,6 +250,32 @@ function stopPolling() {
 // ============================================================================
 
 /**
+ * 主窗口取用器（registerMpvIpc 时注入）：用来拿**真实窗口尺寸**当 margin 的分母。
+ */
+let getWin = null
+
+/**
+ * margin 比例的分母 = 主窗口当前的**真实内容尺寸**。
+ *
+ * 为什么不用渲染层传上来的 `winW/winH`：那是 **Chromium 视口**的尺寸，而 mpv 是按
+ * **它自己那个窗口**的尺寸去乘比例 —— 两者在窗口缩放的那几帧里会不一致。
+ * 2026-10-09 实测（退出全屏时）：窗口已变成 1000×700，而 Chromium 视口与
+ * mpv 的 `osd-dimensions` 还停在 1400×900，比例一错，mpv 算出的视频矩形就和页面「洞」
+ * 对不上 → mpv 的黑底从缝里露出来 = 用户看到的**退出全屏黑边**。
+ * 分母改用主进程的真实窗口尺寸后，无论渲染层视口跟不跟得上，mpv 都画在正确的矩形里。
+ * @param {number} fallbackW
+ * @param {number} fallbackH
+ * @returns {[number, number]}
+ */
+function holeDenominator(fallbackW, fallbackH) {
+  try {
+    const b = getWin?.()?.getContentBounds?.()
+    if (b && b.width > 0 && b.height > 0) return [b.width, b.height]
+  } catch { /* 窗口已销毁等：用渲染层给的兜底 */ }
+  return [fallbackW, fallbackH]
+}
+
+/**
  * 把「页面里视频区域的矩形」换算成 mpv 的四个 margin 比例。
  * mpv 是往**整个窗口**渲染的，margin 把它的可用区框到指定矩形（实测像素级对齐）。
  * @param {{x:number,y:number,w:number,h:number,winW:number,winH:number}} hole
@@ -257,7 +283,7 @@ function stopPolling() {
  */
 function holeToMargins(hole) {
   if (!hole) return []
-  const winW = Number(hole.winW), winH = Number(hole.winH)
+  const [winW, winH] = holeDenominator(Number(hole.winW), Number(hole.winH))
   const x = Number(hole.x), y = Number(hole.y), w = Number(hole.w), h = Number(hole.h)
   if (!(winW > 0) || !(winH > 0) || !(w > 0) || !(h > 0)) return []
   const clamp01 = v => Math.min(1, Math.max(0, v))
@@ -474,6 +500,8 @@ function safeName(name, allow) {
  * @param {{getMainWindow: () => import('electron').BrowserWindow|null}} ctx
  */
 function registerMpvIpc(ipcMain, ctx) {
+  // margin 分母要拿真实窗口尺寸（见 holeDenominator），这里注入取窗口的方法
+  getWin = typeof ctx.getMainWindow === 'function' ? ctx.getMainWindow : null
   // 事件出口：主进程 → 渲染层
   emit = (type, data) => {
     try {
