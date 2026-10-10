@@ -1048,6 +1048,12 @@ async function loadRecommendations(id) {
 }
 
 // ====== 操作 ======
+/**
+ * 点右侧推荐 → 在播放页内换片。
+ * ⚠️ 这里是**直连路由的正当例外**：规范要求「打开影片」走 utils/playback.js 的 playMovie()，
+ *    但那一步会按设置分派到外部播放器；而此刻用户**已经在内置播放页里**点推荐，
+ *    再走一次分派语义是错的。同路由不同参数由 App.vue 的 viewKey 复用组件，不会重建播放器。
+ */
 function goMovie(id) {
   if (Number(route.params.id) === Number(id)) return
   router.push(`/play/${id}`)

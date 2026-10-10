@@ -37,6 +37,43 @@ const ART_EVENT = Object.freeze(
  * Chromium 播放内核后端。
  * @implements {import('./backend.js')} 契约（见 backend.js 顶部说明）
  */
+/**
+ * 离屏预热 ArtPlayer（2026-09-30 加、2026-10-10 从 App.vue 搬来）。
+ *
+ * 背景（CDP 实测，相对「路由切到播放页」的增量）：
+ *   路由切换 → Player.vue setup 3ms → onMounted 4ms → new Artplayer() 首轮 129ms / 热态 3ms
+ *   → video 元素出现 137ms → loadedmetadata 239ms → 首帧 241ms
+ * 也就是「首次」点播放时，Artplayer 的构造独占约一半耗时（注入内置样式表 + 构建控制条 DOM
+ * + 首次布局）；之后再构造任何实例都只要 3ms。这里先构造一个离屏实例再销毁，
+ * 把这份一次性开销提前到用户还在首页浏览的时候。**只是提前付账，不增加总量。**
+ *
+ * ⚠️ 为什么搬到这里：AGENTS.md 的硬约束是「页面不得直接 import 任何内核」，
+ *    而 App.vue 原先直接 `import Artplayer from 'artplayer'` 并 new 了它。
+ *    预热本身只与 Chromium 内核有关，理应住在内核实现里，由 `src/player/index.js` 分发。
+ *
+ * @returns {boolean} 是否真的预热了（失败返回 false，不影响任何功能）
+ */
+export function prewarmChromiumBackend() {
+  let box = null
+  let art = null
+  try {
+    box = document.createElement('div')
+    box.dataset.jtPrewarm = '1'
+    // 离屏 + 不参与交互：不会被看到，也不会挡住/接收任何事件
+    box.style.cssText = 'position:fixed;left:-10000px;top:0;width:640px;height:360px;pointer-events:none;'
+    document.body.appendChild(box)
+    // 不给 url：只做 UI 初始化，不触发任何媒体加载
+    art = new Artplayer({ container: box, autoplay: false, muted: true, hotkey: false })
+    return true
+  } catch {
+    // 预热失败不影响任何功能：首次进播放页照原样付那 129ms
+    return false
+  } finally {
+    try { art?.destroy(false) } catch {}
+    try { box?.remove() } catch {}
+  }
+}
+
 export class ChromiumBackend {
   constructor() {
     /** @type {Artplayer|null} */

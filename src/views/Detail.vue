@@ -895,7 +895,6 @@ onMounted(async () => {
   cursor: pointer;
   background: var(--surface-2);
 }
-.strip-item.active { border-color: var(--accent); }
 .strip-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* 第一张「海报」角标 */
 .strip-badge {

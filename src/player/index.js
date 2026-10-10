@@ -10,7 +10,7 @@
  */
 
 import { PLAYER_KINDS } from './backend'
-import { ChromiumBackend } from './chromium-backend'
+import { ChromiumBackend, prewarmChromiumBackend } from './chromium-backend'
 import { MpvBackend } from './mpv-backend'
 
 /**
@@ -33,6 +33,17 @@ export function createBackend(kind = PLAYER_KINDS.CHROMIUM) {
 export function isBackendAvailable(kind) {
   if (kind === PLAYER_KINDS.MPV) return typeof window.api?.mpvControl === 'function'
   return true
+}
+
+/**
+ * 按内核做「空闲预热」（可选优化，失败无副作用）。
+ * 目前只有 Chromium 内核需要（ArtPlayer 的构造有一次性开销）；mpv 是独立进程，无需预热。
+ * @param {string} [kind] - 内核标识
+ * @returns {boolean} 是否预热
+ */
+export function prewarmPlayerKernel(kind) {
+  if (kind === PLAYER_KINDS.CHROMIUM) return prewarmChromiumBackend()
+  return false
 }
 
 export { PLAYER_EVENTS, PLAYER_KINDS } from './backend'

@@ -403,7 +403,6 @@ function onSearch() {
 }
 .bp-sub { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
 .bp-fail { color: var(--danger); word-break: break-all; }
-.bp-ok { color: var(--success); }
 .bp-empty { padding: 22px 0; text-align: center; color: var(--muted); font-size: var(--fs-base); }
 /* 面板弹出过渡：向下展开 + 淡入 */
 /* 面板进入：ease-out；退出更快（Emil 非对称时长） */

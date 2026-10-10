@@ -46,7 +46,25 @@
 
 const fs = require('fs')
 const path = require('path')
-const { execFileSync } = require('child_process')
+const { execFileSync, spawnSync } = require('child_process')
+
+// ---- 0) 自愈：NODE_OPTIONS 里带着 fs shim 时，以空 NODE_OPTIONS 重跑自己 ----
+// 为什么必须做（2026-10-10 实测踩到，打包直接失败）：
+//   本机会注入 `NODE_OPTIONS=--require .../node-safe-delete-shim.cjs`，它**同时 hook 了 fs**，
+//   于是 **vite build 的 emptyDir()（内部就是 fs.rmSync）会被劫持去走回收站**，
+//   回收站失败 → 抛错 → 「1/6 构建渲染层」整步失败、打包中断。错误栈里只会看到
+//   emptyDir / prepareOutDir，很容易误判成「dist 被占用」。
+//   同一个 shim 也让本脚本删 release/.build-* 时报 EPERM（此前一直以为是句柄锁死）。
+//   ⇒ 清空 NODE_OPTIONS 后，vite 与 fs.rmSync 都恢复正常。
+//   （同款自愈已用在 scripts/clean-task.js 与 scripts/release/cleanup-residue.js。）
+{
+  const shim = process.env.NODE_OPTIONS || ''
+  if (/node-language-shim|safe-delete-shim/.test(shim) && !process.env.__BUILD_NOSHIM) {
+    const env = Object.assign({}, process.env, { NODE_OPTIONS: '', __BUILD_NOSHIM: '1' })
+    const r = spawnSync(process.execPath, [__filename, ...process.argv.slice(2)], { env, stdio: 'inherit' })
+    process.exit(r.status === null ? 1 : r.status)
+  }
+}
 const asar = require('@electron/asar')
 
 const ROOT = path.resolve(__dirname, '..')

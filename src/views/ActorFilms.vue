@@ -697,7 +697,12 @@ onMounted(async () => {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
+  /* 不用 transition: all —— 它会把所有可动画属性都纳入观察（含布局属性）。
+     这个按钮实际只变颜色/底色/缩放，列清楚即可。 */
+  transition: color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-press) var(--ease-out);
 }
 .ah-edit-btn:hover { color: var(--primary); border-color: var(--primary); }
 .ah-edit-btn:active { transform: scale(0.96); }

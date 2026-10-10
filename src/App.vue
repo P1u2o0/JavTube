@@ -35,14 +35,13 @@
 <script setup>
 // 引入顶部导航栏组件
 import TopNav from '@/components/TopNav.vue'
-// 空闲预热内置播放器用（详见文件末尾 prewarmPlayer 注释）
-import Artplayer from 'artplayer'
 // 引入 Vue 的 onMounted / ref / watch 生命周期与响应式 API
 import { onMounted, ref, watch } from 'vue'
 // 引入路由实例（路由 key 与滚动复位用）
 import { useRoute } from 'vue-router'
 // 引入影片状态管理 Store
 import { useMoviesStore } from '@/store/movies'
+import { prewarmPlayerKernel } from '@/player'
 // 引入全局数据目录引用（用于封面图等资源的路径解析）
 import { dataDirRef } from '@/utils/global'
 // 失效图片检查/修复（启动自动检查用；设置页按钮共用同一段逻辑）
@@ -69,41 +68,20 @@ watch(() => viewKey(route), () => {
   if (mainRef.value) mainRef.value.scrollTop = 0
 })
 
-// ====== 空闲预热内置播放器（2026-09-30）======
-// 背景（CDP 实测，相对「路由切到播放页」的增量）：
-//   路由切换 → Player.vue setup 3ms → onMounted 4ms → new Artplayer() 首轮 129ms / 热态 3ms
-//   → video 元素出现 137ms → loadedmetadata 239ms → 首帧 241ms
-// 也就是说「首次」点播放时，Artplayer 的构造独占约一半耗时：它的一次性开销是
-// 注入内置样式表 + 构建控制条 DOM + 首次布局，之后再构造任何实例都只要 3ms。
-// 这里在启动流程跑完后的空闲时段构造一个离屏实例并立即销毁，把这份一次性开销
-// 提前到「用户还在首页浏览」的时候 —— 首次点播放时构造就是热态的 3ms。
-// 注：只是提前付账，不增加总量；放在空闲回调里，且延迟 1.5s 起跑，避免和首屏抢主线程。
+// ====== 空闲预热内置播放器（2026-09-30 加，2026-10-10 收口到内核层）======
+// 预热的是「首次构造 ArtPlayer」的一次性开销（实测 129ms，之后热态只要 3ms）。
+// 但**具体怎么预热只有 Chromium 内核知道**（mpv 是独立进程，根本不需要），
+// 所以实现搬到了 src/player/chromium-backend.js，这里只按当前内核分发 ——
+// 这样 App.vue 不必 import 任何内核（AGENTS.md 硬约束）。
+// 放在空闲回调里、延迟 1.5s 起跑，避免和首屏抢主线程。
 let playerPrewarmed = false
 function prewarmPlayer() {
   if (playerPrewarmed) return
   // 关闭了内置播放器（设置→播放设置→使用内置播放器=关）就没有预热的意义
   if ((store.settings?.use_builtin_player ?? 'y') === 'n') return
-  // ⚠️ 播放内核是 mpv（现在的默认「兼容模式」）时也**不要预热**：
-  //    那种模式下播放页根本不构造 ArtPlayer（mpv 是独立进程），
-  //    预热等于白做一次离屏构造 + 销毁（约 130ms 的主线程开销）。
-  if ((store.settings?.player_kernel ?? 'mpv') !== 'chromium') return
   playerPrewarmed = true
-  let box = null
-  let art = null
-  try {
-    box = document.createElement('div')
-    box.dataset.jtPrewarm = '1'
-    // 离屏 + 不参与交互：不会被看到，也不会挡住/接收任何事件
-    box.style.cssText = 'position:fixed;left:-10000px;top:0;width:640px;height:360px;pointer-events:none;'
-    document.body.appendChild(box)
-    // 不给 url：只做 UI 初始化，不触发任何媒体加载
-    art = new Artplayer({ container: box, autoplay: false, muted: true, hotkey: false })
-  } catch {
-    // 预热失败不影响任何功能：首次进播放页照原样付那 129ms
-  } finally {
-    try { art?.destroy(false) } catch {}
-    try { box?.remove() } catch {}
-  }
+  // 非 Chromium 内核内部会直接返回 false（不预热），无需在这里判断
+  prewarmPlayerKernel(store.settings?.player_kernel)
 }
 
 // 组件挂载后的初始化逻辑
