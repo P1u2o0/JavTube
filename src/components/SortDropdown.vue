@@ -25,12 +25,12 @@
     </el-button>
     <template #dropdown>
       <el-dropdown-menu>
-        <el-dropdown-item command="tjrq" :class="{ 'sort-active': !random && by === 'tjrq' }">添加日期</el-dropdown-item>
-        <el-dropdown-item command="fxrq" :class="{ 'sort-active': !random && by === 'fxrq' }">发行日期</el-dropdown-item>
-        <el-dropdown-item command="want" :class="{ 'sort-active': !random && by === 'want' }">想看人数</el-dropdown-item>
-        <el-dropdown-item command="watched" :class="{ 'sort-active': !random && by === 'watched' }">看过人数</el-dropdown-item>
-        <el-dropdown-item command="score" :class="{ 'sort-active': !random && by === 'score' }">评分</el-dropdown-item>
-        <el-dropdown-item command="random" divided :class="{ 'sort-active': random }">随机排序</el-dropdown-item>
+        <!-- 选项由调用方给（options 默认是影片列表那 5 个字段；观看记录页换成「播放次数/播放时间」） -->
+        <el-dropdown-item
+          v-for="o in options" :key="o.value" :command="o.value"
+          :class="{ 'sort-active': !random && by === o.value }"
+        >{{ o.label }}</el-dropdown-item>
+        <el-dropdown-item v-if="showRandom" command="random" divided :class="{ 'sort-active': random }">随机排序</el-dropdown-item>
       </el-dropdown-menu>
     </template>
   </el-dropdown>
@@ -44,21 +44,37 @@ import AppIcon from '@/components/AppIcon.vue'
 const props = defineProps({
   by: { type: String, default: 'tjrq' },
   order: { type: String, default: 'DESC' },
-  random: { type: Boolean, default: false }
+  random: { type: Boolean, default: false },
+  /**
+   * 下拉里可选的排序字段：[{ value, label }]。
+   * 默认是影片列表（片库/喜欢）那 5 个字段；**观看记录页传自己的两个**
+   * （播放次数 play_count / 播放时间 play_time）—— 那一页只按观看行为排序才有意义。
+   * value 必须在后端 SORTABLE_COLUMNS 白名单里，否则会被后端回退成 tjrq（排序静默失效）。
+   */
+  options: {
+    type: Array,
+    default: () => [
+      { value: 'tjrq', label: '添加日期' },
+      { value: 'fxrq', label: '发行日期' },
+      { value: 'want', label: '想看人数' },
+      { value: 'watched', label: '看过人数' },
+      { value: 'score', label: '评分' }
+    ]
+  },
+  /** 是否提供「随机排序」（观看记录页关掉：按观看行为排序才有意义） */
+  showRandom: { type: Boolean, default: true }
 })
 
 // change：算出下一状态后抛出，交由父级写回
 const emit = defineEmits(['change'])
 
 // 排序按钮文案：随机模式显示「随机排序」，否则显示当前字段名
-// 表里必须覆盖后端 SORTABLE_COLUMNS 的每个字段，否则会 fallback 成「添加日期」——
-// 排序实际生效但按钮说错（观看记录页用的就是 play_time，2026-09-28 审计）
+// 文案表直接来自 options —— 新增字段只要调用方传对 { value, label }，按钮文案就不会说错
+// （历史上是硬编码表，观看记录页用 play_time 时按钮会 fallback 成「添加日期」，2026-09-28 审计）
 const label = computed(() => {
   if (props.random) return '随机排序'
-  return {
-    tjrq: '添加日期', fxrq: '发行日期', want: '想看人数', watched: '看过人数',
-    score: '评分', play_time: '观看时间'
-  }[props.by] || '添加日期'
+  const hit = props.options.find(o => o.value === props.by)
+  return hit ? hit.label : (props.options[0]?.label || '添加日期')
 })
 // 方向箭头（随机模式无方向）
 const arrow = computed(() => (props.random ? '' : (props.order === 'ASC' ? '↑' : '↓')))

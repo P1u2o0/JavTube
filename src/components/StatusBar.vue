@@ -14,6 +14,8 @@
       :by="store.sort.by"
       :order="store.sort.order"
       :random="store.sort.random"
+      :options="sortOptions"
+      :show-random="sortShowRandom"
       @change="onSortChange"
     />
     <!-- 左侧：显示搜索结果总数 -->
@@ -65,7 +67,13 @@ import SortDropdown from '@/components/SortDropdown.vue'
 
 // 组件 props 定义
 // - total: 影片搜索结果总数
-const props = defineProps({ total: Number })
+// - sortOptions / sortShowRandom: 透传给排序下拉（观看记录页只给「播放次数/播放时间」两项）。
+//   不传时 SortDropdown 用自己的默认值（影片列表那 5 个字段 + 随机排序），所以片库/喜欢无需改动。
+const props = defineProps({
+  total: Number,
+  sortOptions: { type: Array, default: undefined },
+  sortShowRandom: { type: Boolean, default: true }
+})
 
 // 定义 emit 事件：
 // - toggle: 多选模式开关变化时触发，参数为新的开关状态

@@ -10,9 +10,13 @@
 -->
 <template>
   <div>
-    <!-- 状态栏：显示总数，提供批量删除与批量收藏操作 -->
+    <!-- 状态栏：显示总数，提供批量删除与批量收藏操作。
+         排序下拉只给「播放次数 / 播放时间」两项（本页只有按观看行为排序才有意义），
+         且不提供随机排序 —— 见下方 HISTORY_SORT_FIELDS 与 SortDropdown 的 options 说明 -->
     <StatusBar
       :total="store.total"
+      :sort-options="HISTORY_SORT_OPTIONS"
+      :sort-show-random="false"
       @sortChange="onSortChange"
       @batchDelete="onBatchDelete"
       @batchFav="onBatchFav"
@@ -83,6 +87,16 @@ async function onSortChange() {
   await loadHistory()
 }
 
+// 本页可选的排序字段（2026-11-07 用户要求）：只看观看行为 —— 播放次数 / 播放时间。
+// value 与后端 SORTABLE_COLUMNS 对齐（play_count / play_time），否则后端会静默回退成 tjrq。
+const HISTORY_SORT_OPTIONS = [
+  { value: 'play_count', label: '播放次数' },
+  { value: 'play_time', label: '播放时间' }
+]
+// 本页可能写入 store.sort 的字段集合：离开时要按它判断「当前排序是不是本页设的」，
+// 只认 play_time 会漏掉 play_count（那样退出本页会把「播放次数」带给片库/喜欢）
+const HISTORY_SORT_FIELDS = HISTORY_SORT_OPTIONS.map(o => o.value)
+
 /**
  * 卡片点击处理（直接进入详情页）
  *   （onDetail 由 useMovieList composable 提供）
@@ -116,11 +130,11 @@ onMounted(async () => {
   await loadHistory()
 })
 
-// 离开本页：还原进入前的全局排序，避免把「播放时间」带给片库/喜欢。
+// 离开本页：还原进入前的全局排序，避免把「播放时间/播放次数」带给片库/喜欢。
 // 但只在「本页设置的排序仍然生效」时还原 —— 否则会覆盖掉顶栏/用户在离开前的排序改动
 // （例如点顶栏「片库」时 TopNav 的 resetAll 会把排序复位，随后本页卸载又把旧值写回去）。
 onBeforeUnmount(() => {
-  if (sortBackup && store.sort.by === 'play_time' && store.sort.random === false) store.sort = sortBackup
+  if (sortBackup && HISTORY_SORT_FIELDS.includes(store.sort.by) && store.sort.random === false) store.sort = sortBackup
 })
 
 // 顶栏新增影片后：按本页自己的筛选条件重载（不能由顶栏直接 loadMovies，那会把列表换成全库）
