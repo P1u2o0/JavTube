@@ -8,6 +8,7 @@
  * 依赖：vue-router（useRouter）、@/store/movies
  * ============================================================
  */
+import { nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { buildScrapeUpdate, bumpCover, statsFillHint } from '@/utils/global'
@@ -48,15 +49,34 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
   }
 
   /**
-   * 翻页处理：设置页码 → 按视图各自的加载参数重载 → 滚回顶部。
+   * 翻页处理：设置页码 → 按视图各自的加载参数重载 → 回顶。
+   *
+   * 回顶**必须瞬时**（2026-11-07 用户反馈「连续翻页片库会卡顿」）：
+   * 原先用 `scrollTo({ behavior: 'smooth' })`，会在「40 张新卡刚换上、封面正在解码」
+   * 的时刻再叠一段 ~3000px 的滚动动画。探针 A/B 实测（tmp/probe-paging-ab.js，同机同页）：
+   *
+   *   | 每次翻页的主线程成本 | 平滑回顶 | 瞬时回顶 |
+   *   |---|---|---|
+   *   | TaskDuration        | 377 ms   | 140 ms   |
+   *   | 样式重算            | 215 次 / 31.5 ms | 71 次 / 12.3 ms |
+   *   | 布局                | 30 次 / 16.7 ms  | 10 次 / 6 ms |
+   *
+   * 也就是说这 237ms 的主线程占用、以及 3 倍的样式/布局，纯粹是那段动画带来的 ——
+   * 在 60Hz 的真实窗口上就是肉眼可见的卡顿。原生应用翻页也是「一次到位」，没有滑行动画。
+   *
+   * 另外两处顺序细节：
+   *   · 点击时**先把位置拉回顶部**：否则新一页会先在底部闪一下（用户看到的还是上一页的尾巴），
+   *     再跳上去，观感像跳帧；
+   *   · 换页渲染完再确认一次 scrollTop === 0（列表高度变化时浏览器可能做滚动锚定微调）。
    */
   async function onPageChange(p) {
     store.page = p
+    const mc = document.querySelector('.main-content')
+    if (mc) mc.scrollTop = 0
     const args = buildLoadArgs ? buildLoadArgs() : { append: false }
     await store.loadMovies(args)
-    // 回顶必须滚 .main-content：全站唯一滚动容器是它（.page-container 是 100vh + overflow:hidden，
-    // body 不可滚动），对 window 调 scrollTo 是空操作 → 翻页后页面停在原位（2026-10-02 修复）
-    document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' })
+    await nextTick()
+    if (mc && mc.scrollTop !== 0) mc.scrollTop = 0
   }
 
   /**
