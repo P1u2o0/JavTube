@@ -10,38 +10,57 @@
 -->
 <template>
   <div>
-    <!-- 状态栏：显示总数，提供批量删除与批量收藏操作。
-         排序下拉只给「播放次数 / 播放时间」两项（本页只有按观看行为排序才有意义），
-         且不提供随机排序 —— 见下方 HISTORY_SORT_FIELDS 与 SortDropdown 的 options 说明 -->
-    <StatusBar
-      :total="store.total"
-      :sort-options="HISTORY_SORT_OPTIONS"
-      :sort-show-random="false"
-      @sortChange="onSortChange"
-      @batchDelete="onBatchDelete"
-      @batchFav="onBatchFav"
-      @batchAddTag="onBatchAddTag"
-      @batchScrape="onBatchScrape"
-    />
-    <!-- 空状态：无观看记录时显示提示 -->
-    <el-empty v-if="store.total === 0 && !store.loading" description="还没有观看记录" />
-    <!-- 影片网格组件 -->
-    <MovieGrid v-else
-      :movies="store.movies"
-      :total="store.total"
-      :page="store.page"
-      :pageSize="store.pageSize"
-      :cols="store.colsPerRow"
-      :loading="store.loading"
-      :selectMode="store.selectMode"
-      :selectedIds="store.selectedIds"
-      :showPlayCount="true"
-      @page="onPageChange"
-      @play="onPlay"
-      @fav="onFav"
-      @toggle="onToggle"
-      @click="onCardClick"
-    />
+    <!-- 顶部工具栏：右侧两个视图切换（列表 / 统计），样式与演员页右上角「头像 / 排行」一致。
+         统计原先是一个独立页面（2026-11-08 并入本页，用户要求）。 -->
+    <div class="hist-head">
+      <div class="view-toggle">
+        <button :class="{ on: view === 'list' }" @click="view = 'list'" title="按观看记录列表">
+          <AppIcon name="history" :size="14" /><span>列表</span>
+        </button>
+        <button :class="{ on: view === 'stats' }" @click="view = 'stats'" title="观看统计">
+          <AppIcon name="chart" :size="14" /><span>统计</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== 列表视图 ===== -->
+    <template v-if="view === 'list'">
+      <!-- 状态栏：显示总数，提供批量删除与批量收藏操作。
+           排序下拉只给「播放次数 / 播放时间」两项（本页只有按观看行为排序才有意义），
+           且不提供随机排序 —— 见下方 HISTORY_SORT_FIELDS 与 SortDropdown 的 options 说明 -->
+      <StatusBar
+        :total="store.total"
+        :sort-options="HISTORY_SORT_OPTIONS"
+        :sort-show-random="false"
+        @sortChange="onSortChange"
+        @batchDelete="onBatchDelete"
+        @batchFav="onBatchFav"
+        @batchAddTag="onBatchAddTag"
+        @batchScrape="onBatchScrape"
+      />
+      <!-- 空状态：无观看记录时显示提示 -->
+      <el-empty v-if="store.total === 0 && !store.loading" description="还没有观看记录" />
+      <!-- 影片网格组件 -->
+      <MovieGrid v-else
+        :movies="store.movies"
+        :total="store.total"
+        :page="store.page"
+        :pageSize="store.pageSize"
+        :cols="store.colsPerRow"
+        :loading="store.loading"
+        :selectMode="store.selectMode"
+        :selectedIds="store.selectedIds"
+        :showPlayCount="true"
+        @page="onPageChange"
+        @play="onPlay"
+        @fav="onFav"
+        @toggle="onToggle"
+        @click="onCardClick"
+      />
+    </template>
+
+    <!-- ===== 统计视图（原独立统计页，2026-11-08 并入）===== -->
+    <StatsPanel v-else />
   </div>
 </template>
 
@@ -51,6 +70,11 @@ import { useMoviesStore } from '@/store/movies'
 import { useMovieList } from '@/composables/useMovieList'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
+import StatsPanel from '@/components/StatsPanel.vue'
+import AppIcon from '@/components/AppIcon.vue'
+
+/** 视图：list=观看记录列表 / stats=统计面板（2026-11-08，原独立页面并入） */
+const view = ref('list')
 
 // Pinia store 实例
 const store = useMoviesStore()
@@ -140,3 +164,28 @@ onBeforeUnmount(() => {
 // 顶栏新增影片后：按本页自己的筛选条件重载（不能由顶栏直接 loadMovies，那会把列表换成全库）
 watch(() => store.dataToken, () => loadHistory())
 </script>
+
+<style scoped>
+/* 顶部工具栏：只放右侧的视图切换，与演员页右上角「头像 / 排行」同款 */
+.hist-head {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.view-toggle {
+  display: flex; padding: 3px; gap: 2px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface);
+}
+.view-toggle button {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 14px; border: none; border-radius: var(--r-pill);
+  background: transparent; color: var(--muted);
+  font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.view-toggle button:hover { color: var(--text); }
+.view-toggle button.on { background: var(--primary); color: #fff; }
+.view-toggle button:active { transform: scale(0.97); }
+</style>

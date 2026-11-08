@@ -99,5 +99,9 @@ module.exports = {
   // === 图片完整性（2026-09-27）===
   // 扫描全库「库里引用但文件缺失/不是有效图片」的封面与预览图 / 按影片重新下载修复
   IMAGES_SCAN: 'images:scan',
-  IMAGES_REPAIR: 'images:repair'
+  IMAGES_REPAIR: 'images:repair',
+
+  // === 观影统计（2026-11-08）===
+  // 一次性返回总数/收藏/观看次数/估算时长/Top 女优/Top 标签/近 12 个月趋势
+  STATS_GET: 'stats:get'
 }

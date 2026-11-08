@@ -37,6 +37,30 @@ const NEG_TTL_MS = 5 * 60 * 1000
 //    用 Map 的插入顺序当 LRU：命中/写入时把它挪到队尾，超限就丢最旧的一条。
 //    （封面协议 cover-protocol.js 早就有 CACHE_MAX_ENTRIES，这里补齐。）
 const VIDEO_SIZE_CACHE_MAX = 500
+/**
+ * 全屏时窗口矩形**横向**外扩的像素数（手动铺满专用，2026-11-08）。
+ * 为什么需要：Win11 的 DWM 会给普通窗口画约 8~12px 圆角，而 mpv 模式下页面不画底色
+ * （视频从「镂空」处透出）→ 圆角那四处会**直接漏出桌面**。
+ * 为什么只扩 X 不扩 Y：窗口若上下也外扩，视口就比屏幕高 24px，**播放控件条会被裁掉底部**
+ * （实测控件条底边 1104 / 屏幕高 1080 → 丢了 24px）。横向外扩后，左右圆角被推到屏幕外，
+ * 上下留 0 外扩 → 控件条底边正好落在屏幕下沿，一像素不丢。
+ */
+const FS_OVERHANG = 12
+
+/**
+ * 进入全屏前的窗口状态（`{ bounds, onTop, maximized }`），退出时据此还原。
+ * 「全屏」是**我们自己 setBounds 铺满**的（见 UTILS_SET_WINDOW_FULLSCREEN），
+ * 系统不会替我们记/还原矩形，所以必须自己记。
+ */
+let fsPrev = null
+
+/**
+ * 「全屏期间失焦即取消置顶」的监听是否已挂上。
+ * 窗口只挂一次（反复进出全屏不能叠加 listener）。规则来自用户 2026-10-09：
+ * 全屏时置顶（压过任务栏），**一旦失去焦点就取消置顶**（不挡别的窗口），重新聚焦再置顶。
+ */
+let fsTopBound = false
+
 /** 写入缓存并维持上限（同时刷新它的「最近使用」位置） */
 function cacheVideoSize(p, size) {
   if (videoSizeCache.has(p)) videoSizeCache.delete(p)
@@ -301,7 +325,7 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  // 渲染进程 → 主进程：切换主窗口的**系统全屏**（2026-10-08，mpv 播放页的「全屏」）。
+  // 渲染进程 → 主进程：切换主窗口的**全屏**（2026-10-08 引入，mpv 播放页的「全屏」）。
   //
   // 为什么不用 DOM 全屏（element.requestFullscreen）：mpv 的画面是**独立子窗口**、由页面把
   // 视频区域「镂空」透出来的（见 docs/MPV_INTEGRATION_PLAN.md）。进入 DOM 全屏后，Chromium
@@ -309,20 +333,22 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
   // 全被排除在绘制之外，屏幕上只剩全屏背景，而它盖在 mpv 子窗口之上
   // ⇒ 用户看到的是**纯黑，什么都没有**（2026-10-08 用户反馈）。
   //
-  // ★ 定稿（2026-10-09 用户明确要求「不要对软件窗口做任何缩放/动画，照 Chromium 内核那套来」）：
-  //   **就是 win.setFullScreen**，进/出全屏全部交给系统，和内置 Chromium 播放内核走的是同一条路
-  //   （ArtPlayer 的 fullscreen 最终也是让 Electron 进系统全屏）。页面侧只做一件事：用
-  //   `html.mpv-fs` 把播放器铺满视口，于是 mpv 的画面正好铺满整屏。
+  // ★ 定稿（2026-11-08）：**瞬时 setBounds 手动铺满**，不用 `win.setFullScreen`。
+  //   为什么换掉系统全屏：Windows 会为「进入全屏」播一段 150~300ms 的**窗口缩放动画**，
+  //   而页面换布局是瞬时的一帧，两者永远对不齐 —— 用户看到的就是「窗口被拽大成全屏」
+  //   （2026-11-08 反馈）。setBounds 瞬时生效，窗口与页面在同一帧里一起切，没有动画。
   //
-  //   历史（别再走回头路）：中间为了「避开 DOM 全屏的黑屏」试过自己 setBounds 手动铺满，
-  //   由此派生出一连串补丁 —— 置顶压任务栏、外扩 12px 藏 DWM 圆角、窗口平滑归位动画、
-  //   退出的过渡遮罩、画面归位动画…… 每一个都被用户否掉了（「不要对软件窗口进行缩放」）。
-  //   **系统全屏本来就没有这些问题**：任务栏由系统盖住、圆角由系统去掉、进出动画由系统负责。
+  //   代价与对策（三条都已实测）：
+  //     ① 任务栏：系统全屏那层身份没了 → `setAlwaysOnTop(true,'screen-saver')` 压过去；
+  //        按用户 2026-10-09 的规则「失焦即取消置顶」，不挡别的窗口。
+  //     ② Win11 会给普通窗口画 ~8~12px 圆角，而 mpv 模式页面不画底色 → 四角漏桌面。
+  //        对策：窗口矩形**横向**外扩 FS_OVERHANG（纵向不能扩 —— 会把播放控件条底部裁掉 24px）。
+  //     ③ 退出要自己还原窗口（系统不再替我们记）→ 进入前存矩形/置顶/最大化态，退出一次性还原。
   //
-  // ⚠️ 透明窗口上 `win.isFullScreen()` 的读值不可靠（恒 false），所以：
-  //   ① 只信「窗口矩形 vs 屏幕矩形」来核对是否真的全屏了；
-  //   ② 退出时**无条件** setFullScreen(false)（幂等），不要写成 `if (isFullScreen())` ——
-  //      跳过它会让 Electron 内部停在「已全屏」态，下次进入全屏变成空操作。
+  //   历史（别再走回头路）：
+  //     DOM 全屏 → 全黑；系统全屏 → 缩放动画；手写「平滑归位动画 / 白色过渡遮罩 / 画面缩放动画」
+  //     → 全被用户否掉（「不要对软件窗口进行缩放」「遮罩是遮丑」）。**现在的版本没有任何动画**，
+  //     窗口与页面同帧切换，这是唯一被接受的形式。
   ipcMain.handle(IPC.UTILS_SET_WINDOW_FULLSCREEN, async (_e, on) => {
     try {
       const win = getMainWindow()
@@ -331,40 +357,58 @@ function registerUtilsIpc(ipcMain, { db, getMainWindow, dataDir }) {
       const readCovers = () => {
         const b = win.getBounds()
         const d = screen.getDisplayMatching(b).bounds
+        // 手动铺满会外扩 FS_OVERHANG，容差给到 14px
         const covers = b.x <= d.x + 14 && b.y <= d.y + 14 &&
           b.x + b.width >= d.x + d.width - 14 && b.y + b.height >= d.y + d.height - 14
         return { covers, bounds: b, display: d }
       }
-      const settle = () => new Promise(r => setTimeout(r, 180))   // 系统全屏是异步的，立刻读会读到旧矩形
 
       if (want) {
-        // 全屏时把右上角那三个原生窗口按钮（titleBarOverlay）藏掉：只留播放器画面。
-        // 为什么必须显式做：透明窗口上 Electron 的全屏态判断是坏的（`isFullScreen()` 恒 false），
-        // 它不会自动隐藏覆盖层 —— 那三个按钮会一直压在画面上（用户 2026-10-08 反馈）。
+        // 记进入前的状态：矩形 / 置顶 / 是否最大化（setBounds 会抹掉最大化态）
+        if (!fsPrev) fsPrev = { bounds: win.getBounds(), onTop: win.isAlwaysOnTop(), maximized: win.isMaximized() }
+        // 右上角三个原生窗口按钮（titleBarOverlay）藏掉：全屏只留播放器画面
         try { win.setTitleBarOverlay(TITLEBAR_OVERLAY_HIDDEN) } catch { /* 不支持则保持原样 */ }
-        win.setFullScreen(true)
-        await settle()
-        let st = readCovers()
-        if (!st.covers) {
-          // 实测该方法偶发被完全忽略（探针里 3 轮中 1 轮）→ 复位后再设一次
-          win.setFullScreen(false)
-          await settle()
-          win.setFullScreen(true)
-          await settle()
-          st = readCovers()
+        // 「全屏时置顶、失焦即取消置顶」（用户 2026-10-09 规则）：窗口只挂一次监听，避免反复进出叠加
+        if (!fsTopBound) {
+          fsTopBound = true
+          try {
+            win.on('blur', () => { if (fsPrev) { try { win.setAlwaysOnTop(false) } catch { /* 忽略 */ } } })
+            win.on('focus', () => { if (fsPrev) { try { win.setAlwaysOnTop(true, 'screen-saver') } catch { /* 忽略 */ } } })
+          } catch { /* 忽略 */ }
         }
-        if (!st.covers) console.warn(`[fullscreen] 系统全屏未生效：bounds=${JSON.stringify(st.bounds)} display=${JSON.stringify(st.display)}`)
-        console.log(`[fullscreen] 进入全屏 → covers=${st.covers} bounds=${JSON.stringify(st.bounds)}`)
-        return { ok: true, data: { fullscreen: true, covers: st.covers, bounds: st.bounds, display: st.display } }
+        const d = screen.getDisplayMatching(fsPrev.bounds).bounds
+        // 置顶到 screen-saver 级：压过任务栏（手动铺满没有"系统全屏"这层身份）
+        try { win.setAlwaysOnTop(true, 'screen-saver') } catch { /* 忽略 */ }
+        // ★ 一次性 setBounds 铺满（**只横向**外扩 FS_OVERHANG，把 Win11 的窗口圆角推出屏幕；
+        //   纵向与屏幕等高，否则控件条底部会被裁掉 —— 实测裁 24px）。
+        //   为什么不用 win.setFullScreen：Windows 会为「进入全屏」播一段 150~300ms 的缩放动画，
+        //   而页面换布局是瞬时的一帧 —— 两者永远对不齐，用户看到的就是「窗口被拽大成全屏」
+        //   （2026-11-08 反馈）。setBounds 是瞬时生效，窗口与页面在同一帧里一起切。
+        win.setBounds({
+          x: d.x - FS_OVERHANG, y: d.y,
+          width: d.width + FS_OVERHANG * 2, height: d.height
+        })
+        const st = readCovers()
+        if (!st.covers) console.warn(`[fullscreen] 未能铺满屏幕：bounds=${JSON.stringify(st.bounds)} display=${JSON.stringify(st.display)}`)
+        console.log(`[fullscreen] 进入全屏 → mode=manual covers=${st.covers} bounds=${JSON.stringify(st.bounds)}`)
+        return { ok: true, data: { fullscreen: true, mode: 'manual', ...st } }
       }
 
-      // 退出：把窗口还原交给系统（矩形/最大化状态都由它负责），我们只补两件它不知道的事 ——
-      // 先无条件退出全屏，再把覆盖层放回来。
-      try { win.setFullScreen(false) } catch { /* 忽略 */ }
+      // 退出：**一次性瞬时还原**（不 await、不做动画）—— 窗口与页面必须同帧切回窗口布局，
+      // 否则会出现「先看到只有画面的窗口、再落进软件界面」的两步动作（2026-10-09 用户反馈）。
+      // 还原顺序：覆盖层 → 置顶 → 矩形（原本最大化就补 maximize()，setBounds 会把最大化态抹掉）。
+      const prev = fsPrev
+      fsPrev = null
       try { win.setTitleBarOverlay(TITLEBAR_OVERLAY) } catch { /* 忽略 */ }
-      await settle()
+      if (prev) {
+        try { win.setAlwaysOnTop(!!prev.onTop) } catch { /* 忽略 */ }
+        try {
+          if (prev.maximized) win.maximize()
+          else win.setBounds(prev.bounds)
+        } catch { /* 忽略 */ }
+      }
       const stOff = readCovers()
-      console.log(`[fullscreen] 退出 → bounds=${JSON.stringify(stOff.bounds)}`)
+      console.log(`[fullscreen] 退出 → mode=off bounds=${JSON.stringify(stOff.bounds)}`)
       return { ok: true, data: { fullscreen: false, mode: 'off', ...stOff } }
     } catch (e) {
       console.warn('[fullscreen] 切换失败:', e.message)

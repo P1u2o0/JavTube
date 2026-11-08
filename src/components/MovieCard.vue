@@ -46,6 +46,9 @@
       <span v-if="showPlayCount && m.play_count" class="play-count">
         <AppIcon name="play" :size="12" />{{ m.play_count }}
       </span>
+      <!-- 观看进度条（2026-11-08）：看过但没看完时贴在海报下沿，一眼看出"这部看到哪了"。
+           数据来自 play_pos/play_dur（播放页每 5 秒记一次）；进度 ≥97% 视为看完，不显示。 -->
+      <div v-if="progress > 0" class="prog" aria-hidden="true"><i :style="{ width: (progress * 100) + '%' }"></i></div>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中品牌红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -95,6 +98,20 @@ function onErr() { errd.value = true }
 
 // 是否已收藏（cl 字段为 'y' 表示已收藏）
 const isFav = computed(() => props.m.cl === 'y')
+
+/**
+ * 观看进度（0~1）：0 表示「没看过 / 已看完 / 没时长数据」。
+ * 判据：play_pos > 0 且 play_dur > 0；≥97% 视为看完（进度条不再显示）。
+ * 只做展示，不参与续播 —— 续播位置由播放页按 play_pos 处理。
+ */
+const progress = computed(() => {
+  const pos = Number(props.m.play_pos) || 0
+  const dur = Number(props.m.play_dur) || 0
+  if (!(pos > 0) || !(dur > 0)) return 0
+  const r = pos / dur
+  if (r >= 0.97) return 0
+  return Math.max(0.01, Math.min(1, r))
+})
 
 /**
  * 喜欢按钮点击：用 Web Animations API 播放轻微弹跳（与状态解耦、确定性播放），
@@ -255,6 +272,14 @@ watch(dataDirRef, () => { errd.value = false })
   backdrop-filter: blur(4px);
   pointer-events: none;
 }
+
+/* 观看进度条：贴在海报下沿的细线，品牌红表示已看部分 */
+.prog {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--overlay-badge);
+  pointer-events: none;
+}
+.prog i { display: block; height: 100%; background: var(--accent); }
 
 /* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为品牌红实心 */
 .check {

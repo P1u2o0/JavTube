@@ -21,8 +21,12 @@
         <AppIcon name="close" :size="14" />
       </button>
     </div>
-    <!-- 标签筛选栏，标签变化时触发刷新 -->
-    <TagFilter @change="onRefresh" />
+    <!-- 标签筛选栏，标签变化时触发刷新。头部插槽里放「筛选夹」（标签筛选四个字右边） -->
+    <TagFilter @change="onRefresh">
+      <template #header-extra>
+        <SmartFilters compact @apply="onApplySmart" />
+      </template>
+    </TagFilter>
     <!-- 状态栏：显示影片总数，提供批量删除、批量收藏、批量刮削入口 -->
     <StatusBar
       :total="store.total"
@@ -63,6 +67,7 @@ const router = useRouter()
 import TagFilter from '@/components/TagFilter.vue'
 import StatusBar from '@/components/StatusBar.vue'
 import MovieGrid from '@/components/MovieGrid.vue'
+import SmartFilters from '@/components/SmartFilters.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import BackButton from '@/components/BackButton.vue'
 
@@ -89,6 +94,13 @@ function routeSig(q) {
 // 保留，靠的是下面的 fallback 分支 —— 它同样不重置 page。
 // 本变量的实际作用域是「本次挂载内的 watch」：用来区分「同一套筛选（返回）」与「换了筛选」。
 let lastAppliedSig = null
+
+/**
+ * 「正在应用筛选夹」标记：为 true 时 route.query 的 watch 只记录签名、不做任何清空/重载。
+ * 因为应用收藏夹时我们会主动清掉 URL 上的路由筛选，而那个 watch 的"清空"分支会连
+ * 标签与搜索词一起清掉（见 onApplySmart 的注释）。
+ */
+let applyingSmart = false
 
 /**
  * 从路由 query 提取翻页需保留的筛选参数（导演/片商/系列）
@@ -138,6 +150,24 @@ async function onRefresh() { store.page = 1; await store.loadMovies({ append: fa
  * 排序方式变更（StatusBar 排序下拉）：携带路由筛选重新加载
  */
 async function onSortChange() {
+  store.page = 1
+  await store.loadMovies({ append: false, extraFilter: routeExtra() })
+}
+
+/**
+ * 应用了「筛选夹」（SmartFilters 已把 tagSelected/searchQ/sort 写回 store）：
+ * 这里只需按新条件重新加载第一页。
+ *
+ * ⚠️ 若当前 URL 还带着路由筛选（从详情页跳进来的 actress/studio…），必须清掉再加载：
+ * 收藏夹代表"这一套完整条件"，叠加旧路由筛选会得到空集。
+ * 清路由会触发下面的 watch(route.query) → 它的"筛选被清空"分支会把 tagSelected/searchQ 一起清掉，
+ * 正好把我们刚应用的收藏夹抹掉 —— 所以用 applyingSmart 标记让那一次 watch 直接跳过。
+ */
+async function onApplySmart() {
+  if (Object.keys(routeExtra()).length) {
+    applyingSmart = true
+    try { await router.replace({ path: '/library' }) } finally { applyingSmart = false }
+  }
   store.page = 1
   await store.loadMovies({ append: false, extraFilter: routeExtra() })
 }
@@ -244,6 +274,7 @@ onMounted(async () => {
 // 监听路由 query 变化（从详情页点击标签/女优/厂商跳转回片库、或顶栏搜索跳转时自动过滤）
 watch(() => route.query, async (q) => {
   const sig = routeSig(q)
+  if (applyingSmart) { lastAppliedSig = sig; return }   // 应用筛选夹时主动清的路由，别动 store
   // 同一套筛选参数：典型场景是从详情页返回，页码与列表都保持原样，不做任何重置
   if (sig === lastAppliedSig) return
   lastAppliedSig = sig

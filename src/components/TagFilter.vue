@@ -12,6 +12,8 @@
     <!-- 筛选器头部：标题 + "全部"按钮 -->
     <div class="filter-header">
       <span class="header-label">标签筛选</span>
+      <!-- 头部插槽（2026-11-08）：片库在这里放「筛选夹」按钮，紧贴标题右侧、与下面的标签行左对齐 -->
+      <slot name="header-extra" />
       <!-- "全部"按钮：无任何选中标签时高亮，点击清除所有筛选 -->
       <TagChip label="全部" :selected="selectedTags.length === 0" @click="onClearAll" />
     </div>
