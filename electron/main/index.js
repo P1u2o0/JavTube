@@ -27,8 +27,8 @@ const { registerUtilsIpc } = require('./ipc-utils')
 const { registerHomeIpc } = require('./home')
 // 播放页 IPC（进度记忆 + 相关推荐）
 const { registerPlayerIpc } = require('./db/player')
-// 观影统计聚合（2026-11-08）
-const { registerStatsIpc } = require('./db/stats')
+// 目录查重（2026-11-08）：只读扫描 + 用户逐条处置
+const { registerDupIpc } = require('./dup-scan')
 // javtube-cover 封面协议（自本文件拆出）
 const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
 // javtube-media 视频流协议（内置播放页，2026-09-29）
@@ -365,7 +365,7 @@ app.whenReady().then(async () => {
   reg('settings', () => registerSettingsIpc(ipcMain, db, dataDirForGlobal)) // 设置数据 IPC
   reg('home', () => registerHomeIpc(ipcMain, db))                         // 首页推荐 IPC
   reg('player', () => registerPlayerIpc(ipcMain, db))                     // 播放页 IPC（进度 + 相关推荐，2026-09-29）
-  reg('stats', () => registerStatsIpc(ipcMain, db))                       // 观影统计聚合（2026-11-08）
+  reg('dup', () => registerDupIpc(ipcMain, db))                           // 目录查重（2026-11-08）
   reg('mpv', () => registerMpvIpc(ipcMain, { getMainWindow: () => mainWindow }))  // mpv 播放内核控制通道（2026-10-08）
   if (ipcFailures.length) {
     console.error('[main] IPC 部分模块注册失败:', ipcFailures.join(' | '))

@@ -108,11 +108,14 @@ contextBridge.exposeInMainWorld('api', {
    */
   getRecommendations: (id, limit) => ipcRenderer.invoke(IPC.PLAYER_RECOMMEND, { id, limit }),
 
-  /**
-   * 观影统计（2026-11-08）：总数/收藏/观看次数/估算时长/未看完数/Top 女优/Top 标签/近 12 个月
-   * @returns {Promise<Object>} { ok, data: { total, fav, watched, plays, minutes, inProgress, topActress, topTags, months } }
-   */
-  getStats: () => ipcRenderer.invoke(IPC.STATS_GET),
+  // === 目录查重（2026-11-08）===
+  /** 只读扫描目录里的视频（递归，最多 8000 个）→ { ok, data:{ files:[{path,name,size,mtime}], scanned, truncated } } */
+  dupScan: (dir) => ipcRenderer.invoke(IPC.DUP_SCAN, { dir }),
+  /** 在资源管理器中定位 */
+  /** 在资源管理器中定位 */
+  dupReveal: (path) => ipcRenderer.invoke(IPC.DUP_REVEAL, { path }),
+  /** 移入系统回收站（可恢复；库内正在使用的文件会被主进程拒绝） */
+  dupTrash: (path) => ipcRenderer.invoke(IPC.DUP_TRASH, { path }),
 
   // === mpv 播放内核（2026-10-08「高兼容模式」）===
 

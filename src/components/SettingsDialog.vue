@@ -274,6 +274,17 @@
               扫描全库封面与预览图，发现「下载失败留下的坏文件」（空文件 / 图片打不开 / 站点拦截页）会重新刮削补齐
             </span>
           </div>
+
+          <!-- 目录查重（2026-11-08）：只读扫描 + 用户逐条处置，绝不自动删除 -->
+          <div class="g-label">目录查重</div>
+          <div class="g-control">
+            <el-button @click="openDup">
+              <AppIcon name="search" :size="14" style="margin-right:5px" />扫描目录查重…
+            </el-button>
+            <span class="g-tip" v-if="showTips">
+              只读扫描指定目录，找出「同一目录里出现两次以上同番号」的视频，逐条由你决定：在资源管理器定位，或把多余那份移入回收站（可还原）
+            </span>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -324,6 +335,9 @@
       <el-button type="primary" :loading="mapApplying" @click="confirmApplyMap">应用</el-button>
     </template>
   </el-dialog>
+
+  <!-- 目录查重（2026-11-08）：独立对话框，设置页只负责打开它 -->
+  <DupScanDialog ref="dupDialog" />
 </template>
 
 <script setup>
@@ -333,6 +347,7 @@ import { useMoviesStore } from '@/store/movies'
 import { splitTags } from '@/utils/global'
 import { useImageRepair } from '@/composables/useImageRepair'
 import AppIcon from '@/components/AppIcon.vue'
+import DupScanDialog from '@/components/DupScanDialog.vue'
 
 // 组件 props / emit：支持 v-model 控制对话框显隐
 const props = defineProps({ modelValue: Boolean })
@@ -424,6 +439,10 @@ function onRecKey(e, name) {
 
 // 失效图片检查与修复（与启动自动检查共用同一段逻辑）
 const imgRepair = useImageRepair()
+
+// 目录查重对话框（设置页只负责打开它；扫描与处置全在对话框里）
+const dupDialog = ref(null)
+function openDup() { dupDialog.value?.open() }
 /** 设置页按钮：手动扫描并修复全库失效图片 */
 function checkImages() { return imgRepair.checkAndRepair() }
 // 注释开关（计算属性）：控制所有选项说明小字的显示（基础设置内可切换）

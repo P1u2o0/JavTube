@@ -101,7 +101,10 @@ module.exports = {
   IMAGES_SCAN: 'images:scan',
   IMAGES_REPAIR: 'images:repair',
 
-  // === 观影统计（2026-11-08）===
-  // 一次性返回总数/收藏/观看次数/估算时长/Top 女优/Top 标签/近 12 个月趋势
-  STATS_GET: 'stats:get'
+  // === 目录查重（2026-11-08）===
+  // 只读扫描指定目录里的视频 → 渲染层按番号分组（只保留同番号 ≥2 个文件的组）
+  // → 用户逐条决定（定位 / 移入回收站）
+  DUP_SCAN: 'dup:scan',
+  DUP_REVEAL: 'dup:reveal',
+  DUP_TRASH: 'dup:trash'
 }
