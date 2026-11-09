@@ -341,7 +341,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
 import { splitTags } from '@/utils/global'
@@ -442,7 +442,11 @@ const imgRepair = useImageRepair()
 
 // 目录查重对话框（设置页只负责打开它；扫描与处置全在对话框里）
 const dupDialog = ref(null)
-function openDup() { dupDialog.value?.open() }
+async function openDup() {
+  emit('update:modelValue', false)      // 先关自己，避免两层对话框叠在一起
+  await nextTick()
+  dupDialog.value?.open()
+}
 /** 设置页按钮：手动扫描并修复全库失效图片 */
 function checkImages() { return imgRepair.checkAndRepair() }
 // 注释开关（计算属性）：控制所有选项说明小字的显示（基础设置内可切换）

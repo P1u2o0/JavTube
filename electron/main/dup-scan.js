@@ -24,6 +24,21 @@ const MAX_FILES = 8000
 const MAX_DEPTH = 8
 
 /**
+ * 路径归一化，用于「库内是否正在使用」的比对（2026-11-09 审计）。
+ * 为什么必须做：Windows 路径不区分大小写，UNC 前缀、`/` 与 `\`、`\\?\` 长路径前缀都可能不同，
+ * 而库里存的是导入时的原始写法 —— 直接用 `py = ?` 精确比对，闸门会被一次大小写差异绕过，
+ * 库里唯一可播的那份就被移进回收站了。
+ * @param {string} p - 任意路径
+ * @returns {string} 归一化后的比较键
+ */
+function normPath(p) {
+  let s = String(p || '').trim()
+  if (!s) return ''
+  try { s = path.win32.normalize(s) } catch { /* 非法路径就按原样比 */ }
+  return s.replace(/^\\\\\?\\/, '').replace(/\//g, '\\').toLowerCase()
+}
+
+/**
  * 递归收集目录下的视频文件（只读）。
  * @param {string} root - 扫描根目录
  * @returns {Promise<{files: Array, scanned: number, truncated: boolean}>}
@@ -32,9 +47,11 @@ async function collectVideos(root) {
   const files = []
   let scanned = 0
   let truncated = false
+  let truncatedBy = ''      // 'count' | 'depth'：让界面能说清"为什么没扫全"
 
   const walk = async (dir, depth) => {
-    if (truncated || depth > MAX_DEPTH) return
+    if (truncated) return
+    if (depth > MAX_DEPTH) { truncated = true; truncatedBy = truncatedBy || 'depth'; return }
     let entries = []
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true })
@@ -52,8 +69,9 @@ async function collectVideos(root) {
       }
       if (!e.isFile()) continue
       if (!VIDEO_EXTS.includes(path.extname(e.name).toLowerCase())) continue
+      // 上限判断放在计数之前：达到上限就整批停止（原来先 +1 再判断，最终数字会比实际多 1）
+      if (files.length >= MAX_FILES) { truncated = true; truncatedBy = truncatedBy || 'count'; return }
       scanned++
-      if (files.length >= MAX_FILES) { truncated = true; return }
       let st = null
       try { st = await fs.promises.stat(full) } catch { continue }
       files.push({ path: full, name: e.name, size: st.size, mtime: Math.round(st.mtimeMs) })
@@ -61,7 +79,7 @@ async function collectVideos(root) {
   }
 
   await walk(root, 0)
-  return { files, scanned, truncated }
+  return { files, scanned, truncated, truncatedBy, maxFiles: MAX_FILES }
 }
 
 /**
@@ -105,9 +123,16 @@ function registerDupIpc(ipcMain, db) {
       if (!fs.existsSync(p)) return { ok: false, error: '文件不存在（可能已被移动）' }
       if (!VIDEO_EXTS.includes(path.extname(p).toLowerCase())) return { ok: false, error: '只允许处置视频文件' }
       // 第二道闸：库里正在用的那个视频文件不允许从这里删（避免把唯一的可播文件清掉）
-      const used = db.exec('SELECT COUNT(*) FROM movies WHERE py = ?', [p])[0]
-      const n = used ? Number(used.values[0][0]) : 0
-      if (n > 0) return { ok: false, error: '这是库内正在使用的视频文件，请先在片库里处理' }
+      // 用归一化后的比较（大小写 / 斜杠 / \\?\ 前缀都不影响），而不是 SQL 里的精确字符串比对。
+      const usedSet = new Set()
+      try {
+        const rr = db.exec('SELECT py FROM movies')[0]
+        for (const v of (rr ? rr.values : [])) {
+          const k = normPath(v[0])
+          if (k) usedSet.add(k)
+        }
+      } catch { /* 读不到库就退化为"不做占用判断"，后面还有回收站可还原 */ }
+      if (usedSet.has(normPath(p))) return { ok: false, error: '这是库内正在使用的视频文件，请先在片库里处理' }
       // ⚠️ shell.trashItem 偶发抛 `Operation was aborted`（Explorer 回收站操作被系统重试/取消），
       //    但文件其实已经被移走 —— 此时若按失败返回，界面不会把它标成「已移入回收站」，
       //    用户再点一次又会收到「文件不存在」。所以异常后再确认一次磁盘状态。

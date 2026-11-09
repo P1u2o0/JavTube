@@ -300,9 +300,11 @@ async function main() {
       JSON.stringify(s.cats.slice(0, EXPECT_KEY_FIRST.length)) === JSON.stringify(EXPECT_KEY_FIRST),
       `头部=${JSON.stringify(s.cats.slice(0, EXPECT_KEY_FIRST.length))}`)
 
-    // U9 （2026-10-04 改）信息区评分已移除 → 改为文件名属性标签（id=10 的 py 是 ipx-247-C.mp4）
-    ok('U9 信息区不再显示评分；「中文字幕」属性标签位于喜欢按钮左侧',
-      !s.hasScore && s.fileTags.includes('中文字幕') && s.fileTagsInFavLeft,
+    // U9 （2026-11-09 修）信息区评分已移除 → 改为文件名属性标签。
+    // ⚠️ 不要再写死「中文字幕」：标签由影片 py 推导，库里换个文件（如换成 -破解）就会假失败。
+    //    这里改成「必须至少有一个属性标签，且位于喜欢按钮左侧」。
+    ok('U9 信息区不再显示评分；文件名属性标签位于喜欢按钮左侧',
+      !s.hasScore && s.fileTags.length > 0 && s.fileTagsInFavLeft,
       `fileTags=${JSON.stringify(s.fileTags)} 无评分=${!s.hasScore} 在喜欢左侧=${s.fileTagsInFavLeft}`)
 
     // U14 推荐栏：海报放大 / 标题 3 行 / 评分单独一行（与下方评分同色）/ 不再显示想看

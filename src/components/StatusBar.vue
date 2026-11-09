@@ -42,7 +42,7 @@
       </el-button>
       <!-- 批量收藏：无选中项时禁用 -->
       <el-button size="small" :disabled="!store.selectedIds.length" @click="$emit('batchFav', true)">
-        <AppIcon name="heart" :size="14" style="margin-right:4px" />全部收藏
+        <AppIcon name="heart" :size="14" style="margin-right:4px" />收藏选中
       </el-button>
       <!-- 批量取消收藏：无选中项时禁用 -->
       <el-button size="small" :disabled="!store.selectedIds.length" @click="$emit('batchFav', false)">
@@ -135,7 +135,8 @@ function invert() {
 .statusbar {
   display: flex; align-items: center;
   padding: 8px 14px;
-  margin: 10px 0;
+  /* 上边距交还给上层：原来上下都留 10px，片库/收藏/记录三页内容距顶不一致，切页会跳 10px */
+  margin: 0 0 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-tag);

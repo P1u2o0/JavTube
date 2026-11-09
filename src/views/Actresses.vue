@@ -203,11 +203,11 @@ async function onFillAvatars() {
     const lr = await window.api.refreshLocalAvatars().catch(() => null)
     if (lr?.ok) {
       localApplied = lr.data?.applied || 0
-      // 有未匹配的本地文件时提示用户（库里没有对应名字，放了也不会生效）
+      // 有未匹配的本地文件时提示用户（库里没有对应名字，放了也不会生效）；
+      // 同样只报个数，不列文件名（2026-11-09 与补全结束提示同口径）
       const un = lr.data?.unmatched || []
       if (un.length) {
-        const head = un.slice(0, 3).join('、')
-        ElMessage.warning(`${un.length} 个本地文件未匹配到库内女优（如 ${head}${un.length > 3 ? ' 等' : ''}），请确认文件名与演员名一致`)
+        ElMessage.warning(`${un.length} 个本地文件未匹配到库内女优，请确认文件名与演员名一致`)
       }
     }
 
@@ -235,15 +235,11 @@ async function onFillAvatars() {
   if (!ran && !localApplied) return
   // 重载列表以显示新头像（主进程已清掉总览缓存）
   await load()
-  // 成功/失败都要报出来（2026-09-29 审计）：原提示只体现成功数，用户看不出哪些没补上
+  // 结束提示只报个数（2026-11-09 用户要求）：不逐个列名字，失败明细留给用户按缺失项自查
   const parts = []
-  if (localApplied) parts.push(`本地匹配 ${localApplied} 位`)
-  if (ran) parts.push(`JAVDB 成功 ${ok} 位，失败 ${failed.length} 位`)
-  if (cleaned) parts.push(`${cleaned} 位没有可用照片，已清除并统一显示剪影`)
-  if (failed.length) {
-    const head = failed.slice(0, 4).join('；')
-    parts.push(`失败详情：${head}${failed.length > 4 ? ' 等' : ''}`)
-  }
+  if (localApplied) parts.push(`本地匹配 ${localApplied} 个`)
+  if (ran) parts.push(`成功 ${ok} 个，失败 ${failed.length} 个`)
+  if (cleaned) parts.push(`${cleaned} 个无可用照片已清除`)
   if (failed.length) ElMessage.warning(parts.join('，'))
   else ElMessage.success(parts.join('，'))
 }

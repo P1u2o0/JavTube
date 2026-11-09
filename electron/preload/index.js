@@ -231,10 +231,11 @@ contextBridge.exposeInMainWorld('api', {
   importActressAvatar: (payload) => ipcRenderer.invoke(IPC.ACTRESS_IMPORT_AVATAR, payload),
 
   /**
-   * 从 theidolbase.com 检索演员资料（2026-10-07，演员编辑弹窗「从 TheIdolBase 检索」按钮）。
+   * 从本地资料库（data/actress-db/*.db）检索演员资料（2026-10-07 建立，
+   * 2026-11-09 换源：原 theidolbase.com 站内搜索后端已损坏）。
    * 返回的字段供前端填入表单，不直接写库；用户审阅后手动点保存。
    * @param {string} name - 演员名
-   * @returns {Promise<{ok:boolean, data?:{height,bust,waist,hip,zb,debut,slug,matchedName}, error?:string}>}
+   * @returns {Promise<{ok:boolean, data?:{height,bust,waist,hip,zb,birthday,debut,matchedName}, error?:string}>}
    */
   scrapeActressInfo: (name) => ipcRenderer.invoke(IPC.ACTRESS_SCRAPE_INFO, name),
 

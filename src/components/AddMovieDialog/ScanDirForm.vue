@@ -42,7 +42,7 @@
       <!-- 取消全选按钮 -->
       <el-button @click="selectAll(false)">取消全选</el-button>
       <!-- 导入已选按钮：无选中项时禁用 -->
-      <el-button type="primary" :disabled="!sel.length" @click="onImport">导入已选（{{ sel.length }}）</el-button>
+      <el-button type="primary" :disabled="!sel.length || importing" :loading="importing" @click="onImport">导入已选（{{ sel.length }}）</el-button>
     </div>
   </div>
 </template>
@@ -67,6 +67,7 @@ const list = ref([])
 const codes = ref([])
 // 当前选中的文件行列表
 const sel = ref([])
+const importing = ref(false)   // 导入进行中：按钮转圈并禁用，避免重复点击
 // el-table 组件引用
 const tb = ref(null)
 
@@ -106,6 +107,8 @@ function selectAll(v) {
 // 已存在同番号记录时：库中视频路径为空/失效则自动回填，路径有效则跳过。
 // 触发时机：用户点击"导入已选"按钮
 async function onImport() {
+  if (importing.value) return
+  importing.value = true
   let ok = 0, filled = 0, skipped = 0, failed = 0
   let firstErr = ''
   // 行 → 番号 预先建成 Map：原实现每行都跑一次 list.indexOf(row)，
@@ -114,11 +117,17 @@ async function onImport() {
   for (const row of sel.value) {
     const code = codeOf.get(row) || ''
     // 调用后端 API 创建影片记录
-    const r = await window.api.createMovie({
-      ph: code,                           // 番号
-      pm: row.name.replace(/\.[^.]+$/, ''), // 标题（去除文件扩展名）
-      py: row.path                         // 视频路径
-    })
+    let r = null
+    try {
+      r = await window.api.createMovie({
+        ph: code,                           // 番号
+        pm: row.name.replace(/\.[^.]+$/, ''), // 标题（去除文件扩展名）
+        py: row.path                         // 视频路径
+      })
+    } catch (e) {
+      // 单条 IPC reject（通道异常/主进程忙）只算这一条失败，不中断整批
+      r = { ok: false, error: e?.message || '入库请求未响应' }
+    }
     if (r && r.ok) {
       if (r.updated) filled++        // 已有记录但路径失效 → 已回填
       else if (r.skipped) skipped++  // 已有记录且路径有效 → 跳过
@@ -135,6 +144,7 @@ async function onImport() {
   if (failed) parts.push(`失败 ${failed} 条${firstErr ? '（' + firstErr + '）' : ''}`)
   const tail = '；请到详情页补充元数据'
   // 有失败时用 warning：绿色成功提示会把失败项盖过去
+  importing.value = false
   if (failed) ElMessage.warning(parts.join('，') + tail)
   else ElMessage.success(parts.join('，') + tail)
   emit('selected', {})

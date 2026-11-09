@@ -101,7 +101,10 @@ watch(() => props.state.paused, (paused) => {
   if (paused) visible.value = true
   else hideTimer = setTimeout(() => { visible.value = false }, HIDE_MS)
 })
-onBeforeUnmount(() => { if (hideTimer) clearTimeout(hideTimer) })
+onBeforeUnmount(() => {
+  if (hideTimer) clearTimeout(hideTimer)
+  if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }   // 卸载后不该再 emit toggle
+})
 
 // ====== 进度条 ======
 const trackRef = ref(null)

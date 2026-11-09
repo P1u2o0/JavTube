@@ -20,16 +20,19 @@ let loaded = false
 /** 从设置里读收藏夹（幂等：读过就不再拉） */
 export async function loadSmartFilters(force = false) {
   if (loaded && !force) return smartFilters.value
+  // ⚠️ 读取失败（IPC reject 或返回 ok:false）时**不能**把 loaded 置 true 并清空列表：
+  //    否则接着保存任意筛选，persist() 会拿这份"空列表 + 新条目"整体覆盖设置，
+  //    用户之前存过的收藏夹全部丢失（2026-11-09 审计）。
   try {
     const r = await window.api?.getSettings?.()
-    const raw = r?.ok ? r.data?.smart_filters : ''
+    if (!r?.ok) throw new Error(r?.error || '读取设置失败')
+    const raw = r.data?.smart_filters
     const arr = raw ? JSON.parse(raw) : []
     smartFilters.value = Array.isArray(arr) ? arr.filter(f => f && f.id && f.name) : []
+    loaded = true
   } catch (e) {
-    console.warn('[smart-filters] 读取失败:', e?.message || e)
-    smartFilters.value = []
+    console.warn('[smart-filters] 读取失败（本次不缓存，稍后会重试）:', e?.message || e)
   }
-  loaded = true
   return smartFilters.value
 }
 
@@ -40,6 +43,17 @@ async function persist() {
   } catch (e) {
     console.warn('[smart-filters] 保存失败:', e?.message || e)
   }
+}
+
+/**
+ * 写回前的对齐（2026-11-09 审计）。
+ * 为什么要"先读再写"：`updateSettingsBatch` 是**整串覆盖**。若本次会话还没成功读过设置
+ * （首屏 getSettings 失败过），内存里是一份空列表，此时保存一条就会把磁盘上已有的收藏夹全抹掉。
+ * 所以写之前确保已读成功；读失败也照写（否则用户的新操作白做），但至少日志里有痕迹。
+ */
+async function persistSafely() {
+  if (!loaded) await loadSmartFilters()
+  return persist()
 }
 
 /**
@@ -72,14 +86,14 @@ export async function saveSmartFilter(store, name) {
   } else {
     smartFilters.value = [{ id: `${Date.now()}`, name: nm, ...snap }, ...smartFilters.value]
   }
-  await persist()
+  await persistSafely()
   return { ok: true }
 }
 
 /** 删除一份收藏夹 */
 export async function removeSmartFilter(id) {
   smartFilters.value = smartFilters.value.filter(f => f.id !== id)
-  await persist()
+  await persistSafely()
   return { ok: true }
 }
 

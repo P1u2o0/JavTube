@@ -19,10 +19,32 @@ const path = require('path')
 const crypto = require('crypto')
 // 封面/头像目录名（dataDir 下的子目录，集中定义于 constants.js）
 const { COVER_DIR, IMAGE_DIR } = require('../constants')
+// 路径门控：只允许操作 data/images 或 data/covers 之内的文件（同 cleanup.js 的口径）
+const { underImageDir } = require('./cleanup')
+
+/**
+ * 把用户可见的名字转成安全的文件名（2026-11-09 审计）。
+ * 为什么要做：`actress:importAvatar` 直接拿渲染层传来的演员名拼路径，
+ * 名字里带 `../` 就能把图片写到数据目录之外、覆盖任意同名文件。
+ * 规则与 scraper.js 的 safeName 保持一致（去分隔符/回溯/结尾点空格/保留设备名）。
+ * @param {string} s - 演员名
+ * @returns {string} 可安全用作文件名的字符串（可能为空）
+ */
+function safeFileName(s) {
+  let base = String(s ?? '').trim()
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\.\./g, '')
+    .slice(0, 80)
+    .replace(/[. ]+$/, '')
+  if (/^(con|nul|prn|aux|com[1-9]|lpt[1-9])$/i.test(base)) base = '_' + base
+  return base
+}
 // 头像来源（JAVDB 演员页）+ 图片下载/内容校验（含主站图床走代理的判断）
 // isGifRenamed 统一放在 scraper.js（与 isImageFile 同处，图片判定只此一份）：
 // 女优头像与封面/预览图共用同一条「GIF 伪装成 .jpg」判据，避免两处口径漂移。
-const { fetchActorAvatar, fetchActressInfo, downloadImage, isImageFile, isGifRenamed, tmpPathFor } = require('../scraper')
+const { fetchActorAvatar, downloadImage, isImageFile, isGifRenamed, tmpPathFor } = require('../scraper')
+// 女优外部数据源（2026-11-09）：本地资料库（data/actress-db/）+ gfriends 头像仓库
+const { getSourceDb, lookupInfo, resolveNameCandidates, fetchGfriendsAvatar, GFRIENDS_BASE } = require('./actress-source')
 
 /**
  * 热度分档（演员页火焰配色）：按「前 X%」从热到冷。
@@ -553,7 +575,9 @@ function removeUnusableAvatar(db, dataDir, name, preItem) {
   // preItem 由调用方在入口处一次性算好（批量时避免 O(N²) 重扫）。
   const item = preItem || avatarTodoOf(db, dataDir).find(t => t.name === name)
   if (!item || (item.reason !== '占位图' && item.reason !== '无效图片')) return false
-  try { fs.unlinkSync(path.join(dataDir, cur)) } catch {}
+  // 只删 data/images 或 data/covers 之内的文件（cast_json 若含 `..`，不门控就会删到数据目录外）
+  if (!underImageDir(dataDir, cur)) return false
+  try { fs.unlinkSync(path.resolve(dataDir, cur)) } catch {}
   applyAvatarToCast(db, name, '')
   persistSoon(db)
   // 头像被清空 → 总览与「名字→头像」映射都要立刻失效，否则界面最长 60 秒仍显示旧头像
@@ -688,8 +712,12 @@ function registerActressIpc(ipcMain, db, dataDir) {
     } catch (e) { return { ok: false, error: e.message, data: [] } }
   })
 
-  // IPC: actress:avatarFill — 从 JAVDB 补一位女优的头像（2026-09-24）
-  // 由渲染层驱动循环调用（与批量刮削同一套约定），便于逐条显示进度与失败原因
+  // IPC: actress:avatarFill — 补一位女优的头像（2026-09-24 建立，2026-11-09 换源）
+  // 由渲染层驱动循环调用（与批量刮削同一套约定），便于逐条显示进度与失败原因。
+  // 数据源顺序：① gfriends 仓库（jsdelivr CDN，19 万张，索引一次下载后按名直查，
+  //                冷门演员也能命中；应用内名字若是中文/罗马字，先经本地资料库
+  //                解析出日文 canonical 名再匹配）
+  //             ② JAVDB 兜底（gfriends 未收录时仍可能被 JAVDB 收录；需代理 + Cookie）
   ipcMain.handle(IPC.ACTRESS_AVATAR_FILL, async (_e, name) => {
     const nm = String(name || '').trim()
     if (!nm) return { ok: false, error: '演员名为空' }
@@ -709,31 +737,49 @@ function registerActressIpc(ipcMain, db, dataDir) {
       const proxy = st.proxy_enabled === 'y' ? (st.proxy_url || '') : ''
       const cookie = st.javdb_cookie || ''
 
-      const got = await fetchActorAvatar(nm, { proxy, cookie })
+      // ① gfriends：先经本地资料库把名字展开成同一个人的多种写法（日文/中文/罗马字）
+      let got = null
+      try {
+        const srcDb = await getSourceDb(dataDir)
+        const candidates = srcDb ? resolveNameCandidates(srcDb, nm) : []
+        got = await fetchGfriendsAvatar(nm, { proxy, candidates })
+        if (got.ok) got.source = 'gfriends'
+      } catch { /* 索引下载失败等 → 静默落到 JAVDB，最终失败原因由兜底路径回报 */ }
+      // ② JAVDB 兜底
+      if (!got || !got.ok) {
+        got = await fetchActorAvatar(nm, { proxy, cookie })
+        if (got.ok) got.source = 'javdb'
+      }
       if (!got.ok) {
-        // 补不到（两站都没照片）→ 若当前存的正是占位图/无效图片，清掉它并留空，
+        // 补不到（两源都没照片）→ 若当前存的正是占位图/无效图片，清掉它并留空，
         // 让该女优与「本来就没有头像」的那些一样显示本地剪影（统一显示）
         const cleaned = removeUnusableAvatar(db, dataDir, nm, todoMap.get(nm))
         return { ok: false, error: got.error, cleaned }
       }
 
-      // 已有头像文件且扩展名一致 → 直接覆盖它（不留孤儿文件）；否则用 actorId + 性别后缀命名新建。
+      // 已有头像文件且扩展名一致 → 直接覆盖它（不留孤儿文件）；否则用文件键 + 性别后缀命名新建。
+      // 文件键：JAVDB 路径用其 actor id；gfriends 路径没有站点 id，用演员名本身
+      // （safeFileName 已做穿越/非法字符处理，见 2026-09-30 审计）。
       // 性别后缀（2026-09-29 审计）：原文件名只有 actorId，且本条链路只服务女优；加后缀后
       // 「同名但性别不同」的两个名字（若都在库里存在）至少不会落到同一个文件名上。
       // ⚠️ 局限（verify-code 指出）：suffix 取自 genderOf(name)（按名字在库里的记录），同名者恒定同后缀，
-      //    故无法区分「同名且都解析到同一 actorId」的两个人；彻底解决需 fetchActorAvatar 回传站点性别。
+      //    故无法区分「同名且都解析到同一 actorId」的两个人；彻底解决需来源站回传站点性别。
       //    当前保留后缀作为命名约定与前向兼容，不再声称它已完全消除同名覆盖。
       // 已存在且被引用的旧文件（无后缀）继续复用，避免全库换名产生孤儿。
       const cur = currentAvatarOf(db, nm).replace(/\\/g, '/')
       const ext = (got.url.match(/\.(jpg|jpeg|png|webp)$/i) || ['.jpg'])[0]
       const gender = genderOf(db, nm)
-      const rel = cur && cur.toLowerCase().endsWith(ext) ? cur : `${COVER_DIR}/actress/${got.id}_${gender}${ext}`
+      const fileKey = got.id || safeFileName(nm)
+      const rel = cur && cur.toLowerCase().endsWith(ext) ? cur : `${COVER_DIR}/actress/${fileKey}_${gender}${ext}`
       const abs = path.join(dataDir, rel)
       fs.mkdirSync(path.dirname(abs), { recursive: true })
       // 先下到唯一临时文件、校验后再改名：中途失败不会破坏已有头像；
       // 唯一名避免「同一女优并发补全」时两个 curl 写同一个临时文件（2026-09-30 审计）
       const tmp = tmpPathFor(abs)
-      await downloadImage(got.url, tmp, `https://javdb.com/actors/${got.id}`, proxy)
+      // Referer 谁家的图用谁家的（2026-09-29 审计口径）：jsdelivr 不校验来源，
+      // 传仓库根即可；JAVDB 图床沿用演员页。
+      const referer = got.source === 'gfriends' ? GFRIENDS_BASE : `https://javdb.com/actors/${got.id}`
+      await downloadImage(got.url, tmp, referer, proxy)
       if (!isImageFile(tmp)) {
         try { fs.unlinkSync(tmp) } catch {}
         return { ok: false, error: '下载到的不是有效图片' }
@@ -754,7 +800,7 @@ function registerActressIpc(ipcMain, db, dataDir) {
       // 真正的失败会走上面的 ok:false（前端按演员名汇总）；保留恒 0 的 failed 会误导调用方。
       return {
         ok: true,
-        data: { name: nm, path: rel, movies: touched, total, actorId: got.id, note: got.note || '' }
+        data: { name: nm, path: rel, movies: touched, total, actorId: got.id, source: got.source || '', note: got.note || '' }
       }
     } catch (e) { return { ok: false, error: e.message } }
   })
@@ -887,11 +933,19 @@ function registerActressIpc(ipcMain, db, dataDir) {
     try {
       if (!isImageFile(srcPath)) return { ok: false, error: '不是有效图片' }
       const ext = path.extname(srcPath).toLowerCase() || '.jpg'
-      // 文件名用演员名（与本地头像补全同口径：images/actress/<名字><ext>）
-      const rel = `${IMAGE_DIR}/actress/${name}${ext}`
-      const abs = path.join(dataDir, rel.replace(/\\/g, '/'))
+      // 文件名用演员名（与本地头像补全同口径：images/actress/<名字><ext>），
+      // 但必须**净化**：名字来自渲染层，直接拼路径可被 `../` 写到数据目录之外。
+      const safe = safeFileName(name)
+      if (!safe) return { ok: false, error: '演员名不能用作文件名' }
+      const rel = `${IMAGE_DIR}/actress/${safe}${ext}`
+      // 双保险：即使净化规则将来被改坏，也不允许落到 images/covers 之外
+      if (!underImageDir(dataDir, rel)) return { ok: false, error: '目标路径不合法' }
+      const abs = path.resolve(dataDir, rel.replace(/\\/g, '/'))
       fs.mkdirSync(path.dirname(abs), { recursive: true })
-      fs.copyFileSync(srcPath, abs)
+      // 先写临时文件再 rename：中途失败不会把原有头像截断成半张图
+      const tmp = `${abs}.tmp-${Date.now()}`
+      fs.copyFileSync(srcPath, tmp)
+      fs.renameSync(tmp, abs)
       applyAvatarToCast(db, name, rel)
       persistSoon(db)
       invalidateActorCaches()
@@ -899,23 +953,30 @@ function registerActressIpc(ipcMain, db, dataDir) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
-  // IPC: actress:scrapeInfo — 从 theidolbase.com 检索演员资料（2026-10-07）。
-  // 由演员编辑弹窗「从 TheIdolBase 检索」按钮调用；返回的字段供前端填入表单，不直接写库
+  // IPC: actress:scrapeInfo — 从本地资料库检索演员资料（2026-10-07 建立，2026-11-09 换源）。
+  // 由演员编辑弹窗「检索资料」按钮调用；返回的字段供前端填入表单，不直接写库
   // （让用户审阅后手动点保存，与"自动填表但不自动保存"的交互约定一致）。
+  // 换源背景：原走 theidolbase.com，其站内搜索后端（xunsearch）已损坏 —— 搜索页
+  // 恒返回空结果（2026-11-09 实测），无法再作为检索入口；改为读用户放入
+  // <dataDir>/actress-db/ 的本地资料库（Info/Names 表，MDCx 演员数据库）。
   ipcMain.handle(IPC.ACTRESS_SCRAPE_INFO, async (_e, name) => {
     const nm = String(name || '').trim()
     if (!nm) return { ok: false, error: '演员名为空' }
-    // 代理设置：与 scraper:scrape / actress:avatarFill 同源读 settings 表
-    // （TheIdolBase 直连可达，但用户开了代理就一并走代理，避免"开代理却直连 → DNS 污染"）
-    const st = {}
+    if (!dataDir) return { ok: false, error: '未取到数据目录' }
+    let src = null
+    try { src = await getSourceDb(dataDir) }
+    catch (e) { return { ok: false, error: '本地资料库打开失败: ' + e.message } }
+    if (!src) {
+      return {
+        ok: false,
+        error: `本地资料库未配置：请把演员资料 .db 文件放入 ${path.join(dataDir, 'actress-db')} 后重试`
+      }
+    }
     try {
-      const rs = db.exec(`SELECT key, value FROM settings WHERE key IN ('proxy_enabled','proxy_url')`)
-      for (const row of (rs[0]?.values || [])) st[row[0]] = row[1]
-    } catch {}
-    const proxy = st.proxy_enabled === 'y' ? (st.proxy_url || '') : ''
-    const got = await fetchActressInfo(nm, { proxy })
-    if (!got.ok) return { ok: false, error: got.error }
-    return { ok: true, data: got.data }
+      const info = lookupInfo(src, nm)
+      if (!info) return { ok: false, error: `本地资料库未找到「${nm}」` }
+      return { ok: true, data: info }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 }
 

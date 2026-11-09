@@ -12,10 +12,12 @@
     <!-- 筛选器头部：标题 + "全部"按钮 -->
     <div class="filter-header">
       <span class="header-label">标签筛选</span>
-      <!-- 头部插槽（2026-11-08）：片库在这里放「筛选夹」按钮，紧贴标题右侧、与下面的标签行左对齐 -->
-      <slot name="header-extra" />
       <!-- "全部"按钮：无任何选中标签时高亮，点击清除所有筛选 -->
       <TagChip label="全部" :selected="selectedTags.length === 0" @click="onClearAll" />
+      <!-- 头部右侧插槽（2026-11-09 调整）：片库在这里放「筛选夹」。
+           放行尾而不是紧跟标题：让「标签筛选 + 全部」保持原来的相邻关系，
+           否则一个非标签控件把「全部」和标题隔开，看着像三个并列入口。 -->
+      <span class="header-extra"><slot name="header-extra" /></span>
     </div>
     <!-- 筛选器主体：分类标签区域 -->
     <div class="filter-body">
@@ -208,6 +210,9 @@ function onClearAll() {
   gap: 5px;
   padding: 8px 14px 0;   /* 下内边距交 0：与分类行连成一体（无下边框） */
 }
+/* 头部右侧插槽（筛选夹等）：推到行尾 */
+.header-extra { margin-left: auto; display: flex; align-items: center; }
+
 /* 头部标签文字样式 */
 .header-label {
   font-weight: 600;

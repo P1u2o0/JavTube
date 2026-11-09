@@ -208,6 +208,8 @@ const mpvUi = reactive({ t: 0, dur: 0, paused: false, vol: 0.8, muted: false, ra
 let playingId = null           // player 当前真正在播的影片 id（进度记账以此为准，见 initOrSwitchPlayer）
 let switchSuppress = false     // 换片进行中：挡住 pause/timeupdate 的进度记账（此时内核里还是旧片的时间）
 let recordedFor = null         // recordPlay 去重：同一部影片一次会话只记一次
+let loadSeq = 0                // 换片请求序号：丢弃"后发先至"的旧响应（2026-11-09）
+let recSeq = 0                 // 推荐请求序号：同上
 let lastSaveTs = 0             // 进度节流
 let pendingPos = 0             // 最新播放位置（切页兜底保存用）
 let pendingDur = 0
@@ -532,6 +534,24 @@ function endHold() {
   hideBadge()
 }
 
+/**
+ * 长按中途丢了 keyup（Alt+Tab / 锁屏 / 通知抢焦点）时的兜底（2026-11-09 审计）。
+ * 不处理的话：倍速一直挂着，而且 HOLD.key 再也不会被清空 →
+ * 之后所有 ←/→ 都被 onKeyDown 里那句 `if (HOLD.key) return` 吞掉，方向键彻底失效。
+ */
+function loseHold() {
+  if (!HOLD.key) return
+  if (HOLD.timer) { clearTimeout(HOLD.timer); HOLD.timer = null }
+  HOLD.fired = false
+  endHold()
+  HOLD.key = null
+}
+
+/** 切到后台时同样要收长按（窗口失焦不一定触发 blur，比如被别的窗口盖住又有键盘事件） */
+function onVisibilityChange() {
+  if (document.hidden) loseHold()
+}
+
 // ====== mpv 高兼容模式：镂空矩形同步 + 控件条（2026-10-08）======
 // mpv 是**独立进程**，它往**整个窗口**渲染；页面这一侧则把视频区域「镂空」让它透出来。
 // 两侧必须用**同一个矩形**：
@@ -586,7 +606,7 @@ function syncHole(force = false) {
 
 // 全屏进出的画面处理：**不做任何画面动画**（用户的最终要求，2026-10-09）——
 //   · 进入：直接到位（放大过程本身不刺眼，加动画只是拖慢）；
-//   · 退出：由**主进程平滑地把窗口移回原尺寸**（见 ipc-utils 的 animateWindowTo），
+//   · 退出：由**主进程一次性把窗口还原**（见 ipc-utils 的 UTILS_SET_WINDOW_FULLSCREEN，瞬时 setBounds），
 //     页面同时切回窗口布局，画面（= 洞）**始终等于播放器盒子本身**：盒子跟着窗口连续变化，
 //     mpv 的 margin 每帧跟着走 —— 全程没有「比盒子大的画面浮在页面内容之上」。
 // 历史：先是窗口/页面各自瞬跳（用户：有明显归位动作 + 黑边），再试过白色遮罩遮丑（用户：遮丑），
@@ -667,13 +687,13 @@ function bindMpvUi() {
   })
   // 全屏变化（2026-10-08）：mpv 的「全屏」是**窗口级**的，不产生 document 的 fullscreenchange，
   // 由后端广播（见 backend.js 的 PLAYER_EVENTS）。进出都**不做画面动画**（见本文件上方说明）：
-  // 退出的顺滑由主进程「平滑移动窗口」（ipc-utils 的 animateWindowTo）提供。
+  // 退出由主进程瞬时还原窗口（无动画），盒子随视口变化，画面自然跟随。
   player.on('fullscreenchange', ({ fullscreen }) => {
     const on = !!fullscreen
     mpvFs.value = on
     document.documentElement.classList.toggle('mpv-fs', on)
     // 进出都只做「切布局 + 重算镂空矩形」——画面不做任何动画：
-    // 退出时窗口由主进程平滑移回（animateWindowTo），盒子跟着窗口连续变化，画面自然跟随。
+    // 退出时窗口由主进程瞬时还原，盒子随视口一起变化（没有过渡动画，都是单帧切换）。
     nextTick(() => { lastHoleKey = ''; syncHole(true); settleHole() })
   })
   // 订阅晚于出画时（理论上有）直接补一次
@@ -914,7 +934,11 @@ function dismissQualityWarn() {
 
 // ====== 数据加载 ======
 async function loadMovie(id) {
+  // 请求序号（2026-11-09 审计）：快速连点右侧推荐时，两次 getMovie 可能"后发先至"，
+  // 旧响应会把新片的标题/标签/播放地址覆盖回去。写状态前比对一次序号即可。
+  const seq = ++loadSeq
   const r = await window.api.getMovie(id).catch(() => null)
+  if (seq !== loadSeq) return
   if (!r || !r.ok) { ElMessage.error(r?.error || '无法加载该影片的资料'); router.replace('/library'); return }
   m.value = r.data
   resetMediaErr()
@@ -978,7 +1002,11 @@ function initOrSwitchPlayer() {
   switchSuppress = false
 
   // 续播点跟着播放位置实时更新（只写内存，不做 IPC）；落库仍走 5 秒节流
+  // ⚠️ 必须和 saveProgress 一样先看 switchSuppress：换片瞬间 playingId 已指向**新片**，
+  //    而内核里还是旧片在发 timeupdate —— 不挡住就会把旧片的播放位置写成新片的续播点，
+  //    下次进新片直接跳到旧片的时间（2026-11-09 审计发现）。
   player.on('timeupdate', () => {
+    if (switchSuppress) return
     if (playingId) setResumePoint(playingId, player.currentTime || 0)
     saveProgress(false)
   })
@@ -1032,11 +1060,17 @@ function fmtPos(sec) {
 }
 
 async function loadRecommendations(id) {
+  // 与 loadMovie 同理：连点推荐时旧的推荐响应不能盖掉新的（2026-11-09 审计）
+  const seq = ++recSeq
   recLoading.value = true
   try {
     const r = await window.api.getRecommendations(id, 10)
+    if (seq !== recSeq) return
     recs.value = r?.ok ? (r.data || []).slice(0, 10) : []
-  } catch { recs.value = [] }
+  } catch {
+    if (seq !== recSeq) return
+    recs.value = []
+  }
   recLoading.value = false
   recVersion.value++      // 列表整体淡入（切换影片后新推荐丝滑登场）
   // 文件名属性标签挂到推荐项（先按文件名出标签；4K 的真实分辨率随后异步补探）
@@ -1124,6 +1158,9 @@ onMounted(async () => {
   await loadPlayerSettings()
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
+  // 丢焦点/切后台时收掉长按（见 loseHold 注释）
+  window.addEventListener('blur', loseHold)
+  document.addEventListener('visibilitychange', onVisibilityChange)
   window.addEventListener('resize', fitRecRows)
   window.addEventListener('resize', syncHole)
   // 页面滚动 → 画面要跟着播放器盒子走（capture：滚动发生在 .main-content 上，不冒泡到 window）
@@ -1138,6 +1175,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown, true)
   window.removeEventListener('keyup', onKeyUp, true)
+  window.removeEventListener('blur', loseHold)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('resize', fitVideoObject)
   window.removeEventListener('resize', fitRecRows)
   window.removeEventListener('resize', syncHole)
@@ -1152,6 +1191,9 @@ onBeforeUnmount(() => {
   if (player.fullscreen) { try { player.fullscreen = false } catch { /* 忽略 */ } }
   clearHole()                  // 恢复窗口底色（否则离开播放页后会透出桌面）
   endHold()
+  // 收掉还没到点的临时定时器（离开页面后不该再有回调改状态）
+  if (errTimer) { clearTimeout(errTimer); errTimer = null }
+  if (badgeTimer) { clearTimeout(badgeTimer); badgeTimer = null }
   stopQualityWatch()
   // 兜底保存进度（route 切走/关页都会走这里）；记账同样以 playingId 为准（换片流程见 saveProgress 注释）
   if (player.isMounted && playingId && player.currentTime > 0) {

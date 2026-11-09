@@ -148,13 +148,13 @@
           <el-input v-model="editName" placeholder="演员名字" />
         </div>
 
-        <!-- 从 TheIdolBase 一键检索（2026-10-07）：按当前名字查身高/三围/出道，自动填表，不自动保存 -->
+        <!-- 一键检索资料（2026-10-07 建立，2026-11-09 换源本地资料库）：按当前名字查身高/三围/出道，自动填表，不自动保存 -->
         <div class="edit-scrape-row">
           <el-button type="primary" plain @click="scrapeFromIdol" :disabled="saving || scraping" round>
             <AppIcon name="search" :size="14" />
-            <span>{{ scraping ? '检索中…' : '从 TheIdolBase 检索' }}</span>
+            <span>{{ scraping ? '检索中…' : '检索资料' }}</span>
           </el-button>
-          <div class="edit-scrape-hint">按当前名字查 TheIdolBase，命中后自动填入身高/三围/出生日期</div>
+          <div class="edit-scrape-hint">按当前名字查本地资料库，命中后自动填入身高/三围/出生日期</div>
         </div>
 
         <!-- 资料：两列网格（身高/罩杯/胸围/腰围/臀围/出生日期） -->
@@ -544,7 +544,7 @@ async function pickAvatar() {
   }
 }
 
-/** 从 TheIdolBase 检索身高/三围/出道，命中后填入 editInfo（不自动保存，让用户审阅） */
+/** 检索资料（本地资料库，原 TheIdolBase 已失效）：命中后填入 editInfo（不自动保存，让用户审阅） */
 async function scrapeFromIdol() {
   if (scraping.value || saving.value) return
   const nm = editName.value.trim()
@@ -834,7 +834,7 @@ onMounted(async () => {
 /* 表单字段 */
 .edit-field { display: flex; flex-direction: column; gap: 4px; }
 .edit-field label { font-size: var(--fs-sm); color: var(--text-2); font-weight: 500; }
-/* TheIdolBase 检索行：按钮 + 提示文字水平排列，浅底卡片 */
+/* 资料检索行：按钮 + 提示文字水平排列，浅底卡片 */
 .edit-scrape-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--r-sm); }
 .edit-scrape-row .el-button { flex-shrink: 0; }
 .edit-scrape-hint { font-size: var(--fs-sm); color: var(--muted); }

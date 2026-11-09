@@ -238,6 +238,23 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       // 删库前先收集全库图片引用；删库后所有候选文件都不再被引用 → 全部清掉（2026-09-29 审计）。
       // 注意只删图片目录（images/ 或旧 covers/）内、且确被这几部影片引用的文件，不会波及本来就是孤儿的文件。
       const refs = collectAllRefs(db)
+      // ★ 清空是**不可逆**操作，而这里的图片删除是 `unlink`（不进回收站）。
+      //   所以先落盘 + 留一份库快照与"将被删掉的图片清单"，出问题至少能人工恢复
+      //   （2026-11-09 审计：`settings:restore` 都有 .pre-restore-* 快照，清空反而没有）。
+      let snapshot = ''
+      try {
+        persist(db)                                   // 把内存里的最新状态写进文件，快照才有意义
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const dbFile = path.join(dataDir, 'app.db')
+        if (fs.existsSync(dbFile)) {
+          snapshot = dbFile + `.pre-clear-${stamp}`
+          fs.copyFileSync(dbFile, snapshot)
+        }
+        const manifest = path.join(dataDir, `clear-manifest-${stamp}.json`)
+        fs.writeFileSync(manifest, JSON.stringify({ at: new Date().toISOString(), files: refs }, null, 2))
+      } catch (e) {
+        console.warn('[settings:clear] 清理前快照失败（继续清空）:', e.message)
+      }
       // 包在一次事务里（2026-09-29 审计）：原实现没有事务，第二步失败会留下「影片已清空、
       // 女优还在」的半清空状态，用户看到的是残缺数据。
       db.run('BEGIN')
@@ -253,7 +270,8 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
       persistSoon(db)
       // 首页轮播缓存存的是影片快照，清空后必须失效，否则首页仍展示已删除的影片
       try { invalidateHomeCache() } catch {}
-      return { ok: true, cleaned }
+      console.log(`[settings:clear] 已清空；库快照=${snapshot || '（未生成）'} 图片清理=${cleaned}`)
+      return { ok: true, cleaned, snapshot }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

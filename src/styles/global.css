@@ -293,7 +293,7 @@ html.mpv-hole #app {
 /* mpv 播放页的「窗口级全屏」（2026-10-08，class 由 src/views/Player.vue 挂/摘）。
    为什么不用 DOM 全屏：mpv 的画面是独立子窗口、靠页面「镂空」透出来，而 DOM 全屏只绘制
    全屏元素及其后代（挖洞遮罩 teleport 在 body、控制条在 .player-wrap）→ 整屏只剩全屏背景 = 纯黑。
-   全屏靠主进程 win.setFullScreen 完成；这里只负责把页面「收拾干净」：
+   全屏靠主进程 setBounds 铺满窗口完成（无动画）；这里只负责把页面「收拾干净」：
    顶栏让位（它是 TopNav 的元素，播放页的 scoped 样式管不到，只能放全局）、禁用整页滚动。 */
 html.mpv-fs,
 html.mpv-fs body { overflow: hidden; }

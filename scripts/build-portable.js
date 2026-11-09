@@ -118,7 +118,8 @@ async function moveDir(src, dest) {
     }
   }
   console.warn('[warn] rename 始终失败，改用复制（源目录请稍后手动清理）')
-  fs.cpSync(src, dest, { recursive: true })
+  // 2026-11-09：同 copyDir —— 不用 fs.cpSync（受管环境下递归目录复制会被杀进程）
+  copyDir(src, dest)
 }
 
 /** 同步阻塞等待（不依赖异步上下文） */
@@ -150,10 +151,20 @@ function remove(p) {
   }
 }
 
-/** 递归复制目录（node 16.7+ 自带 cpSync） */
+/**
+ * 递归复制目录。
+ * 2026-11-09：不再用 fs.cpSync —— 某些受管环境（WorkBuddy 沙箱实测）会把 node 的
+ * **递归目录复制**直接杀进程（退出码 127、无任何报错），单文件 copyFileSync 则正常。
+ * 改为 readdir + 逐文件复制的朴素实现，行为等价且处处可跑。
+ */
 function copyDir(src, dest) {
-  fs.mkdirSync(path.dirname(dest), { recursive: true })
-  fs.cpSync(src, dest, { recursive: true })
+  fs.mkdirSync(dest, { recursive: true })
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, e.name)
+    const to = path.join(dest, e.name)
+    if (e.isDirectory()) copyDir(from, to)
+    else if (e.isFile()) fs.copyFileSync(from, to)
+  }
 }
 
 /**

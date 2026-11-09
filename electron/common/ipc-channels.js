@@ -54,7 +54,8 @@ module.exports = {
   ACTRESS_IMPORT_AVATAR: 'actress:importAvatar',
   // 2026-10-06 女优删除：从 actress 表移除该女优的个人资料（不影响影片 cast_json）
   ACTRESS_DELETE: 'actress:delete',
-  // 2026-10-07 演员资料刮削：从 theidolbase.com 列表页匹配 → 详情页提取身高/三围/出道
+  // 演员资料检索（2026-10-07 建站源，2026-11-09 换本地资料库 data/actress-db/*.db：
+  // theidolbase.com 站内搜索后端已损坏）
   ACTRESS_SCRAPE_INFO: 'actress:scrapeInfo',
 
   // === 设置 ===

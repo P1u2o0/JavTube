@@ -164,7 +164,10 @@ async function onSortChange() {
  * 正好把我们刚应用的收藏夹抹掉 —— 所以用 applyingSmart 标记让那一次 watch 直接跳过。
  */
 async function onApplySmart() {
-  if (Object.keys(routeExtra()).length) {
+  // 只要 URL 上还带任何筛选参数（含 `?q=` 搜索词、`?tag=` 标签洞）就清掉：
+  // 只清 routeExtra 会留下搜索词，标题条继续显示「含有『旧词』的影片」，
+  // 与列表实际内容自相矛盾（2026-11-09 审计）。
+  if (Object.keys(route.query || {}).length) {
     applyingSmart = true
     try { await router.replace({ path: '/library' }) } finally { applyingSmart = false }
   }

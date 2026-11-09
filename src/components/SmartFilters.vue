@@ -94,16 +94,17 @@ async function onRemove(f) {
   padding: 4px 11px;
   font-size: var(--fs-sm);
   line-height: 1.6;
-  margin-left: 2px;
-  background: var(--surface-2);
+  /* Element Plus 的 .el-button 用 --el-button-bg-color 上色，且全局样式里有多条 !important ——
+     不加 !important 时这里的胶囊底色会被吃掉，按钮变成白底，与旁边的标签丸材质不一致 */
+  background: var(--surface-2) !important;
   border-color: var(--border) !important;
   color: var(--text-2);
 }
 .smart-btn.compact:hover {
-  background: var(--surface-3);
+  background: var(--surface-3) !important;
   color: var(--text);
 }
-.smart-btn.compact :deep(span) { margin-left: 3px; }
+.smart-btn.compact :deep(.el-button__text) { display: inline-flex; align-items: center; gap: 3px; }
 /* 条数角标：与按钮文字同排的小胶囊 */
 .sf-count {
   margin-left: 8px;

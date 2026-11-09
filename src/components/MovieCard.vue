@@ -48,7 +48,10 @@
       </span>
       <!-- 观看进度条（2026-11-08）：看过但没看完时贴在海报下沿，一眼看出"这部看到哪了"。
            数据来自 play_pos/play_dur（播放页每 5 秒记一次）；进度 ≥97% 视为看完，不显示。 -->
-      <div v-if="progress > 0" class="prog" aria-hidden="true"><i :style="{ width: (progress * 100) + '%' }"></i></div>
+      <div v-if="watchState.pct > 0" class="prog" :class="{ done: watchState.done }"
+           :title="watchState.done ? '已看完' : `已看 ${Math.round(watchState.pct * 100)}%`">
+        <i :style="{ width: (watchState.pct * 100) + '%' }"></i>
+      </div>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中品牌红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -100,17 +103,23 @@ function onErr() { errd.value = true }
 const isFav = computed(() => props.m.cl === 'y')
 
 /**
- * 观看进度（0~1）：0 表示「没看过 / 已看完 / 没时长数据」。
- * 判据：play_pos > 0 且 play_dur > 0；≥97% 视为看完（进度条不再显示）。
- * 只做展示，不参与续播 —— 续播位置由播放页按 play_pos 处理。
+ * 观看进度的展示状态（2026-11-09 审计后调整）：
+ *   · 没看过 / 没时长数据 → 不显示（pct = 0）
+ *   · 不到 1%           → 不显示（原来 0.1% 也会画一条 1% 的线，看着像脏点）
+ *   · ≥97%              → 显示**满格 + 变淡**（done），这样"看完了"和"没看过"能区分开
+ *   · 其余              → 按比例显示
+ * ⚠️ 只做展示，不参与续播 —— 续播位置由播放页自己的内存续播点决定（不读 play_pos，
+ *    见 src/utils/playResume.js 与 Player.vue 的 resumeIfNeeded）。
+ * @returns {{ pct: number, done: boolean }}
  */
-const progress = computed(() => {
+const watchState = computed(() => {
   const pos = Number(props.m.play_pos) || 0
   const dur = Number(props.m.play_dur) || 0
-  if (!(pos > 0) || !(dur > 0)) return 0
+  if (!(pos > 0) || !(dur > 0)) return { pct: 0, done: false }
   const r = pos / dur
-  if (r >= 0.97) return 0
-  return Math.max(0.01, Math.min(1, r))
+  if (r >= 0.97) return { pct: 1, done: true }
+  if (r < 0.01) return { pct: 0, done: false }
+  return { pct: r, done: false }
 })
 
 /**
@@ -280,6 +289,8 @@ watch(dataDirRef, () => { errd.value = false })
   pointer-events: none;
 }
 .prog i { display: block; height: 100%; background: var(--accent); }
+/* 看完的影片：满格但变淡 —— 与"没看过"（不显示）区分开 */
+.prog.done i { background: var(--text-2); opacity: .55; }
 
 /* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为品牌红实心 */
 .check {
