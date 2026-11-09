@@ -17,68 +17,80 @@ const path = require('path')
 const { shell } = require('electron')
 const IPC = require('../common/ipc-channels')
 const { VIDEO_EXTS } = require('./constants')
+// 路径归一化与媒体闸门共用同一实现（见 video-gate.js 的说明：两处必须同口径）
+const { normPath } = require('./video-gate')
 
 /** 一次扫描最多收集多少个视频文件（防止误选 C:\ 之类的超大目录卡死） */
 const MAX_FILES = 8000
 /** 递归深度上限 */
 const MAX_DEPTH = 8
-
-/**
- * 路径归一化，用于「库内是否正在使用」的比对（2026-11-09 审计）。
- * 为什么必须做：Windows 路径不区分大小写，UNC 前缀、`/` 与 `\`、`\\?\` 长路径前缀都可能不同，
- * 而库里存的是导入时的原始写法 —— 直接用 `py = ?` 精确比对，闸门会被一次大小写差异绕过，
- * 库里唯一可播的那份就被移进回收站了。
- * @param {string} p - 任意路径
- * @returns {string} 归一化后的比较键
- */
-function normPath(p) {
-  let s = String(p || '').trim()
-  if (!s) return ''
-  try { s = path.win32.normalize(s) } catch { /* 非法路径就按原样比 */ }
-  return s.replace(/^\\\\\?\\/, '').replace(/\//g, '\\').toLowerCase()
-}
+/** 目录遍历与 stat 的并发度：NAS/SMB 上串行往返是扫描慢的主因，16 路并发把吞吐放大 */
+const CONCURRENCY = 16
 
 /**
  * 递归收集目录下的视频文件（只读）。
+ * 并发模型（2026-11-09 P2 审计）：原来是 await 逐目录串行递归 + 逐文件串行 stat，
+ * NAS/SMB 上每个往返几毫秒到几十毫秒，大目录的总耗时 ≈ 文件数 × 往返延迟。
+ * 现在分两段各开 CONCURRENCY 路并发：① 工作池遍历目录树（只 readdir），
+ * ② 并发 stat 拿大小/mtime。返回结构不变，组内排序在渲染层按 size 做，顺序无影响。
  * @param {string} root - 扫描根目录
  * @returns {Promise<{files: Array, scanned: number, truncated: boolean}>}
  */
 async function collectVideos(root) {
   const files = []
-  let scanned = 0
   let truncated = false
   let truncatedBy = ''      // 'count' | 'depth'：让界面能说清"为什么没扫全"
 
-  const walk = async (dir, depth) => {
-    if (truncated) return
-    if (depth > MAX_DEPTH) { truncated = true; truncatedBy = truncatedBy || 'depth'; return }
-    let entries = []
-    try {
-      entries = await fs.promises.readdir(dir, { withFileTypes: true })
-    } catch { return }   // 无权限/目录消失：跳过，不中断整次扫描
-
-    for (const e of entries) {
-      if (truncated) return
-      if (e.name.startsWith('.')) continue
-      const full = path.join(dir, e.name)
-      if (e.isDirectory()) {
-        // 跳过常见无关目录，减少无意义的 IO
-        if (/^(\$RECYCLE\.BIN|System Volume Information|node_modules)$/i.test(e.name)) continue
-        await walk(full, depth + 1)
-        continue
+  // ---- 阶段一：并发遍历目录，收集视频文件路径（只 readdir，不 stat）----
+  const found = []
+  const queue = [{ dir: root, depth: 0 }]
+  await new Promise((resolve) => {
+    let active = 0
+    const pump = () => {
+      if (!queue.length && active === 0) return resolve()
+      while (active < CONCURRENCY && queue.length && !truncated) {
+        const { dir, depth } = queue.shift()
+        active++
+        fs.promises.readdir(dir, { withFileTypes: true }).then((entries) => {
+          for (const e of entries) {
+            if (truncated) break
+            if (e.name.startsWith('.')) continue
+            if (e.isDirectory()) {
+              // 跳过常见无关目录，减少无意义的 IO
+              if (/^(\$RECYCLE\.BIN|System Volume Information|node_modules)$/i.test(e.name)) continue
+              // 深度上限：与原递归版同一判位（子目录深度超过 MAX_DEPTH 即截断）
+              if (depth + 1 > MAX_DEPTH) { truncated = true; truncatedBy = truncatedBy || 'depth'; continue }
+              queue.push({ dir: path.join(dir, e.name), depth: depth + 1 })
+            } else if (e.isFile() && VIDEO_EXTS.includes(path.extname(e.name).toLowerCase())) {
+              // 上限判断放在入列之前：达到上限就整批停止（原实现先计数再判断会多算 1）
+              if (found.length >= MAX_FILES) { truncated = true; truncatedBy = truncatedBy || 'count'; break }
+              found.push({ path: path.join(dir, e.name), name: e.name })
+            }
+          }
+        }).catch(() => { /* 无权限/目录消失：跳过，不中断整次扫描 */ }).finally(() => {
+          active--
+          pump()
+        })
       }
-      if (!e.isFile()) continue
-      if (!VIDEO_EXTS.includes(path.extname(e.name).toLowerCase())) continue
-      // 上限判断放在计数之前：达到上限就整批停止（原来先 +1 再判断，最终数字会比实际多 1）
-      if (files.length >= MAX_FILES) { truncated = true; truncatedBy = truncatedBy || 'count'; return }
-      scanned++
-      let st = null
-      try { st = await fs.promises.stat(full) } catch { continue }
-      files.push({ path: full, name: e.name, size: st.size, mtime: Math.round(st.mtimeMs) })
+      if (truncated && active === 0) resolve()
+    }
+    pump()
+  })
+
+  // ---- 阶段二：并发 stat（大小/mtime 供渲染层分组排序）----
+  const scanned = found.length
+  let idx = 0
+  const worker = async () => {
+    while (idx < found.length) {
+      const f = found[idx++]
+      try {
+        const st = await fs.promises.stat(f.path)
+        files.push({ path: f.path, name: f.name, size: st.size, mtime: Math.round(st.mtimeMs) })
+      } catch { /* stat 失败（文件消失/无权限）：跳过，与原行为一致 */ }
     }
   }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(CONCURRENCY, found.length)) }, worker))
 
-  await walk(root, 0)
   return { files, scanned, truncated, truncatedBy, maxFiles: MAX_FILES }
 }
 

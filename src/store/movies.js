@@ -11,8 +11,12 @@ import { defineStore } from 'pinia'
 import { ElMessage } from 'element-plus'
 import { favLock, favUnlock } from '@/utils/global'
 
+// 标签分类数（2026-11-09 P2 审计：原先 9 这个数字散落在 store 初始化、initIfNeeded
+// 校验、resetAll、TagFilter 的遍历与清空共 6 处硬编码 —— 改分类数时必漏。收拢成常量。）
+export const TAG_CAT_COUNT = 9
+
 // 默认显示名 - 程序启动后从 settings:saveTagCats / tag-categories.json 读取，用户可自定义
-// 9 个标签大类，初始为空，后续从配置文件或数据库加载
+// 标签大类，初始为空，后续从配置文件或数据库加载
 const DEFAULT_CATS = [
   { cat: 'C1', tags: [] }, { cat: 'C2', tags: [] }, { cat: 'C3', tags: [] },
   { cat: 'C4', tags: [] }, { cat: 'C5', tags: [] }, { cat: 'C6', tags: [] },
@@ -41,7 +45,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
 
     // 筛选状态
     sort: { by: 'tjrq', order: 'DESC', random: false },  // 排序：字段、方向、随机模式
-    tagSelected: [[], [], [], [], [], [], [], [], []],   // 9个类别选中的标签数组
+    tagSelected: Array.from({ length: TAG_CAT_COUNT }, () => []),   // 各类别选中的标签数组
     searchQ: '',          // 当前搜索关键词（2026-09-09 新增：来自顶栏搜索，
                           //  loadMovies 会并入 filter.q，保证翻页/刷新不丢搜索条件）
 
@@ -110,9 +114,9 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
             this.settings = r.data || {}
             if (r.data?.page_size) this.pageSize = Number(r.data.page_size) || 20
             if (r.data?.cols_per_row) this.colsPerRow = Number(r.data.cols_per_row) || 5
-            // 加载标签分类配置（必须为 9 类）
+            // 加载标签分类配置（数量必须与 TAG_CAT_COUNT 一致，多/少都视为坏配置回退默认）
             const cr = await window.api.getTagCategories()
-            if (cr.ok && Array.isArray(cr.data) && cr.data.length === 9) {
+            if (cr.ok && Array.isArray(cr.data) && cr.data.length === TAG_CAT_COUNT) {
               this.categories = cr.data
             }
           }
@@ -164,11 +168,10 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
     },
 
     /**
-     * 加载影片列表
+     * 加载影片列表（结果整页替换 store.movies）
      * @param {Object} opts - 加载选项
      * @param {boolean} opts.onlyFavorite - 仅加载收藏影片
      * @param {Object} opts.extraFilter - 额外筛选条件（如 actress、studio、series、historyOnly）
-     * @param {boolean} opts.append - 是否追加模式（分页加载更多时为 true）
      * @param {boolean} opts.useTags - 是否带上标签栏的选中标签（默认 true）
      * @param {boolean} opts.useSearch - 是否带上顶栏搜索词（默认 true）
      * @returns {Promise<{ok: boolean, total?: number, stale?: boolean, error?: string}>}
@@ -177,8 +180,10 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      *   ⚠️ ok:false 不等于「已经弹过错误提示」：被取代(stale)是静默的，
      *      只有「最新但失败」才会弹一次 ElMessage。
      *   兼容性：改动前无返回值，现有 12 处调用点全部是裸 await（不消费返回值），故本次为纯增量。
+     *   （2026-11-09 P2 审计：删掉了从未被任何调用点使用的 append 追加分支 ——
+     *    全部调用都传 false，分页走「翻页整页替换」而非无限滚动。）
      */
-    async loadMovies({ onlyFavorite = false, extraFilter = {}, append = false, useTags = true, useSearch = true } = {}) {
+    async loadMovies({ onlyFavorite = false, extraFilter = {}, useTags = true, useSearch = true } = {}) {
       if (!window.api) { this.movies = []; this.total = 0; return { ok: false, error: 'api 不可用' } }
       // 加载序号：连续点翻页/快速切筛选时会有多个请求同时在飞，只让**最后一次**的结果生效。
       // 否则先发的慢请求后返回，会把新一页的数据覆盖回旧页（表现为「翻页跳来跳去」）。
@@ -206,21 +211,14 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
           // 页码越界守卫：page 超过实际总页数时后端返回空列表，界面表现为「列表空白」。
           // 典型成因：其它视图（喜欢/观看记录）留下的页码、详情页删除影片后总页数变少、
           // 带筛选的结果页数变少。这里收敛到最后一页重取一次（loadSeq 自增，旧响应自动作废）。
-          if (!append && total > 0 && this.page > Math.ceil(total / this.pageSize)) {
+          if (total > 0 && this.page > Math.ceil(total / this.pageSize)) {
             this.total = total
             this.page = Math.ceil(total / this.pageSize)
             // 重取时必须原样带上 useTags / useSearch，否则收敛后的这一页会换回全局筛选条件
             // 返回值直接透传递归结果（递归会自行决定 ok/stale）
-            return this.loadMovies({ onlyFavorite, extraFilter, append, useTags, useSearch })
+            return this.loadMovies({ onlyFavorite, extraFilter, useTags, useSearch })
           }
-          if (append) {
-            // 追加模式：去重后追加
-            const existingIds = new Set(this.movies.map(m => m.id))
-            this.movies = [...this.movies, ...newMovies.filter(m => !existingIds.has(m.id))]
-          } else {
-            // 替换模式：直接覆盖
-            this.movies = newMovies
-          }
+          this.movies = newMovies
           this.total = total
           return { ok: true, total }
         }
@@ -302,7 +300,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      * 重置所有筛选/排序状态
      */
     resetAll() {
-      this.tagSelected = [[], [], [], [], [], [], [], [], []]
+      this.tagSelected = Array.from({ length: TAG_CAT_COUNT }, () => [])
       this.page = 1
       this.sort = { by: 'tjrq', order: 'DESC', random: false }
       this.selectedIds = []

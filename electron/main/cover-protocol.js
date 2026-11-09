@@ -18,10 +18,10 @@
  *   host 段导致 pathname 为空（400）。
  * - base64url 兼容任意字符（空格、中文、Windows 反斜杠等），避免 URL 解析问题。
  * - 仅放行白名单扩展名（图片），且必须落在白名单根目录内，防止被利用读任意文件。
- * @dependencies electron (app, protocol, net), path, fs, os
+ * @dependencies electron (protocol, net), path, fs
  */
 
-const { app, protocol, net } = require('electron')
+const { protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
@@ -91,16 +91,13 @@ function setupCoverProtocol(dataDir) {
   const IMG_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp'])
   const isImg = (p) => IMG_EXTS.has(path.extname(p).toLowerCase())
 
-  // 路径白名单：必须在这些目录之一，才允许读取
-  //   1. 数据目录（封面、上传图等都存在这里）
-  //   2. 系统临时目录（兼容旧版刮削缓存）
-  //   3. EXE 同级目录（兼容用户把数据放在 exe 旁的场景）
-  const allowedRoots = [
-    path.resolve(dataDir),
-    path.resolve(process.cwd()),
-    path.resolve(path.dirname(app.getPath('exe'))),
-    path.resolve(require('os').tmpdir())
-  ]
+  // 路径白名单（2026-11-09 P2 审计收紧）：只允许应用数据目录。
+  // 原来还放行 cwd / EXE 同级目录 / 系统临时目录 —— 三个根合起来约等于「本机任意位置」：
+  //   · cwd：打包版从快捷方式启动时可能是 C:\Windows\System32 等任意目录；
+  //   · EXE 同级目录：整个安装目录（含应用自身文件）都可读，而数据目录本来就是 exe\data；
+  //   · 临时目录：现行图片临时文件都写在目标文件旁边（scraper 的 tmpPathFor），从不落 tmpdir。
+  // 实测（dev + 正式版两个库）全部封面/预览/头像引用均为「相对 dataDir」路径，收紧无副作用。
+  const allowedRoots = [path.resolve(dataDir)]
 
   protocol.handle('javtube-cover', async (request) => {
     try {
@@ -119,7 +116,11 @@ function setupCoverProtocol(dataDir) {
         const rel = path.relative(root, resolved)
         return rel && !rel.startsWith('..') && !path.isAbsolute(rel)
       })
-      if (!ok) return new Response('forbidden', { status: 403 })
+      if (!ok) {
+        // 403 属于异常情况（库内引用均为 dataDir 相对路径，2026-11-09 已实测），留痕便于诊断
+        console.warn('[cover-protocol] forbidden (outside dataDir):', resolved)
+        return new Response('forbidden', { status: 403 })
+      }
       // 必须是图片扩展名
       if (!isImg(resolved)) return new Response('not an image', { status: 415 })
       // 文件必须存在且是文件（一次异步 stat，同时拿 mtime/size 给 ETag 用）

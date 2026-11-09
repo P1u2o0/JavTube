@@ -58,7 +58,7 @@ const store = useMoviesStore()
 // onPlay / onBatchDelete / onBatchFav 由 composable 统一提供
 const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag, onBatchScrape } = useMovieList(store, {
   // useTags/useSearch 关掉：本页没有标签栏与搜索框，片库留下的筛选条件会静默过滤本页
-  buildLoadArgs: () => ({ append: false, extraFilter: { historyOnly: true }, useTags: false, useSearch: false }),
+  buildLoadArgs: () => ({ extraFilter: { historyOnly: true }, useTags: false, useSearch: false }),
   onRefresh: () => loadHistory()
 })
 
@@ -71,7 +71,7 @@ const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onB
 async function loadHistory() {
   store.page = 1
   await store.loadMovies({
-    append: false,
+
     extraFilter: { historyOnly: true },
     // 本页无标签筛选栏、无搜索框：不带全局筛选条件，否则片库选中的标签/搜索词
     // 会把观看记录静默过滤成 0 条（用户看到的是「还没有观看记录」）

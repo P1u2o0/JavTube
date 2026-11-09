@@ -24,6 +24,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { shell } = require('electron')
 // 图片子目录名：新布局 images/（2026-10-05 起）+ 旧布局 covers/（迁移期兜底识别）
 // —— 这两个根之外的文件一律不允许被本模块删除
 const { IMAGE_DIR, COVER_DIR } = require('../constants')
@@ -103,12 +104,16 @@ function collectAllRefs(db) {
 
 /**
  * 删除候选文件中「已不再被任何影片引用」的那些。**必须在影片行已删除后调用**。
+ * 2026-11-09 P2 审计：删除方式从 unlink 改为 `shell.trashItem`（系统回收站）——
+ * 删影片/清空数据库都是不可逆操作，图片原来直接 unlink 无法恢复，误删只能靠
+ * 手工备份回捞；进回收站后至少能从回收站还原。批量删除时几百次 trashItem 会
+ * 慢一些（每次一次 Shell 调用），换来可恢复性，值得。
  * @param {Object} db - sql.js 数据库实例（此时应已是删除后的状态）
  * @param {string} dataDir
  * @param {Set<string>} candidates - 被删影片曾引用的图片相对路径集合
- * @returns {number} 实际删除的文件数
+ * @returns {Promise<number>} 实际删除的文件数
  */
-function purgeUnreferenced(db, dataDir, candidates) {
+async function purgeUnreferenced(db, dataDir, candidates) {
   let cleaned = 0
   if (!dataDir || !candidates || !candidates.size) return cleaned
   // 剩余影片的引用集合（cover + previews + 演员头像）
@@ -119,8 +124,18 @@ function purgeUnreferenced(db, dataDir, candidates) {
     if (!underImageDir(dataDir, rel)) continue // 不在图片目录内（含目录穿越）→ 拒绝
     try {
       const abs = path.resolve(dataDir, rel)
-      if (fs.existsSync(abs)) { fs.unlinkSync(abs); cleaned++ }
-    } catch { /* 删文件失败不影响删库结果 */ }
+      if (!fs.existsSync(abs)) continue
+      // ⚠️ shell.trashItem 偶发抛 `Operation was aborted`（Explorer 回收站操作被系统
+      //    重试/取消），但文件其实已移走（与 dup-scan 同病）—— 异常后再核一次磁盘状态，
+      //    已不在就按成功计，否则该文件永远清不掉、计数也永远对不上。
+      try {
+        await shell.trashItem(abs)
+        cleaned++
+      } catch (e) {
+        if (!fs.existsSync(abs)) { cleaned++; continue }
+        console.warn('[cleanup] 移入回收站失败（保留该文件）:', rel, e.message)
+      }
+    } catch { /* 单个文件失败不影响删库结果 */ }
   }
   return cleaned
 }

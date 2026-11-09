@@ -73,7 +73,7 @@ export function useMovieList(store, { buildLoadArgs, onRefresh } = {}) {
     store.page = p
     const mc = document.querySelector('.main-content')
     if (mc) mc.scrollTop = 0
-    const args = buildLoadArgs ? buildLoadArgs() : { append: false }
+    const args = buildLoadArgs ? buildLoadArgs() : {}
     await store.loadMovies(args)
     await nextTick()
     if (mc && mc.scrollTop !== 0) mc.scrollTop = 0

@@ -21,6 +21,10 @@
  * 落盘时序（关键）：本函数由 initDb 在**落盘机制安装之后**调用，所有 db.run 都会打 dirty，
  * 由调用方紧接着 force() 落盘 —— 不允许出现「文件已搬但 DB 路径没写盘」的中间状态。
  * 若 db._blockPersist（恢复备份后禁止落盘）则整体跳过，等用户重启后再迁移。
+ * 中断收敛（2026-11-09 P2 审计）：万一在「文件已搬、DB 未落盘」的窗口里崩溃/断电，
+ * 磁盘上的 DB 仍是旧路径 —— 重跑迁移时按「源文件不在、目标位已有 → 视为已迁移并
+ * 改写库路径」收编（海报/预览两处；头像段本来就能收敛），保证二次启动自动修复，
+ * 而不是留下指向旧路径的破图。
  *
  * @dependencies fs, path, ../constants, ./util
  * @keyAPI migrateImageLayout(db, dataDir, dbPath) → { skipped, changed, ...统计 }
@@ -125,13 +129,18 @@ function migrateImageLayout(db, dataDir, dbPath) {
       const cRel = String(cover || '').replace(/\\/g, '/')
       if (cRel && !/^[a-z]+:/i.test(cRel) && !cRel.startsWith('images/')) {
         const abs = path.join(dataDir, cRel)
+        const ext = (cRel.match(/\.[a-z0-9]+$/i) || ['.jpg'])[0].toLowerCase()
+        const dstRel = posterRelPath(phSeg, ext)
         if (fs.existsSync(abs)) {
-          const ext = (cRel.match(/\.[a-z0-9]+$/i) || ['.jpg'])[0].toLowerCase()
-          const dstRel = posterRelPath(phSeg, ext)
           const st = moveFile(abs, path.join(dataDir, dstRel))
           if (st === 'moved' || st === 'dup') { newCover = dstRel; sum.posters++ }
+        } else if (fs.existsSync(path.join(dataDir, dstRel))) {
+          // 2026-11-09 P2 审计：源文件已不在、但目标位已有 —— 上次迁移把文件搬完了、
+          // DB 还没 force 落盘就中断的现场。按新路径收编，重跑才能收敛
+          // （原实现这里不动作不改库，重启后封面指向已不存在的旧路径，全部破图）
+          newCover = dstRel
         }
-        // 文件不存在：不动作、不改库（库内原值保持，交给图片检查/修复流程处理）
+        // 两处都不存在：不动作、不改库（库内原值保持，交给图片检查/修复流程处理）
       }
       let prevArr = []
       try { const p = JSON.parse(previewsJson || '[]'); if (Array.isArray(p)) prevArr = p } catch {}
@@ -143,7 +152,13 @@ function migrateImageLayout(db, dataDir, dbPath) {
         const abs = path.join(dataDir, rel)
         const ext = (rel.match(/\.[a-z0-9]+$/i) || ['.jpg'])[0].toLowerCase()
         const num = (path.basename(rel).match(/-(\d+)\.[a-z0-9]+$/i) || [])[1] || String(newPrev.length + 1)
-        if (!fs.existsSync(abs)) { sum.previewsMissing++; continue }     // 文件本就缺失 → 移除该条
+        const dstRel = previewRelPath(phSeg, num, ext)
+        if (!fs.existsSync(abs)) {
+          // 目标位已有（上次迁移搬完、DB 未落盘中断的现场）：按已迁移收编，重跑收敛
+          if (fs.existsSync(path.join(dataDir, dstRel))) { newPrev.push(dstRel); sum.previewsMoved++ }
+          else sum.previewsMissing++                                    // 两处都没有 → 移除该条
+          continue
+        }
         let sz = 0
         try { sz = fs.statSync(abs).size } catch {}
         if (sz < PREVIEW_MIN_BYTES) {                                    // 小于 10KB 的小图 → 剔除
@@ -151,7 +166,6 @@ function migrateImageLayout(db, dataDir, dbPath) {
           sum.previewsDropped++
           continue
         }
-        const dstRel = previewRelPath(phSeg, num, ext)
         const st = moveFile(abs, path.join(dataDir, dstRel))
         if (st === 'moved' || st === 'dup') { newPrev.push(dstRel); sum.previewsMoved++ }
         else sum.previewsMissing++

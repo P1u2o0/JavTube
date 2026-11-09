@@ -367,12 +367,13 @@ function registerMovieIpc(ipcMain, db, dataDir) {
 
   // IPC: movies:delete — 渲染进程 → 主进程
   // 删除单条影片，并清理其不再被引用的本地图片（2026-09-29 审计）
-  ipcMain.handle(IPC.MOVIES_DELETE, (_e, id) => {
+  // （purgeUnreferenced 2026-11-09 起走回收站，是 async）
+  ipcMain.handle(IPC.MOVIES_DELETE, async (_e, id) => {
     try {
       // 顺序：删库前先收集该片的图片引用，删库后据「剩余引用」清理孤儿文件
       const refs = collectMovieRefs(db, [Number(id)])
       db.run('DELETE FROM movies WHERE id=?', [Number(id)])
-      const cleaned = purgeUnreferenced(db, dataDir, refs)
+      const cleaned = await purgeUnreferenced(db, dataDir, refs)
       persistSoon(db)
       // 首页轮播缓存存的是影片快照，删除后必须失效，否则轮播仍展示已删影片
       try { invalidateHomeCache() } catch {}
@@ -382,14 +383,14 @@ function registerMovieIpc(ipcMain, db, dataDir) {
 
   // IPC: movies:deleteMany — 渲染进程 → 主进程
   // 批量删除影片，并清理其不再被引用的本地图片（2026-09-29 审计）
-  ipcMain.handle(IPC.MOVIES_DELETE_MANY, (_e, ids) => {
+  ipcMain.handle(IPC.MOVIES_DELETE_MANY, async (_e, ids) => {
     try {
       // 单条 IN 替代逐条 DELETE（sql.js 无批量 API，IN 可一次完成）
       const list = (ids || []).map(Number).filter(Number.isFinite)
       if (!list.length) return { ok: true, cleaned: 0 }
       const refs = collectMovieRefs(db, list)
       db.run(`DELETE FROM movies WHERE id IN (${list.map(() => '?').join(',')})`, list)
-      const cleaned = purgeUnreferenced(db, dataDir, refs)
+      const cleaned = await purgeUnreferenced(db, dataDir, refs)
       persistSoon(db)
       try { invalidateHomeCache() } catch {}
       return { ok: true, cleaned }

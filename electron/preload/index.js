@@ -84,16 +84,6 @@ contextBridge.exposeInMainWorld('api', {
   // === 播放页（2026-09-29 内置播放器）===
 
   /**
-   * 读取播放进度（秒）。
-   * ⚠️ 2026-10-08 起**渲染层不再用它驱动续播** —— 续播规则改成「只在播放页 ⇄ 详情/演员页
-   *    往返时续播」，续播点只放在内存里（src/utils/playResume.js）。库里的 play_pos 现在
-   *    只用于「观看记录」。保留本接口是为了将来做「上次看到 xx:xx」这类展示。
-   * @param {number} id - 影片 ID
-   * @returns {Promise<Object>} { ok, pos, dur, playTime, playCount }
-   */
-  getPlayProgress: (id) => ipcRenderer.invoke(IPC.PLAYER_GET_PROGRESS, id),
-
-  /**
    * 保存播放进度（播放页节流调用 + 关页前兜底调用）
    * @param {Object} p - { id, pos(秒), dur(秒) }
    * @returns {Promise<Object>} { ok }

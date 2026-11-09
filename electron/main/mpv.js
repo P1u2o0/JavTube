@@ -491,15 +491,23 @@ function safeName(name, allow) {
   return (typeof name === 'string' && allow.has(name)) ? name : ''
 }
 
+// 库内视频路径闸门（2026-11-09 P2 审计）：mpv 的 start/load 原先把渲染层给的路径
+// 直接塞给 loadfile / 命令行，不校验 —— 渲染层一旦被注入就是「用 mpv 读任意文件」。
+// 收敛为「movies 表 py 登记过的路径」；与 javtube-media:// 协议共用同一闸门实现。
+const { createVideoGate } = require('./video-gate')
+
 /**
  * 注册 mpv 控制通道。
  * ⚠️ 形参名必须是 `ipcMain`：`scripts/audit-wiring.js` 是按**字面量**去 main 目录里找
  *    「ipcMain.handle(常量)」来收集已注册通道的，换个参数名就会被判成「通道没人处理」。
  *    （同理，注释里也不要写出那个字面量，否则会被当成真代码匹配到。）
  * @param {import('electron').IpcMain} ipcMain
- * @param {{getMainWindow: () => import('electron').BrowserWindow|null}} ctx
+ * @param {{getMainWindow: () => import('electron').BrowserWindow|null, db?: object}} ctx
  */
 function registerMpvIpc(ipcMain, ctx) {
+  const videoGate = ctx.db ? createVideoGate(ctx.db) : null
+  /** mpv 要播的文件必须是库内登记过的（gate 缺省时跳过校验，保持容错取向） */
+  const gateFile = (file) => !videoGate || videoGate(String(file || ''))
   // margin 分母要拿真实窗口尺寸（见 holeDenominator），这里注入取窗口的方法
   getWin = typeof ctx.getMainWindow === 'function' ? ctx.getMainWindow : null
   // 事件出口：主进程 → 渲染层
@@ -519,11 +527,15 @@ function registerMpvIpc(ipcMain, ctx) {
         let hwnd = 0
         try { hwnd = Number(win.getNativeWindowHandle().readBigUInt64LE(0)) } catch { /* 非 Windows */ }
         if (!hwnd) return { ok: false, error: 'no-hwnd' }
+        // 库内闸门：mpv 是独立进程，必须给真实路径 —— 也正因如此不能放过任意路径
+        if (!gateFile(payload.file)) return { ok: false, error: 'file-not-in-library' }
         return startMpv({ ...payload, hwnd })
       }
       case 'stop':
         return stopMpv()
       case 'load': {
+        // 库内闸门放在 client 判空之前：路径不合法就快速拒绝，不暴露「mpv 是否在跑」
+        if (!gateFile(payload.file)) return { ok: false, error: 'file-not-in-library' }
         if (!client) return { ok: false, error: 'not-running' }
         lastTimePos = -1
         const args = [payload.file, 'replace']

@@ -323,9 +323,9 @@ app.whenReady().then(async () => {
   } catch (e) {
     console.error('[main] setupCoverProtocol FAILED:', e?.message || e)
   }
-  // 视频流协议（内置播放页 <video> 用，同上不依赖 DB）
+  // 视频流协议（内置播放页 <video> 用；库内路径闸门需要 db，2026-11-09 P2 审计）
   try {
-    setupMediaProtocol()
+    setupMediaProtocol(db)
   } catch (e) {
     console.error('[main] setupMediaProtocol FAILED:', e?.message || e)
   }
@@ -366,7 +366,7 @@ app.whenReady().then(async () => {
   reg('home', () => registerHomeIpc(ipcMain, db))                         // 首页推荐 IPC
   reg('player', () => registerPlayerIpc(ipcMain, db))                     // 播放页 IPC（进度 + 相关推荐，2026-09-29）
   reg('dup', () => registerDupIpc(ipcMain, db))                           // 目录查重（2026-11-08）
-  reg('mpv', () => registerMpvIpc(ipcMain, { getMainWindow: () => mainWindow }))  // mpv 播放内核控制通道（2026-10-08）
+  reg('mpv', () => registerMpvIpc(ipcMain, { getMainWindow: () => mainWindow, db }))  // mpv 播放内核控制通道（2026-10-08；db 供库内路径闸门）
   if (ipcFailures.length) {
     console.error('[main] IPC 部分模块注册失败:', ipcFailures.join(' | '))
     // 让用户知道「有些功能不可用」，而不是遇到奇怪的半残界面。

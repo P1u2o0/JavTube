@@ -27,7 +27,7 @@ module.exports = {
   MOVIES_RECORD_PLAY: 'movies:recordPlay',
 
   // === 播放页（2026-09-29 内置播放器）===
-  PLAYER_GET_PROGRESS: 'player:getProgress',    // 读播放进度（续播）
+  // （读进度通道已删：渲染层改从 movies:getOne 一次带回 play_pos 等字段，2026-11-09 P2 审计）
   PLAYER_SAVE_PROGRESS: 'player:saveProgress',  // 节流保存播放进度
   PLAYER_RECOMMEND: 'player:recommend',         // 播放页右侧「相关推荐」
 

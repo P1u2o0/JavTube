@@ -11,16 +11,18 @@
  * 协议格式：javtube-media://0/<base64url(绝对路径)>
  * （与 javtube-cover 完全同构：占位 host '0' + base64url 兼容中文/空格/反斜杠）
  *
- * 安全模型（与 cover 协议的差异必须知道）：
- *   cover 协议把路径限制在数据目录白名单内；视频做不到 —— 影片库可以在用户磁盘的
- *   任意位置（settings.video_paths 之外的存量导入无法枚举根目录）。因此这里的防护是
- *   「扩展名白名单」：只有视频扩展名可读，任何其他文件一律 415。渲染进程只能拿到
- *   用户库里已有影片的路径（py 字段），不存在注入面。
+ * 安全模型（2026-11-09 P2 审计后，双层）：
+ *   ① 库内路径闸门：解码出的路径必须是 movies 表 py 字段登记过的（归一化比对，
+ *      见 video-gate.js）。这层挡住「任意绝对路径」—— 渲染层一旦被注入，
+ *      不能借本协议读本机任意文件。
+ *   ② 扩展名白名单：只有视频扩展名可读（对①的纵深防御；也兼容 db 暂时读不到的场景）。
+ *   视频库可以在用户磁盘的任意位置（settings.video_paths 之外还有存量导入），
+ *   所以不能用「目录根白名单」，只能按「库内登记过的文件」放行。
  *
  * 调用时序（与 cover 一致）：
  *   registerMediaScheme() 必须在 app ready 之前调用；
- *   setupMediaProtocol() 在 app.whenReady 内调用。
- * @dependencies electron (protocol), path, fs, stream
+ *   setupMediaProtocol(db) 在 app.whenReady 内、db 初始化之后调用。
+ * @dependencies electron (protocol), path, fs, stream, ./video-gate
  */
 
 const { protocol } = require('electron')
@@ -31,6 +33,8 @@ const { Readable } = require('stream')
 const { ReadableStream } = require('stream/web')
 // 视频读取的存储根冷却（NAS 离线时快速 404，避免重试把线程池塞满；见 video-meta.js）
 const { isVideoReadCooling, noteVideoReadResult } = require('./video-meta')
+// 库内视频路径闸门（2026-11-09 P2 审计）
+const { createVideoGate } = require('./video-gate')
 
 // 允许播放的容器扩展名。注意 Chromium 解码能力有限：
 //   mp4/m4v/webm/mov 稳定；mkv 视内部编码（H.264/AAC 通常可以）；avi/wmv/flv/rmvb 放不了。
@@ -126,8 +130,13 @@ function makeCushionedStream(filePath, start, end) {
  * 支持 Range 单区间请求（Chromium 的 <video> seek 全靠它）：
  *   bytes=start-end / bytes=start- / bytes=-suffix 三种形态都处理；
  *   多区间（bytes=0-1,5-6）直接回 200 全量（规范允许，<video> 不会发这种）。
+ * @param {Object} [db] - sql.js 数据库实例（用于库内路径闸门；缺省时退化为仅扩展名校验）
  */
-function setupMediaProtocol() {
+function setupMediaProtocol(db) {
+  // 库内路径闸门（2026-11-09 P2 审计）：只放行 movies 表登记过的视频文件路径。
+  // db 拿不到（理论不可达：index.js 在 initDb 之后才调这里）就退化为 fail-open，
+  // 保持「协议注册失败不拦启动」的既有容错取向。
+  const isKnownVideo = db ? createVideoGate(db) : null
   protocol.handle('javtube-media', async (request) => {
     try {
       const u = new URL(request.url)
@@ -136,9 +145,14 @@ function setupMediaProtocol() {
       if (!enc) return new Response('bad request', { status: 400 })
       const abs = Buffer.from(enc, 'base64').toString('utf-8')
       const resolved = path.resolve(abs)
-      // 扩展名白名单：非视频容器一律拒绝（本协议的安全边界，见文件头注释）
+      // 扩展名白名单：非视频容器一律拒绝（纵深防御层）
       if (!VIDEO_EXTS.has(path.extname(resolved).toLowerCase())) {
         return new Response('unsupported media type', { status: 415 })
+      }
+      // 库内闸门：不是 movies 表登记过的路径一律 403（本协议的主要安全边界，见文件头注释）
+      if (isKnownVideo && !isKnownVideo(resolved)) {
+        console.warn('[media-protocol] rejected (not in library):', resolved)
+        return new Response('forbidden', { status: 403 })
       }
       // 存储根刚失败过（如 NAS 离线）：快速 404 —— ArtPlayer 会重试多次，
       // 不拦的话每次重试都会往 libuv 线程池塞一个挂 ~40s 的 stat（2026-10-04）

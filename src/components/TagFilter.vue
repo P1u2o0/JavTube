@@ -70,8 +70,8 @@ import { computed, ref } from 'vue'
 import TagChip from './TagChip.vue'
 // 引入统一图标组件
 import AppIcon from './AppIcon.vue'
-// 引入影片数据仓库（Pinia store）
-import { useMoviesStore } from '@/store/movies'
+// 引入影片数据仓库（Pinia store）与分类数常量（原先 4 处硬编码 9，2026-11-09 P2 审计收拢）
+import { useMoviesStore, TAG_CAT_COUNT } from '@/store/movies'
 
 // 定义 emit 事件：
 // - change: 标签选中状态变更时触发，通知父组件重新加载列表
@@ -145,9 +145,9 @@ const uncategorizedTags = computed(() => {
 // 参数 tag: 标签名称
 // 返回值: Boolean，是否已选中
 function isTagSelected(catIdx, tag) {
-  // 未分类标签：遍历所有 9 个分类检查是否被选中
+  // 未分类标签：遍历所有分类检查是否被选中
   if (catIdx < 0) {
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < TAG_CAT_COUNT; i++) {
       if ((store.tagSelected[i] || []).includes(tag)) return true
     }
     return false
@@ -170,8 +170,8 @@ function onToggle(catIdx, tag) {
 // 如果标签已在某分类中被选中则取消选中，否则添加到第一个分类
 // 触发时机：用户点击未分类区域的标签芯片
 function onToggleUncategorized(tag) {
-  // 遍历所有 9 个分类，查找并移除已选中的标签
-  for (let i = 0; i < 9; i++) {
+  // 遍历所有分类，查找并移除已选中的标签
+  for (let i = 0; i < TAG_CAT_COUNT; i++) {
     const arr = store.tagSelected[i] || []
     if (arr.includes(tag)) {
       arr.splice(arr.indexOf(tag), 1)
@@ -186,10 +186,10 @@ function onToggleUncategorized(tag) {
 }
 
 // 清除所有标签筛选
-// 将 9 个分类的选中数组全部重置为空数组
+// 将所有分类的选中数组全部重置为空数组
 // 触发时机：用户点击"全部"按钮
 function onClearAll() {
-  store.tagSelected = [[], [], [], [], [], [], [], [], []]
+  store.tagSelected = Array.from({ length: TAG_CAT_COUNT }, () => [])
   emit('change')
 }
 </script>

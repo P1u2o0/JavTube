@@ -78,7 +78,7 @@ const route = useRoute()
 // 公共列表交互：批量选中切换 / 翻页 / 详情跳转（翻页时携带路由筛选参数不丢条件）
 // onPlay / onBatchDelete / onBatchFav 由 composable 统一提供（见 useMovieList）
 const { onToggle, onPageChange, onDetail, onPlay, onBatchDelete, onBatchFav, onBatchAddTag, onBatchScrape } = useMovieList(store, {
-  buildLoadArgs: () => ({ append: false, extraFilter: routeExtra() }),
+  buildLoadArgs: () => ({ extraFilter: routeExtra() }),
   onRefresh: () => onRefresh()
 })
 
@@ -144,14 +144,14 @@ async function clearFilterTitle() {
  * 刷新影片列表
  * 功能：重置页码为 1，重新加载影片数据
  */
-async function onRefresh() { store.page = 1; await store.loadMovies({ append: false, extraFilter: routeExtra() }) }
+async function onRefresh() { store.page = 1; await store.loadMovies({ extraFilter: routeExtra() }) }
 
 /**
  * 排序方式变更（StatusBar 排序下拉）：携带路由筛选重新加载
  */
 async function onSortChange() {
   store.page = 1
-  await store.loadMovies({ append: false, extraFilter: routeExtra() })
+  await store.loadMovies({ extraFilter: routeExtra() })
 }
 
 /**
@@ -172,7 +172,7 @@ async function onApplySmart() {
     try { await router.replace({ path: '/library' }) } finally { applyingSmart = false }
   }
   store.page = 1
-  await store.loadMovies({ append: false, extraFilter: routeExtra() })
+  await store.loadMovies({ extraFilter: routeExtra() })
 }
 
 
@@ -236,7 +236,7 @@ async function applyRouteFilter(q) {
   if (q.director) extra.director = q.director
   if (q.studio) extra.studio = q.studio
   if (q.series) extra.series = q.series
-  await store.loadMovies({ append: false, extraFilter: extra })
+  await store.loadMovies({ extraFilter: extra })
   return true
 }
 
@@ -256,13 +256,13 @@ onMounted(async () => {
   if (sig && sig === lastAppliedSig) {
     // 同一套筛选参数（典型场景：从影片详情页返回）→ **保留当前页码**，只重载这一页的数据。
     // store.movies 是三个视图共享的，从喜欢/历史页回来时它已被换成子集，所以必须重载。
-    await store.loadMovies({ append: false, extraFilter: routeExtra() })
+    await store.loadMovies({ extraFilter: routeExtra() })
   } else if (!await applyRouteFilter(route.query)) {
     // 无筛选条件时也必须重新加载全量列表：store.movies 是三个视图共享的，
     // 切到喜欢/历史页后它已被替换为子集数据，不重载会导致片库影片「消失」
     // 页码不在这里写死 1：顶栏点「片库」会通过 requestLibraryReset() 把页码复位，
     // 而「详情页返回」要保持原页码（见上面的 sig 分支）。
-    await store.loadMovies({ append: false, extraFilter: routeExtra() })
+    await store.loadMovies({ extraFilter: routeExtra() })
   }
   lastAppliedSig = sig
   await tagsP
@@ -287,7 +287,7 @@ watch(() => route.query, async (q) => {
   store.tagSelected = [[], [], [], [], [], [], [], [], []]
   store.searchQ = ''
   store.page = 1
-  await store.loadMovies({ append: false, extraFilter: routeExtra() })
+  await store.loadMovies({ extraFilter: routeExtra() })
 }, { deep: true })
 
 // 顶栏点「片库」：路由本身没变化（已在 /library 且无 query）时，靠这个信号复位并重载

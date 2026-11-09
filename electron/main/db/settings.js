@@ -233,13 +233,14 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
 
   // IPC: settings:clear — 渲染进程 → 主进程
   // 清空所有数据（删除影片、女优记录，保留设置），并清理不再被引用的本地图片
-  ipcMain.handle(IPC.SETTINGS_CLEAR, () => {
+  ipcMain.handle(IPC.SETTINGS_CLEAR, async () => {
     try {
       // 删库前先收集全库图片引用；删库后所有候选文件都不再被引用 → 全部清掉（2026-09-29 审计）。
       // 注意只删图片目录（images/ 或旧 covers/）内、且确被这几部影片引用的文件，不会波及本来就是孤儿的文件。
       const refs = collectAllRefs(db)
-      // ★ 清空是**不可逆**操作，而这里的图片删除是 `unlink`（不进回收站）。
-      //   所以先落盘 + 留一份库快照与"将被删掉的图片清单"，出问题至少能人工恢复
+      // ★ 清空是**不可逆**操作。图片删除 2026-11-09 P2 审计起改走 `shell.trashItem`
+      //   （系统回收站，可恢复）；此外仍先落盘 + 留一份库快照与"将被删掉的图片清单"，
+      //   出问题至少能人工恢复
       //   （2026-11-09 审计：`settings:restore` 都有 .pre-restore-* 快照，清空反而没有）。
       let snapshot = ''
       try {
@@ -251,7 +252,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
           fs.copyFileSync(dbFile, snapshot)
         }
         const manifest = path.join(dataDir, `clear-manifest-${stamp}.json`)
-        fs.writeFileSync(manifest, JSON.stringify({ at: new Date().toISOString(), files: refs }, null, 2))
+        fs.writeFileSync(manifest, JSON.stringify({ at: new Date().toISOString(), files: [...refs] }, null, 2))
       } catch (e) {
         console.warn('[settings:clear] 清理前快照失败（继续清空）:', e.message)
       }
@@ -266,7 +267,7 @@ function registerSettingsIpc(ipcMain, db, dataDir) {
         db.run('ROLLBACK')
         throw e
       }
-      const cleaned = purgeUnreferenced(db, dataDir, refs)
+      const cleaned = await purgeUnreferenced(db, dataDir, refs)
       persistSoon(db)
       // 首页轮播缓存存的是影片快照，清空后必须失效，否则首页仍展示已删除的影片
       try { invalidateHomeCache() } catch {}

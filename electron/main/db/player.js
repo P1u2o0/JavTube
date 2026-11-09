@@ -134,17 +134,8 @@ function buildTaste(db, nowMs) {
  */
 function registerPlayerIpc(ipcMain, db) {
   // ── 读取播放进度 ─────────────────────────────────────────
-  ipcMain.handle(IPC.PLAYER_GET_PROGRESS, (_e, id) => {
-    // 三个 handler 统一包 try（2026-09-30 审计）：db.exec 抛错时 handler 直接 reject，
-    // 渲染层没接住就是 unhandled rejection，界面表现为「转圈/空白」而无任何提示。
-    // 与本项目其它 IPC 的约定保持一致：一律返回 { ok:false, error }。
-    try {
-      const res = db.exec('SELECT play_pos, play_dur, play_time, play_count FROM movies WHERE id = ?', [Number(id)])
-      const r = rowsOf(res)[0]
-      if (!r) return { ok: false, error: '影片不存在' }
-      return { ok: true, pos: Number(r.play_pos) || 0, dur: Number(r.play_dur) || 0, playTime: r.play_time || '', playCount: Number(r.play_count) || 0 }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
+  // （2026-11-09 P2 审计：PLAYER_GET_PROGRESS 的消费方早已改为 movies:getOne 一次带回
+  //  play_pos/play_dur/play_time/play_count，渲染层与 preload 均无调用 —— 死代码，删除。）
 
   // ── 保存播放进度（播放页节流调用 + 关页前兜底调用）──────────
   ipcMain.handle(IPC.PLAYER_SAVE_PROGRESS, (_e, payload) => {
