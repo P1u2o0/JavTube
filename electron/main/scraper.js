@@ -89,6 +89,50 @@ function inteHandler(orStr, staStr, endStr, arr) {
 }
 
 /**
+ * JAVBUS 可用性判定（2026-11-18）。
+ *
+ * 站点对「不像浏览器」的请求一律 302 到 `/doc/driver-verify` 年龄门，且该响应体只有 2 字节
+ * —— 原解析逻辑拿不到 `識別碼`，只会静默返回 null，界面表现为「找不到番号」（用户实测）。
+ * net-curl 已统一补上浏览器式请求头（Accept-Language 等）来通过这道门；本函数是**兜底的
+ * 明确报错**：万一请求头方案失效（站点再加条件），用户看到的是可操作的原因，而不是「未找到」。
+ * @param {string} html - 响应 HTML
+ * @param {string} url - 请求地址
+ * @throws {Error} 命中年龄门时抛出
+ */
+function assertJavbusUsable(html, url) {
+  if (/<title>\s*Age Verification/i.test(html) || /\/doc\/driver-verify/.test(html)) {
+    throw new Error(`JAVBUS 要求年龄验证（请求被判为非浏览器）：${url}`)
+  }
+}
+
+/**
+ * 把 HTTP 错误码翻成可操作的中文（2026-11-18）。
+ * 背景：JAVDB 对突发请求会返回 403（首页同时仍 200，冷却数十秒恢复），
+ * 而 net-curl 已做阶梯重试；重试仍失败时，用户需要知道「是限流而不是番号不存在」。
+ * @param {number} status - HTTP 状态码
+ * @param {string} url - 请求地址
+ * @returns {string} 面向用户的错误文案（无法识别时返回空串，由调用方回落到 `HTTP xxx`）
+ */
+function httpErrorMessage(status, url) {
+  const isJavdb = /javdb\.com/i.test(url)
+  const isJavbus = /javbus\.com/i.test(url)
+  if (isJavdb && status === 302) {
+    // 2026-11-18 实测：未登录时 /search 直接 302 到 /login（首页仍 200）；
+    // 用浏览器的 Cookie 就能过，所以提示用户重新复制 Cookie 是唯一有效操作。
+    return 'JAVDB 搜索需要登录：Cookie 已失效，请在浏览器登录 javdb.com 后，到 设置 → 刮削 重新粘贴 Cookie'
+  }
+  if (isJavbus && status === 302) {
+    return `JAVBUS 触发年龄验证（请求被判为非浏览器），请稍后重试或更换代理节点（${url}）`
+  }
+  if (status === 403 && isJavdb) {
+    return 'JAVDB 返回 403：请求被限流或 Cookie 已失效。请稍等 1 分钟再试；若持续失败，请到 设置 → 刮削 重新粘贴 javdb.com 的 Cookie'
+  }
+  if (status === 403) return `站点拒绝访问（HTTP 403）：${url}`
+  if (status === 429) return '请求过于频繁（HTTP 429），请稍后再试'
+  return ''
+}
+
+/**
  * JAVDB 拦截识别（2026-09-13，判定逻辑参考 mdcx）：把 Cloudflare 5 秒盾 /
  * IP 封禁 / 版权限制三类拦截转为可操作的中文错误，避免用户只看到 HTTP 403。
  * @param {string} html - 响应 HTML
@@ -122,8 +166,38 @@ async function fetchHtml(url, { referer, cookie, proxy } = {}) {
   }
   // 限速已下沉到 curlGet（按 host），此处直接请求即可
   const r = await curlGet(url, { proxy, cookie, referer, timeout: 30000 })
-  if (!r.ok) throw new Error(r.error || `HTTP ${r.status}`)
+  if (!r.ok) {
+    // 状态码翻成可操作的中文（403 限流 / 429 等），识别不了再回落到 HTTP xxx
+    const friendly = httpErrorMessage(r.status || 0, url)
+    const err = new Error(friendly || r.error || `HTTP ${r.status}`)
+    // 带上状态码：调用方（如 JAVDB 登录态缓存）需要据此判断是否值得继续重试
+    err.status = r.status || 0
+    throw err
+  }
   return r.html
+}
+
+/** JAVDB「需要登录」的统一文案（多处复用，避免改一处漏一处） */
+const JAVDB_LOGIN_MSG = 'JAVDB 搜索需要登录：Cookie 已失效，请在浏览器登录 javdb.com 后，到 设置 → 刮削 重新粘贴 Cookie'
+/**
+ * JAVDB 请求包装（2026-11-18）：识别「需要登录/被限流」后做进程内短期缓存。
+ *
+ * 背景：JAVDB 未登录时 /search 恒 302 → /login（实测 2026-11-18），403 则是限流；
+ * 批量补全几十部影片时，每部都要等 3 次重试（2s+5s）才失败，白耗数分钟且加重风控。
+ * 首次命中后记住一段时间，期间直接快速失败，把时间留给 JAVBUS。
+ */
+let javdbBlockedUntil = 0
+async function javdbFetch(url, opts) {
+  if (Date.now() < javdbBlockedUntil) throw new Error(JAVDB_LOGIN_MSG)
+  try {
+    const html = await fetchHtml(url, opts)
+    javdbBlockedUntil = 0        // 成功即解除（用户重贴 Cookie 后无需重启软件）
+    return html
+  } catch (e) {
+    if (e.status === 302) javdbBlockedUntil = Date.now() + 10 * 60 * 1000   // 明确要登录：10 分钟
+    else if (e.status === 403) javdbBlockedUntil = Date.now() + 2 * 60 * 1000 // 限流：2 分钟
+    throw e
+  }
 }
 
 /**
@@ -376,6 +450,7 @@ async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || 
     // 避免每部欧美影片都白拉一次完整首页（数百 KB + 限速等待）。
     if (!omPathCache) {
       const homeHtml = await fetchHtml(baseUrl, { proxy })
+      assertJavbusUsable(homeHtml, baseUrl)
       const omUrl = inteHandler(deleteSpace(homeHtml), '<li class="hidden-md hidden-sm">', '</li>', [0, 0, 0])
       let omPath = inteHandler(omUrl, '<a href="', '">', [0, 0, 0])
       // 路径处理：去除首尾斜杠，将 org 替换为 hair
@@ -390,6 +465,8 @@ async function scrapeJavBus(ph, type, opts = {}) {  const proxy = opts.proxy || 
 
   // 请求影片详情页 HTML
   const html = await fetchHtml(targetUrl, { referer: baseUrl, proxy })
+  // 年龄门兜底（2026-11-18）：命中时明确报错，避免被当成「找不到番号」
+  assertJavbusUsable(html, targetUrl)
   const data = deleteSpace(html)
 
   // 提取封面图片 URL
@@ -517,7 +594,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
 
   const proxy = opts.proxy || ''
   // 请求搜索结果页面（curl 携带用户 Cookie；无 Cookie 时 curl 亦可访问）
-  const searchHtml = await fetchHtml(searchUrl, { referer: baseUrl, cookie: userCookie || undefined, proxy })
+  const searchHtml = await javdbFetch(searchUrl, { referer: baseUrl, cookie: userCookie || undefined, proxy })
   assertJavdbNotBlocked(searchHtml, searchUrl, !!userCookie)
   let data = deleteSpace(searchHtml)
 
@@ -591,7 +668,7 @@ async function scrapeJavDb(ph, type, opts = {}) {
   // 拼接完整详情页 URL
   const fullDetailUrl = baseUrl + detailUrl
   // 请求详情页 HTML
-  const detailHtml = await fetchHtml(fullDetailUrl, { referer: searchUrl, cookie: userCookie || undefined, proxy })
+  const detailHtml = await javdbFetch(fullDetailUrl, { referer: searchUrl, cookie: userCookie || undefined, proxy })
   assertJavdbNotBlocked(detailHtml, fullDetailUrl, !!userCookie)
   data = deleteSpace(detailHtml)
 
@@ -1056,7 +1133,8 @@ async function scrapeMovie(ph, {
         return { ok: true, data: result, source: src.name }
       }
     } catch (e) {
-      lastError = `${src.name}: ${e.message}`
+      // 错误文案已经点明站点（如「JAVDB 搜索需要登录…」）时不再重复加前缀
+      lastError = e.message.startsWith(src.name) ? e.message : `${src.name}: ${e.message}`
       console.warn(`[scrape] ${cleanPh} ← ${src.name} 失败: ${e.message}`)
     }
   }

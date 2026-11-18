@@ -11,10 +11,11 @@
  *   因此刮削的页面请求与图片下载统一改由系统 curl 执行（Windows 10 1803+ 内置）。
  *
  * 约定：
- *   - 页面请求：按需带代理（JAVDB/JAVBUS 需科学上网）与 Cookie
- *   - 图片下载：不带代理（DMM 等图床直连可达，经代理连接失败）
- *   - **不加 `-L`**：JAVBUS 会 302 到反爬验证页（/doc/driver-verify），
- *     此时响应体仍是有效详情页——跟随重定向反而拿到无效验证页
+ *   - 页面请求：按需带代理（JAVDB/JAVBUS 需科学上网）与 Cookie，并补浏览器式请求头（见 PAGE_HEADERS）
+ *   - 图片下载：不带代理（DMM 等图床直连可达，经代理连接失败），用图片专用请求头
+ *   - **不加 `-L`**：JAVBUS 对非浏览器请求 302 到年龄门（/doc/driver-verify）；
+ *     带浏览器头后可稳定拿到 200 详情页，但一旦再被重定向，跟随只会拿到验证页而非目标内容
+ *   - 403/429/503 做阶梯重试（2s、5s），见 curlGet 尾部注释
  *   - 参数一律以数组传递（execFile），无 shell 注入风险
  *
  * @dependencies child_process, fs, os, path
@@ -28,6 +29,39 @@ const path = require('path')
 
 // 模拟浏览器请求的 User-Agent
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
+/**
+ * 浏览器式请求头（2026-11-18 实测新增）。
+ *
+ * 起因：JAVBUS 现在会对「不像浏览器」的请求一律 302 到 /doc/driver-verify 年龄门，
+ * 而该响应体只有 2 字节 —— 解析必然拿不到番号，表现为「找不到番号」。
+ * 实测（同代理、同时刻、无 Cookie）：
+ *   仅 UA                    → 302（年龄门）
+ *   UA + Accept-Language     → 200 详情页（3/3 稳定）
+ *   再加 Sec-Fetch-* 等      → 同样 200
+ * 也就是站点只按「是否带 Accept-Language」这类浏览器特征放行，与 Cookie 无关。
+ * JAVDB 侧同理：请求头越像浏览器，Cloudflare 的 Bot 打分越好（403 概率越低）。
+ * 故页面请求统一补上这套头；图片下载另用一套（见 buildCommonArgs 的 kind）。
+ */
+const PAGE_HEADERS = [
+  '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  '-H', 'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8',
+  '-H', 'Upgrade-Insecure-Requests: 1',
+  '-H', 'Sec-Fetch-Dest: document',
+  '-H', 'Sec-Fetch-Mode: navigate',
+  '-H', 'Sec-Fetch-Site: none',
+  '-H', 'Sec-Fetch-User: ?1',
+  '-H', 'sec-ch-ua: "Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+  '-H', 'sec-ch-ua-mobile: ?0',
+  '-H', 'sec-ch-ua-platform: "Windows"'
+]
+const IMAGE_HEADERS = [
+  '-H', 'Accept: image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+  '-H', 'Accept-Language: zh-CN,zh;q=0.9,en;q=0.8',
+  '-H', 'Sec-Fetch-Dest: image',
+  '-H', 'Sec-Fetch-Mode: no-cors',
+  '-H', 'Sec-Fetch-Site: cross-site'
+]
 
 // 系统 curl 可执行文件（Windows 10 1803+ 内置；非 Windows 平台依赖 PATH 中的 curl）
 const CURL_BIN = process.platform === 'win32'
@@ -58,6 +92,23 @@ async function curlAvailable() {
 // curlGet 与 curlDownload 都按 URL host 自动限速，覆盖面完整。
 const lastReqAt = new Map()   // host → 上次请求时间戳
 const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 req/s）
+/**
+ * 按 host 覆盖最小间隔（2026-11-18）。
+ * JAVDB 的 /search 对突发请求极敏感：实测 400ms 间隔连发数次后整个搜索接口返回 403
+ * （首页同时仍 200，`redirect_to` Cookie 可佐证是站点自身限流而非 Cookie 失效），
+ * 冷却数十秒才恢复。搜索是刮削的主路径，放慢到 1.2s；其余站点保持原节奏。
+ */
+const HOST_MIN_INTERVAL = {
+  'javdb.com': 1200,
+  'www.javbus.com': 600
+}
+
+/**
+ * 可重试的 HTTP 状态：403（含限流/风控）、429（明确限流）、503（边缘临时不可用）。
+ * 重试等待时间按次数递增 —— JAVDB 的 403 实测等 2s 后常可恢复。
+ */
+const RETRY_STATUS = new Set([403, 429, 503])
+const RETRY_WAITS = [2000, 5000]
 
 /**
  * 按 host 限速：距上次请求不足 MIN_REQ_INTERVAL 则等待补足。
@@ -68,8 +119,9 @@ const MIN_REQ_INTERVAL = 400  // 同 host 最小请求间隔（毫秒，约 2.5 
 async function throttleByHost(url) {
   let host = ''
   try { host = new URL(url).host } catch { return }
+  const interval = HOST_MIN_INTERVAL[host] || MIN_REQ_INTERVAL
   const now = Date.now()
-  const slot = Math.max(now, (lastReqAt.get(host) || 0) + MIN_REQ_INTERVAL)
+  const slot = Math.max(now, (lastReqAt.get(host) || 0) + interval)
   lastReqAt.set(host, slot)
   const wait = slot - now
   if (wait > 0) await new Promise(r => setTimeout(r, wait))
@@ -77,13 +129,15 @@ async function throttleByHost(url) {
 
 /**
  * 构造 curl 公共参数。
- * @param {Object} opts - 选项 { proxy, cookie, referer, timeout, follow }
+ * @param {Object} opts - 选项 { proxy, cookie, referer, timeout, follow, kind }
  *   follow：跟随重定向（-L）——「检查更新」用 /releases/latest 的跳转目标取版本号，
  *   不走 api.github.com（匿名 API 在共享出口 IP 下会被限流 403，实测）。
+ *   kind：'page'（默认，补浏览器式请求头，见 PAGE_HEADERS）/ 'image'（图片专用头）
  * @returns {string[]} 参数数组
  */
-function buildCommonArgs({ proxy, cookie, referer, timeout = 30000, follow = false } = {}) {
-  const args = ['-s', '-A', USER_AGENT, '--max-time', String(Math.ceil(timeout / 1000)), '--compressed']
+function buildCommonArgs({ proxy, cookie, referer, timeout = 30000, follow = false, kind = 'page' } = {}) {
+  const args = ['-s', '-A', USER_AGENT, '--max-time', String(Math.ceil(timeout / 1000)), '--compressed',
+    ...(kind === 'image' ? IMAGE_HEADERS : PAGE_HEADERS)]
   if (follow) args.push('-L')                // 跟随重定向
   if (proxy) args.push('-x', proxy)          // 代理（页面请求需要，图片不传）
   if (cookie) args.push('-b', cookie)        // Cookie（curl 的 -b 支持 "k=v; k2=v2" 形式）
@@ -98,7 +152,8 @@ function buildCommonArgs({ proxy, cookie, referer, timeout = 30000, follow = fal
  * @returns {Promise<{ ok: boolean, status?: number, html?: string, error?: string }>}
  */
 function curlGet(url, opts = {}) {
-  return throttleByHost(url).then(() => new Promise((resolve) => {
+  // 单次请求（不含重试）：把「执行 curl → 读临时文件 → 解析状态码」收成 Promise
+  const once = () => new Promise((resolve) => {
     const tmp = path.join(os.tmpdir(), `javtube-curl-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`)
     // withUrl：额外回报最终 URL（%{url_effective}，配合 follow 用；检查更新靠它拿 releases/tag/vX.Y.Z）
     const args = [...buildCommonArgs(opts), '-o', tmp,
@@ -106,7 +161,7 @@ function curlGet(url, opts = {}) {
     execFile(CURL_BIN, args, { maxBuffer: 8 * 1024 * 1024, encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, async (err, stdout) => {
       if (err) {
         try { fs.unlinkSync(tmp) } catch {}
-        return resolve({ ok: false, error: err.message })
+        return resolve({ ok: false, error: err.message, status: 0 })
       }
       let html = ''
       try {
@@ -117,21 +172,39 @@ function curlGet(url, opts = {}) {
         // 读失败也要清掉临时文件（2026-09-30 审计）：原实现只在读取成功的路径上 unlink，
         // 读失败（文件被占/权限/磁盘满）会把 curl 下好的整个响应体留在 tmp 目录里。
         try { fs.unlinkSync(tmp) } catch {}
-        return resolve({ ok: false, error: '读取响应失败: ' + e.message })
+        return resolve({ ok: false, error: '读取响应失败: ' + e.message, status: 0 })
       }
       try { fs.unlinkSync(tmp) } catch {}
       // withUrl 时 stdout 是「状态码\n最终URL」两行（\\n 由 curl 自行展开为换行）
       const lines = String(stdout).trim().split('\n')
       const status = Number(String(lines[0] || '').trim()) || 0
       const effectiveUrl = opts.withUrl ? String(lines[1] || '').trim() : ''
-      // 注意：JAVBUS 在反爬触发时返回 302 但响应体仍是有效详情页，
-      // 因此只要拿到响应体就交由上层判断内容是否有效（由 assertJavdbNotBlocked 等负责）
-      if (status < 200 || status >= 400) {
+      // 3xx 一律当失败（2026-11-18 修正）：本函数**不带 -L**，3xx 的响应体是空的或验证页，
+      // 返回 ok 只会让上层解析出「未匹配」，把「需要登录/被风控」误报成「找不到番号」。
+      // 特例：调用方要跟随跳转时显式传 follow（如检查更新），那时 status 已是最终页的状态码。
+      if (status < 200 || status >= 300) {
         return resolve({ ok: false, status, error: `HTTP ${status}` })
       }
       resolve({ ok: true, status, html, ...(opts.withUrl ? { url: effectiveUrl } : {}) })
     })
-  }))
+  })
+
+  // 重试（2026-11-18）：JAVDB 的 /search 在突发访问后会 403 一段时间（首页仍 200），
+  // 稍等即可恢复 —— 原来一次 403 直接把整部影片判为刮削失败，用户看到的就是「JAVDB 403」。
+  // 这里对 403/429/503 做阶梯退避重试（2s、5s），最多 3 次；其它错误（DNS/超时/404）不重试。
+  return (async () => {
+    let last = null
+    for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
+      await throttleByHost(url)
+      last = await once()
+      if (last.ok || !RETRY_STATUS.has(last.status)) return last
+      if (attempt < RETRY_WAITS.length) {
+        console.warn(`[net-curl] ${url.slice(0, 80)} → HTTP ${last.status}，${RETRY_WAITS[attempt]}ms 后重试（第 ${attempt + 1} 次）`)
+        await new Promise(r => setTimeout(r, RETRY_WAITS[attempt]))
+      }
+    }
+    return last
+  })()
 }
 
 /**
@@ -144,7 +217,7 @@ function curlGet(url, opts = {}) {
  */
 function curlDownload(url, savePath, opts = {}) {
   return throttleByHost(url).then(() => new Promise((resolve) => {
-    const args = [...buildCommonArgs(opts), '-o', savePath, '-w', '%{http_code}', url]
+    const args = [...buildCommonArgs({ ...opts, kind: 'image' }), '-o', savePath, '-w', '%{http_code}', url]
     execFile(CURL_BIN, args, { encoding: 'utf8', timeout: (opts.timeout || 30000) + 5000 }, (err, stdout) => {
       // 异常路径也要清掉目标路径（2026-10-02）：curl 被超时杀掉时已写入的是半截文件，
       // 留着会被后续的存在性/有效性判断当成「下过的东西」（当前调用方用 .tmp 规避，
