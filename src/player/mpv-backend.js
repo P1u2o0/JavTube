@@ -61,6 +61,8 @@ export class MpvBackend {
     /** mpv 的视频输出是否已就绪（真的开始往窗口画了）。
      *  页面据此决定何时把视频区域「镂空」—— 早于它镂空就会透出桌面（见 Player.vue）。 */
     this._videoReady = false
+    /** 外挂字幕文件路径（2026-11-19）：换片后 mpv 会清掉字幕轨，所以这里记住、每次 start/load 都带上 */
+    this._subFile = ''
   }
 
   /** 内核标识 */
@@ -99,7 +101,9 @@ export class MpvBackend {
       hole,
       volume: this._vol,
       muted: this._muted,
-      startAt: opts.startAt || 0
+      startAt: opts.startAt || 0,
+      // 外挂字幕（2026-11-19）：起播就带上，避免先出声再补字幕的闪烁
+      subFile: this._subFile || undefined
     })).then(r => {
       if (r && r.ok === false) this._fatal(r.error || 'start-failed')
     }).catch(() => this._fatal('start-threw'))
@@ -126,8 +130,21 @@ export class MpvBackend {
     this._failed = false
     this._t = 0
     return Promise.resolve(
-      window.api?.mpvControl?.({ cmd: 'load', file: url }).catch(() => { })
+      window.api?.mpvControl?.({ cmd: 'load', file: url, subFile: this._subFile || undefined }).catch(() => { })
     )
+  }
+
+  /**
+   * 设置 / 清除外挂字幕（2026-11-19）。
+   * 记录路径（换片时要重挂），已挂载则立即让 mpv 追加该轨。
+   * @param {{file?:string}} info - file 为空表示清除
+   */
+  setSubtitle(info = {}) {
+    this._subFile = String(info.file || '')
+    // 清空只改本地状态，不下发 sub-remove：换片时 loadfile 会自己清轨，
+    // 而异步指令若晚于新片的 sub-add 到达，会把刚挂上的字幕删掉。
+    if (!this._mounted || !this._subFile) return
+    try { window.api?.mpvControl?.({ cmd: 'sub', file: this._subFile }).catch(() => { }) } catch { /* 未就绪时由 started/loadedmetadata 补发 */ }
   }
 
   /** 强制重新载入当前地址（重试）。mpv 侧 loadfile 同一个地址也会真正重新加载。 */
@@ -137,7 +154,7 @@ export class MpvBackend {
     this._url = target
     this._meta = false
     this._failed = false
-    window.api?.mpvControl?.({ cmd: 'load', file: target }).catch(() => { })
+    window.api?.mpvControl?.({ cmd: 'load', file: target, subFile: this._subFile || undefined }).catch(() => { })
   }
 
   /** 销毁内核实例：停掉 mpv 进程、退订事件（保留容器 DOM） */
@@ -308,6 +325,11 @@ export class MpvBackend {
     if (this._destroyed) return
     switch (type) {
       case 'started':
+        // 进程刚起来：如果页面已经知道有外挂字幕（先于 started 下发过），这里补挂一次。
+        // start 参数里其实已带 --sub-file，这一手是兜底（例如页面在 start 之后才拿到字幕路径）。
+        if (this._subFile) {
+          try { window.api?.mpvControl?.({ cmd: 'sub', file: this._subFile }).catch(() => { }) } catch { /* 忽略 */ }
+        }
         break
       case 'voready':
         // mpv 的视频输出就绪 = 真的开始画了。**必须在这里把镂空矩形重发一次**：
@@ -324,6 +346,11 @@ export class MpvBackend {
         if (typeof data.duration === 'number' && data.duration > 0) this._dur = data.duration
         // 换片后 mpv 会重新配置视频输出，镂空矩形再保险地重发一次
         this.setHole()
+        // 外挂字幕（2026-11-19）：loadfile 会清空字幕轨，而页面补挂的 sub 指令可能早于
+        // loadfile 完成（被随后清掉）—— 元数据就绪时再挂一次，保证换片后字幕仍在。
+        if (this._subFile) {
+          try { window.api?.mpvControl?.({ cmd: 'sub', file: this._subFile }).catch(() => { }) } catch { /* 忽略 */ }
+        }
         this._readBackState()
         this._emit('loadedmetadata', { duration: this._dur })
         break

@@ -29,6 +29,7 @@ const { registerHomeIpc } = require('./home')
 const { registerPlayerIpc } = require('./db/player')
 // 目录查重（2026-11-08）：只读扫描 + 用户逐条处置
 const { registerDupIpc } = require('./dup-scan')
+const { registerSubtitleIpc, backfillSubtitles } = require('./subtitles')
 // javtube-cover 封面协议（自本文件拆出）
 const { registerCoverScheme, setupCoverProtocol } = require('./cover-protocol')
 // javtube-media 视频流协议（内置播放页，2026-09-29）
@@ -366,7 +367,15 @@ app.whenReady().then(async () => {
   reg('home', () => registerHomeIpc(ipcMain, db))                         // 首页推荐 IPC
   reg('player', () => registerPlayerIpc(ipcMain, db))                     // 播放页 IPC（进度 + 相关推荐，2026-09-29）
   reg('dup', () => registerDupIpc(ipcMain, db))                           // 目录查重（2026-11-08）
+  reg('sub', () => registerSubtitleIpc(ipcMain, db))                      // 外挂字幕（2026-11-19：识别 + 读字节）
   reg('mpv', () => registerMpvIpc(ipcMain, { getMainWindow: () => mainWindow, db }))  // mpv 播放内核控制通道（2026-10-08；db 供库内路径闸门）
+  // 外挂字幕回填（2026-11-19）：启动 8 秒后在后台补老库的 movies.sub（目录缓存，通常只几次 readdir）。
+  // 目的是让「卡片与番号旁的『外挂字幕』标签」对老片也生效，不必逐部打开详情页。
+  setTimeout(() => {
+    backfillSubtitles(db)
+      .then(n => { if (n) console.log(`[main] 外挂字幕回填 ${n} 条`) })
+      .catch(() => { /* 失败静默：不影响任何主流程 */ })
+  }, 8000)
   if (ipcFailures.length) {
     console.error('[main] IPC 部分模块注册失败:', ipcFailures.join(' | '))
     // 让用户知道「有些功能不可用」，而不是遇到奇怪的半残界面。

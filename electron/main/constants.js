@@ -12,6 +12,10 @@
 // 视频文件扩展名（utils:scanDir 扫描目录时按此识别视频文件）
 const VIDEO_EXTS = ['.mp4', '.avi', '.mkv', '.mov', '.flv', '.wmv', '.rmvb', '.m4v', '.mpg', '.mpeg', '.ts', '.webm']
 
+// 外挂字幕扩展名（2026-11-19）：扫描视频同目录时按此识别字幕文件，
+// 内置播放器（两种内核）都直接使用原文件，不做转码（ArtPlayer 原生支持 srt/ass/vtt）。
+const SUB_EXTS = ['.srt', '.ass', '.ssa', '.vtt']
+
 // movies 表允许排序的列白名单（防 SQL 注入；不在名单内的排序字段回退为 tjrq）
 const SORTABLE_COLUMNS = ['id', 'ph', 'pm', 'pfs', 'yz', 'tjrq', 'fxrq', 'zb', 'tix', 'cl', 'play_time', 'score', 'play_count', 'duration', 'want', 'watched']
 
@@ -51,4 +55,4 @@ const actressRelPath = (name, ext) => `${IMAGE_DIR}/actress/${name}${ext}`
 const TITLEBAR_OVERLAY = { color: '#ffffff', symbolColor: '#22211f', height: 48 }
 const TITLEBAR_OVERLAY_HIDDEN = { color: '#00000000', symbolColor: '#00000000', height: 1 }
 
-module.exports = { VIDEO_EXTS, SORTABLE_COLUMNS, TAG_DELIM, FAV_Y, FAV_N, COVER_DIR, IMAGE_DIR, PREVIEW_MIN_BYTES, posterRelPath, previewRelPath, actressRelPath, TITLEBAR_OVERLAY, TITLEBAR_OVERLAY_HIDDEN }
+module.exports = { VIDEO_EXTS, SUB_EXTS, SORTABLE_COLUMNS, TAG_DELIM, FAV_Y, FAV_N, COVER_DIR, IMAGE_DIR, PREVIEW_MIN_BYTES, posterRelPath, previewRelPath, actressRelPath, TITLEBAR_OVERLAY, TITLEBAR_OVERLAY_HIDDEN }

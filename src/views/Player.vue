@@ -63,6 +63,10 @@
           @external="playExternal"
         />
 
+        <!-- 外挂字幕（2026-11-19）：页面自绘，不用内核字幕 —— mpv 的 sub-pos/居中按整窗算，
+             画面被缩进到小矩形后会偏右、字号偏大。这层贴在视频区域内，位置/字号随窗口自适应。 -->
+        <div v-if="subText" class="sub-overlay"><span class="sub-line">{{ subText }}</span></div>
+
         <!-- 播放质量提示（非阻塞，2026-10-07）：
              少数影片的容器时间戳不标准（码流用了 B 帧但 MP4 缺 ctts 盒），Chromium 的渲染器
              会因此丢掉约 20% 的帧 → 画面「一卡一卡」；同一文件用外部播放器完全正常。
@@ -171,6 +175,7 @@ import PlayerControls from '@/components/PlayerControls.vue'
 import { createBackend, isBackendAvailable, PLAYER_KINDS } from '@/player'
 import { resolveMedia, resolveMediaPath, resolveCover, splitTags, dataDirRef, favLock, favUnlock, fileBadgesOf, is4kSize } from '@/utils/global'
 import { setResumePoint, getResumePoint, installResumeGuard } from '@/utils/playResume'
+import { parseCues, findActiveText } from '@/utils/subtitle'
 import { useMoviesStore } from '@/store/movies'
 
 const route = useRoute()
@@ -255,7 +260,20 @@ function recActors(r) {
 // （用户要求：部分 4K 影片文件名里没有 4K），由主进程异步批量读（utils:readVideoSize，
 // NAS 上只在首次需要时读一次，主进程按路径缓存）。
 const res4k = ref({})          // py → 是否真实 4K（undefined=尚未探测）
-const fileBadges = computed(() => fileBadgesOf(m.value?.py, { is4k: res4k.value[m.value?.py] === true }))
+// 外挂字幕（2026-11-19）：当前片同目录字幕的绝对路径（空=没有）
+const subPath = ref('')
+// 当前用于 <track> 的 blob URL（换片/离开页面要 revoke，否则内存里留着字幕文本）
+let subBlobUrl = ''
+// 最近一次挂载参数（Chromium：{url,type}）——换片/退回内核后 loadedmetadata 时补挂一次
+let subPayload = null
+// 解析后的字幕 cue 列表与当前应显示文本（页面自绘字幕层用）
+const subCues = ref([])
+const subText = ref('')
+const fileBadges = computed(() => {
+  const base = fileBadgesOf(m.value?.py, { is4k: res4k.value[m.value?.py] === true })
+  // 外挂字幕（2026-11-19）：来自 movies.sub（同目录字幕文件），文件名推不出来
+  return subPath.value ? [...base, { kind: 'sub', label: '外挂字幕' }] : base
+})
 
 /** 把标签挂到推荐项上（模板直接读 r._badges，避免在模板里调函数重算 —— 项目约定） */
 function applyRecBadges() {
@@ -413,7 +431,11 @@ function fallbackToChromium(reason) {
   isMpv.value = false
   clearHole()
   player = createBackend(PLAYER_KINDS.CHROMIUM)
-  nextTick(() => initOrSwitchPlayer())
+  nextTick(() => {
+    initOrSwitchPlayer()
+    // 换内核后字幕要重挂（mpv 的 subFile 对 Chromium 无意义，需要 blob 版本）
+    applySubtitle(m.value?.id)
+  })
 }
 
 // ====== 键盘：单击 = 快进/退，长按 = 倍速/加速倒带 ======
@@ -577,7 +599,14 @@ function measureBox() {
   if (!box) return null
   const r = box.getBoundingClientRect()
   if (!(r.width > 0) || !(r.height > 0)) return null
-  return { x: r.left, y: r.top, w: r.width, h: r.height, winW: window.innerWidth, winH: window.innerHeight }
+  // 取整（2026-11-19）：mpv 的 margin 是按比例的浮点数，亚像素矩形会让画面边界落在
+  // 半像素上 —— 拖动进度条等触发重算时，画面会「轻微移位」并露出一条黑边。统一取整后
+  // 遮罩与 mpv 视频区域落在同一像素网格上。
+  return {
+    x: Math.round(r.left), y: Math.round(r.top),
+    w: Math.round(r.width), h: Math.round(r.height),
+    winW: Math.round(window.innerWidth), winH: Math.round(window.innerHeight)
+  }
 }
 
 /**
@@ -707,6 +736,10 @@ function onCtlSeek(frac) {
   const d = player.duration || 0
   if (!d) return
   player.currentTime = Math.max(0, Math.min(d - 0.1, frac * d))
+  // 拖动进度条后强制重算一次镂空矩形（2026-11-19）：拖动过程中控制条会改变布局，
+  // 若 mpv 的 margin 停留在拖动前的值，画面就会错开几像素并露出黑边。
+  syncHole(true)
+  setTimeout(() => syncHole(true), 160)
 }
 function onCtlVolume(v) { player.volume = v }
 function onCtlRate(r) { player.playbackRate = r }
@@ -932,6 +965,73 @@ function dismissQualityWarn() {
   qualityMutedFor = playingId
 }
 
+// ====== 外挂字幕（2026-11-19）======
+/**
+ * 把 base64 字幕字节解码成文本。
+ * 中文库里的 srt 常见 GBK 编码，而主进程没有 iconv —— 所以字节交回渲染层，
+ * 这里先按 UTF-8（严格模式）解，失败再退 GBK；带 BOM 的直接按 BOM 走。
+ * @param {string} b64
+ * @returns {string} 解码后的字幕文本（失败返回空串）
+ */
+function decodeSubtitleBytes(b64) {
+  try {
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes.subarray(2))
+    if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes.subarray(2))
+    if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return new TextDecoder('utf-8').decode(bytes.subarray(3))
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) } catch { /* 不是 UTF-8 */ }
+    try { return new TextDecoder('gbk').decode(bytes) } catch { return new TextDecoder('utf-8').decode(bytes) }
+  } catch { return '' }
+}
+
+/**
+ * 为当前影片挂上外挂字幕（换片时先清掉上一部）。
+ * 两个内核取用方式不同：Chromium 要 URL（blob），mpv 要真实文件路径（子进程自己读）。
+ * @param {number} movieId
+ */
+async function applySubtitle(movieId) {
+  // 清掉上一部：blob 必须 revoke，否则每次换片都留一份字幕文本在内存里
+  subPath.value = ''
+  subCues.value = []
+  subText.value = ''
+  subPayload = null
+  if (subBlobUrl) { try { URL.revokeObjectURL(subBlobUrl) } catch {} subBlobUrl = '' }
+  // 两种内核都不再使用内核自带字幕（统一下面自绘）
+  try { player.setSubtitle?.({ url: '', file: '' }) } catch {}
+  if (!movieId || !window.api?.getSubtitle) return
+  const r = await window.api.getSubtitle(movieId).catch(() => null)
+  const path = r?.ok ? String(r.path || '') : ''
+  if (!path || m.value?.id !== movieId) {
+    console.log('[sub] 无外挂字幕或已换片:', movieId, r?.error || r?.path || '')
+    return
+  }
+  subPath.value = path
+  // 让"字幕到底有没有生效"可见：很多字幕只覆盖片中的对白段，大段无对白的场景看上去像没加载
+  try {
+    const name = String(path).split(/[\\/]/).pop()
+    ElMessage({ message: `已加载外挂字幕：${name}`, type: 'success', duration: 2200, grouping: true })
+  } catch { /* 提示失败不影响播放 */ }
+  console.log('[sub] 命中外挂字幕:', path)
+
+  const t = await window.api.readSubtitle(path).catch(() => null)
+  if (!t?.ok || !t.data) { console.warn('[sub] 读取字幕失败:', t?.error); return }
+  if (m.value?.id !== movieId) return
+  const text = decodeSubtitleBytes(t.data)
+  if (!text) return
+  subCues.value = parseCues(text, t.type)
+  console.log('[sub] 解析出 cue 数 =', subCues.value.length, '类型=', t.type)
+  syncSubtitleText()
+}
+
+/** 按当前播放时间刷新字幕文本（两种内核都由 timeupdate 驱动） */
+function syncSubtitleText() {
+  if (!subCues.value.length) { if (subText.value) subText.value = ''; return }
+  const next = findActiveText(subCues.value, player.currentTime || 0)
+  if (next !== subText.value) subText.value = next
+}
+
 // ====== 数据加载 ======
 async function loadMovie(id) {
   // 请求序号（2026-11-09 审计）：快速连点右侧推荐时，两次 getMovie 可能"后发先至"，
@@ -951,6 +1051,7 @@ async function loadMovie(id) {
 
   await nextTick()
   initOrSwitchPlayer()
+  applySubtitle(id)          // 外挂字幕（2026-11-19）：与换片并行，不阻塞播放
   loadRecommendations(id)
   probeSizes([m.value?.py])   // 当前片的真实分辨率补探（文件名没写 4K 时）
 }
@@ -1006,6 +1107,8 @@ function initOrSwitchPlayer() {
   //    而内核里还是旧片在发 timeupdate —— 不挡住就会把旧片的播放位置写成新片的续播点，
   //    下次进新片直接跳到旧片的时间（2026-11-09 审计发现）。
   player.on('timeupdate', () => {
+    // 自绘字幕层（2026-11-19）：按当前时间刷新文本（切换 cue 时才改 DOM）
+    syncSubtitleText()
     if (switchSuppress) return
     if (playingId) setResumePoint(playingId, player.currentTime || 0)
     saveProgress(false)
@@ -1023,11 +1126,18 @@ function initOrSwitchPlayer() {
   player.on('volumechange', () => { try { localStorage.setItem('jt-vol', String(player.volume)) } catch {} })
   player.on('loadedmetadata', resumeIfNeeded)
   player.on('loadedmetadata', fitVideoObject)
+  player.on('loadedmetadata', syncSubtitleText)
+  player.on('pause', syncSubtitleText)
   // 换源（点右侧推荐）后自动起播：内核不保证换源后自动播放（上一部处于暂停/播完时尤其），
   // 这里统一在元数据就绪后补一次 play；被浏览器自动播放策略拒绝时静默忽略。
   player.on('loadedmetadata', () => { try { player.play()?.catch?.(() => {}) } catch {} })
   // 新片元数据就绪 = 换片完成：解除换片期的记账抑制（见 initOrSwitchPlayer 的 switchSuppress）
-  player.on('loadedmetadata', () => { switchSuppress = false })
+  player.on('loadedmetadata', () => {
+    switchSuppress = false
+    // 外挂字幕补挂（2026-11-19）：ArtPlayer 的 switchUrl 会重置字幕轨，
+    // 而 applySubtitle 与换源是并行的 —— 元数据就绪后再挂一次，保证换片后字幕还在。
+    if (!isMpv.value && subPayload) { try { player.setSubtitle?.(subPayload) } catch { /* 忽略 */ } }
+  })
   // 窗口尺寸变化会改变盒子宽高比（max-height 参与钳制时尤其），铺满方式需要重算
   window.addEventListener('resize', fitVideoObject)
 
@@ -1195,6 +1305,8 @@ onBeforeUnmount(() => {
   if (errTimer) { clearTimeout(errTimer); errTimer = null }
   if (badgeTimer) { clearTimeout(badgeTimer); badgeTimer = null }
   stopQualityWatch()
+  // 外挂字幕的 blob URL 必须释放（否则每进一次播放页就留一份字幕文本在内存里）
+  if (subBlobUrl) { try { URL.revokeObjectURL(subBlobUrl) } catch { /* 忽略 */ } subBlobUrl = '' }
   // 兜底保存进度（route 切走/关页都会走这里）；记账同样以 playingId 为准（换片流程见 saveProgress 注释）
   if (player.isMounted && playingId && player.currentTime > 0) {
     try { window.api?.savePlayProgress({ id: playingId, pos: player.currentTime, dur: player.duration || 0 }).catch(() => {}) } catch {}
@@ -1353,6 +1465,50 @@ html.mpv-fs .mpv-shield { border-radius: 0; }
 /* 播放器外层：只为「播放质量提示」浮层提供定位参照。自身不产生额外高度（浮层是 absolute），
    所以「播放器顶边 = 右列第一张海报顶边」这条对齐关系不受影响。 */
 .player-wrap { position: relative; }
+
+/* 外挂字幕层（2026-11-19）：页面自绘，贴在视频区域内。
+   为什么不用内核字幕：mpv 的 sub-pos/居中按整个窗口计算，画面缩进小矩形后会偏右且字号偏大；
+   自己画则可以做到——水平严格居中、底部留出控制条高度、字号随窗口宽度自适应。 */
+.sub-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 6% 58px;       /* 左右 6% 安全边距；底部 58px 让开控制条 */
+  pointer-events: none;     /* 不挡播放器点击 */
+  z-index: 3;
+}
+.sub-line {
+  max-width: 100%;
+  text-align: center;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+  font-weight: 500;
+  /* 字号跟随窗口宽度缩放：窗口 1400 → 约 28px（上限 40px 防超大屏糊脸） */
+  font-size: clamp(15px, 2vw, 40px);
+  line-height: 1.4;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, .95), 0 0 3px rgba(0, 0, 0, .9);
+  background: rgba(0, 0, 0, .18);
+  border-radius: 6px;
+  padding: 2px 10px;
+}
+/* 全屏时字幕明显放大（2026-11-19 用户要求「全屏还是小了些」）：
+   mpv 的窗口级全屏 → html.mpv-fs；Chromium 的页面内全屏 → :fullscreen。
+   全屏 1920 宽约 58px，窗口态 1400 宽保持 28px。 */
+html.mpv-fs .sub-line,
+.player-wrap:fullscreen .sub-line,
+.player-wrap:-webkit-full-screen .sub-line {
+  font-size: clamp(24px, 3vw, 64px);
+}
+/* 全屏时字幕整体上移一点，给更大的控制条让位 */
+html.mpv-fs .sub-overlay,
+.player-wrap:fullscreen .sub-overlay,
+.player-wrap:-webkit-full-screen .sub-overlay {
+  padding-bottom: 84px;
+}
 
 /* 标题行：位于播放器上方；高度锁死 --head-h（内部标题单行截断，不会被长片名撑高）。
    2026-10-07 加 BackButton：原 space-between 会让按钮贴左、标题贴右（间距过大），

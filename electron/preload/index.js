@@ -254,6 +254,38 @@ contextBridge.exposeInMainWorld('api', {
    */
   repairMovieImages: (id) => ipcRenderer.invoke(IPC.IMAGES_REPAIR, id),
 
+  /**
+   * 查询某部影片的外挂字幕（2026-11-19）：同目录同名/同番号的 .srt/.ass/.ssa/.vtt。
+   * 命中时会顺手回填 movies.sub（老库无需重新导入即可显示「外挂字幕」徽章）。
+   * @param {number} movieId
+   * @returns {Promise<{ok:boolean, path?:string, type?:string, error?:string}>}
+   */
+  getSubtitle: (movieId) => ipcRenderer.invoke(IPC.SUB_GET, movieId),
+
+  /**
+   * 读取字幕原始字节（base64）—— 编码由渲染层判断（先 utf-8，失败再 gbk）。
+   * 只允许读「库内影片对应的字幕」，其它路径一律拒绝。
+   * @param {string} path - getSubtitle 返回的字幕绝对路径
+   * @returns {Promise<{ok:boolean, data?:string, size?:number, type?:string, error?:string}>}
+   */
+  readSubtitle: (path) => ipcRenderer.invoke(IPC.SUB_TEXT, path),
+
+  /**
+   * 扫描「影片记录存在、但视频文件已不在了」的条目（2026-11-19，设置 → 辅助设置）。
+   * 只读扫描，不删除任何东西；确认后调用 purgeMissingVideos。
+   * @returns {Promise<{ok:boolean, data?:{total:number, missing:Array, skipped:number,
+   *          suspects?:Array<{root:string,count:number}>}, error?:string}>}
+   *          suspects：同一存储根下 ≥3 条不可达（疑似 NAS/硬盘离线，界面上要给强警告）
+   */
+  scanMissingVideos: () => ipcRenderer.invoke(IPC.MOVIES_SCAN_MISSING),
+
+  /**
+   * 删除这些「视频文件已不存在」的影片记录（不碰任何视频文件；本地图片进回收站）。
+   * @param {number[]} ids
+   * @returns {Promise<{ok:boolean, removed?:number, cleaned?:number, error?:string}>}
+   */
+  purgeMissingVideos: (ids) => ipcRenderer.invoke(IPC.MOVIES_PURGE_MISSING, ids),
+
   // === 设置相关接口 ===
 
   /**

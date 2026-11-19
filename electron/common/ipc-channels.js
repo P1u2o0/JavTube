@@ -102,6 +102,16 @@ module.exports = {
   IMAGES_SCAN: 'images:scan',
   IMAGES_REPAIR: 'images:repair',
 
+  // === 失效数据（2026-11-19）===
+  // 影片记录对应的视频文件已不存在（移动/删除/换盘）→ 列出并（用户确认后）删除记录
+  MOVIES_SCAN_MISSING: 'movies:scanMissing',
+  MOVIES_PURGE_MISSING: 'movies:purgeMissing',
+
+  // === 外挂字幕（2026-11-19）===
+  // 按影片查同目录字幕（命中时回填 movies.sub）/ 读字幕原始字节（base64，编码交给渲染层）
+  SUB_GET: 'sub:get',
+  SUB_TEXT: 'sub:text',
+
   // === 目录查重（2026-11-08）===
   // 只读扫描指定目录里的视频 → 渲染层按番号分组（只保留同番号 ≥2 个文件的组）
   // → 用户逐条决定（定位 / 移入回收站）

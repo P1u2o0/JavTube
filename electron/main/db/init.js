@@ -375,7 +375,9 @@ async function initDb(dataDir) {
     ['cast_json', 'TEXT'],
     // 内置播放页（2026-09-29）：play_pos=上次播放位置(秒) / play_dur=上次取得的视频总时长(秒)
     ['play_pos', 'REAL DEFAULT 0'],
-    ['play_dur', 'REAL DEFAULT 0']
+    ['play_dur', 'REAL DEFAULT 0'],
+    // 外挂字幕（2026-11-19）：同目录字幕文件绝对路径，空=无
+    ['sub', 'TEXT']
   ])
   // actress.gender — 女优/男优标记（'f' 默认 / 'm'），用于演员页与默认剪影选择
   ensureColumns('actress', [

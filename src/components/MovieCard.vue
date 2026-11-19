@@ -46,6 +46,11 @@
       <span v-if="showPlayCount && m.play_count" class="play-count">
         <AppIcon name="play" :size="12" />{{ m.play_count }}
       </span>
+      <!-- 文件名属性标签（2026-11-19 用户要求移到海报左下角）：
+           无码破解 / 中文字幕 / 4K / 外挂字幕，样式与详情页、播放页同源（FileTags） -->
+      <div class="cover-tags">
+        <FileTags :py="m.py" :sub="!!m.sub" size="sm" />
+      </div>
       <!-- 观看进度条（2026-11-08）：看过但没看完时贴在海报下沿，一眼看出"这部看到哪了"。
            数据来自 play_pos/play_dur（播放页每 5 秒记一次）；进度 ≥97% 视为看完，不显示。 -->
       <div v-if="watchState.pct > 0" class="prog" :class="{ done: watchState.done }"
@@ -60,10 +65,10 @@
         </svg>
       </div>
     </div>
-    <!-- 影片信息区域：番号 + 标题 -->
+    <!-- 影片信息区域：番号 + 标题同一行（2026-11-19 用户要求），中间留一个空格 -->
     <div class="info">
-      <div class="code">{{ m.ph || '—' }}<FileTags :py="m.py" size="sm" /></div>
-      <div class="title" :title="m.pm">{{ m.pm || '无标题' }}</div>
+      <span class="code">{{ m.ph || '—' }}</span>
+      <span class="title" :title="m.pm">{{ m.pm || '无标题' }}</span>
     </div>
   </div>
 </template>
@@ -312,22 +317,45 @@ watch(dataDirRef, () => { errd.value = false })
   background: var(--accent);
   border-color: var(--accent);
 }
-/* 信息区域 */
-.info { padding: 10px 12px 12px; }
-/* 番号：拉丁展示字 + 等宽数字，工具软件的"仪表盘感" */
+/* 海报左下角的属性标签（2026-11-19）：贴在海报上，需保证任意底色上都能读清，
+   因此给标签本身加一点投影；位置避开右下角的播放次数胶囊与底部 3px 进度条 */
+.cover-tags {
+  position: absolute;
+  left: 8px;
+  bottom: 10px;
+  max-width: calc(100% - 16px);
+  display: flex;
+  justify-content: flex-start;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35));
+  pointer-events: none;   /* 别挡住海报的点击/播放 */
+}
+.cover-tags :deep(.file-tags) { margin-left: 0; }
+
+/* 信息区域：番号与标题同一行 */
+.info {
+  padding: 10px 12px 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;              /* 「番号 名称」之间的空格 */
+  min-width: 0;
+}
+/* 番号：拉丁展示字 + 等宽数字，工具软件的"仪表盘感"；不参与收缩 */
 .code {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 600; font-size: var(--fs-base);
-  letter-spacing: var(--ls-caps);   /* 卡片小号番号：与 --ls-caps（0.02em）同值，收进令牌体系 */
-  margin-bottom: 3px;
+  letter-spacing: var(--ls-caps);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
-/* 标题：两行省略 */
+/* 标题：同一行内单行省略（空间不足时截断，完整标题在悬浮提示里） */
 .title {
   font-size: var(--fs-base); color: var(--text); line-height: 1.5;
-  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
-  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  min-height: 3em;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

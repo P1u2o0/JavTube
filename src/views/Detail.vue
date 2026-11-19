@@ -19,8 +19,8 @@
     <div class="title-row">
       <BackButton />
       <span class="code">{{ m.ph || '—' }}</span>
-      <!-- 文件名属性标签（无码破解/中文字幕/4K，与播放页同款样式，2026-10-05） -->
-      <FileTags :py="m.py" />
+      <!-- 文件名属性标签（无码破解/中文字幕/4K/外挂字幕，与播放页同款样式，2026-10-05） -->
+      <FileTags :py="m.py" :sub="!!m.sub" />
       <span class="title-text">{{ m.pm || '无标题' }}</span>
     </div>
 
@@ -468,6 +468,14 @@ async function load(id) {
   }
   if (r.ok) m.value = r.data
   else { ElMessage.error(r.error); router.replace('/library') }
+  // 外挂字幕（2026-11-19）：老库的 sub 字段还没回填过，这里查一次并就地更新徽章。
+  // getSubtitle 命中时会顺手写库，之后列表页也能显示该标签。
+  if (r.ok && m.value && m.value.py && !m.value.sub && window.api?.getSubtitle) {
+    try {
+      const sr = await window.api.getSubtitle(m.value.id)
+      if (sr?.ok && sr.path) m.value.sub = sr.path
+    } catch {}
+  }
   // 时长兜底：无刮削时长且有本地视频文件时，解析 MP4 文件时长（分钟）并入库
   if (r.ok && m.value && !m.value.duration && m.value.py && window.api.readVideoDuration) {
     try {

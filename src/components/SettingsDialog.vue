@@ -62,7 +62,7 @@
           <!-- 播放内核（2026-10-08）：内置播放页用哪套播放内核 -->
           <div class="g-label">播放内核</div>
           <div class="g-control">
-            <el-radio-group v-model="st.player_kernel">
+            <el-radio-group v-model="st.player_kernel" class="kernel-group">
               <el-radio-button label="mpv">兼容模式（推荐）</el-radio-button>
               <el-radio-button label="chromium">标准模式</el-radio-button>
             </el-radio-group>
@@ -259,19 +259,20 @@
             <span class="g-tip" v-if="showTips">清空不可逆，请先备份；恢复会覆盖现有数据，恢复后需要重启软件</span>
           </div>
 
-          <!-- 图片完整性：扫描并修复历史坏图（下载失败留下的假文件） -->
-          <div class="g-label">失效图片</div>
+          <!-- 失效数据（2026-11-19 合并为一个按钮）：视频文件已丢失的影片记录 + 失效封面/预览图 -->
+          <div class="g-label">失效数据</div>
           <div class="g-control">
             <el-switch v-model="st.auto_check_images" active-value="y" inactive-value="n"
-                       active-text="启动时自动检查" />
+                       active-text="启动时自动检查失效图片" />
             <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
-              <el-button :loading="imgRepair.busy.value" @click="checkImages">
-                <AppIcon name="reset" :size="14" style="margin-right:5px" />检查并修复失效图片
+              <el-button :loading="imgRepair.busy.value || missingBusy" @click="checkInvalidData">
+                <AppIcon name="reset" :size="14" style="margin-right:5px" />检查并清理失效数据
               </el-button>
-              <span class="g-tip" v-if="imgRepair.status.value">{{ imgRepair.status.value }}</span>
+              <span class="g-tip" v-if="imgRepair.status.value || missingStatus">{{ imgRepair.status.value || missingStatus }}</span>
             </div>
             <span class="g-tip" v-if="showTips">
-              扫描全库封面与预览图，发现「下载失败留下的坏文件」（空文件 / 图片打不开 / 站点拦截页）会重新刮削补齐
+              一次检查两件事：① 影片记录对应的视频文件已不存在（移动/删除/换盘）→ 告知后删除这些记录；
+              ② 封面与预览图失效（空文件 / 打不开 / 站点拦截页）→ 重新刮削补齐
             </span>
           </div>
 
@@ -439,7 +440,6 @@ function onRecKey(e, name) {
 
 // 失效图片检查与修复（与启动自动检查共用同一段逻辑）
 const imgRepair = useImageRepair()
-
 // 目录查重对话框（设置页只负责打开它；扫描与处置全在对话框里）
 const dupDialog = ref(null)
 async function openDup() {
@@ -447,8 +447,65 @@ async function openDup() {
   await nextTick()
   dupDialog.value?.open()
 }
-/** 设置页按钮：手动扫描并修复全库失效图片 */
-function checkImages() { return imgRepair.checkAndRepair() }
+// 失效数据一键检查（2026-11-19）：先查「视频文件已丢失的影片记录」，再修失效图片
+const missingBusy = ref(false)
+const missingStatus = ref('')
+
+/**
+ * 「检查并清理失效数据」：两件事合成一个按钮。
+ *   ① 影片记录在、视频文件没了（移动/删除/换盘）→ 弹确认（列番号与前几条路径）
+ *      → 确认后删除这些记录（本地图片进回收站，视频文件本身不动）
+ *   ② 封面/预览图失效 → 交给 useImageRepair 重新刮削补齐
+ */
+async function checkInvalidData() {
+  if (missingBusy.value || imgRepair.busy.value) return
+  missingBusy.value = true
+  missingStatus.value = '正在检查视频文件…'
+  try {
+    const r = await window.api?.scanMissingVideos?.().catch(() => null)
+    if (r?.ok) {
+      const list = r.data?.missing || []
+      if (list.length) {
+        const sample = list.slice(0, 5)
+          .map(x => `${x.ph || '(无番号)'}  ${x.py}`)
+          .join('\n')
+        const more = list.length > 5 ? `\n…另有 ${list.length - 5} 条` : ''
+        // 防误删（2026-11-19）：同一存储根下大量文件同时不可达，通常是 NAS/硬盘离线而不是影片被删
+        const sus = r.data?.suspects || []
+        const warn = sus.length
+          ? `\n\n⚠️ 其中 ${sus.map(s => `${s.count} 条在 ${s.root}`).join('、')} —— ` +
+            '同一存储位置的文件同时不可达，更可能是网络存储离线或硬盘未挂载。请先确认该位置已连接，再决定是否删除。'
+          : ''
+        missingStatus.value = `发现 ${list.length} 条记录的视频文件已丢失`
+        try {
+          await ElMessageBox.confirm(
+            `以下 ${list.length} 条影片记录对应的视频文件已不存在（可能被移动或删除）：\n\n${sample}${more}${warn}\n\n` +
+            '删除后这些影片会从库中移除（本地封面/预览图进回收站可还原，视频文件本身不会被删除）。',
+            sus.length ? '发现失效影片记录（请先确认存储在线）' : '发现失效影片记录',
+            { confirmButtonText: sus.length ? `仍要删除 ${list.length} 条记录` : `删除 ${list.length} 条记录`, cancelButtonText: '暂不删除', type: sus.length ? 'error' : 'warning' }
+          )
+          const del = await window.api.purgeMissingVideos(list.map(x => x.id)).catch(() => null)
+          if (del?.ok) {
+            missingStatus.value = `已删除 ${del.removed || 0} 条失效记录`
+            ElMessage.success(`已删除 ${del.removed || 0} 条失效记录`)
+            store.requestDataRefresh()          } else {
+            ElMessage.error('删除失败：' + (del?.error || '未知错误'))
+          }
+        } catch { /* 用户取消删除：继续检查图片 */ }
+      } else {
+        missingStatus.value = r.data?.skipped
+          ? `视频文件检查完成（${r.data.skipped} 条因存储不可用跳过）`
+          : '未发现视频文件丢失的影片记录'
+      }
+    } else if (r && !r.ok) {
+      missingStatus.value = '视频文件检查失败：' + (r.error || '未知错误')
+    }
+    // ② 继续原有的失效图片检查与修复
+    await imgRepair.checkAndRepair()
+  } finally {
+    missingBusy.value = false
+  }
+}
 // 注释开关（计算属性）：控制所有选项说明小字的显示（基础设置内可切换）
 const showTips = computed(() => st.show_tips === 'y')
 // 每页显示数量（数字类型，绑定到 input-number）
@@ -752,6 +809,19 @@ async function clearDb() {
 /* 播放器路径行：完整胶囊输入框 + 独立胶囊按钮并排 */
 .player-row { display: flex; gap: 10px; width: 100%; max-width: 340px; }
 .player-input { flex: 1; }
+
+/* 播放内核的两个选项（2026-11-19 用户反馈贴得太近）：
+   原本是 Element Plus 的连体分段按钮（左右相接、共边），改成两个独立圆角按钮，
+   中间留 10px 空隙。inner 补回左边框与圆角，避免只剩半边描边。 */
+.kernel-group { display: inline-flex; gap: 10px; }
+.kernel-group :deep(.el-radio-button__inner) {
+  border-left: 1px solid var(--el-border-color);
+  border-radius: var(--r-sm);
+  box-shadow: none;
+}
+.kernel-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  box-shadow: none;   /* 去掉连体样式留下的内侧高光 */
+}
 
 /* 标签类别 / 标签映射行（加号固定在第一行 × 号后，v-if=idx===0） */
 .cat-row-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }

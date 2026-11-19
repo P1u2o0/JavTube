@@ -46,6 +46,8 @@ const ALLOWED_GET = new Set([
   'container-fps', 'estimated-vf-fps', 'display-fps',
   'frame-drop-count', 'decoder-frame-drop-count', 'mistimed-frame-count',
   'cache-buffering-state', 'paused-for-cache', 'vo-configured',
+  // 轨道列表（2026-11-19）：只读，用于核对「外挂字幕是否真的挂上」（探针/诊断用）
+  'track-list',
   // 镂空矩形（诊断用：探针要能核对「页面算出的矩形」与「mpv 实际收到的 margin」是否一致）
   'video-margin-ratio-left', 'video-margin-ratio-top',
   'video-margin-ratio-right', 'video-margin-ratio-bottom',
@@ -324,6 +326,8 @@ async function applyHole(hole, attempt = 0) {
     if (r.error === 'success') lastMargins[name] = v
     else failed.push(`${name}:${r.error}`)
   }
+  // 注（2026-11-19）：这里不再计算 sub-pos —— 字幕改由播放页自绘（见 Player.vue .sub-overlay），
+  // mpv 侧已用 --sub-auto=no 关闭内核字幕，避免与页面字幕层重叠。
   if (failed.length && attempt < 6) {
     console.warn(`[mpv] 镂空矩形下发失败（第 ${attempt + 1} 次）：${failed.join(', ')}，稍后重试`)
     // 失败项留空 → 下次全量重算时会重新下发。这里再安排几次重试，
@@ -347,6 +351,7 @@ async function applyHole(hole, attempt = 0) {
 async function stopMpv() {
   stopPolling()
   observeMap.clear()
+  for (const k of Object.keys(lastMargins)) lastMargins[k] = null
   const c = client
   client = null
   if (c) {
@@ -412,10 +417,24 @@ async function startMpv(o) {
       '--background-color=#FF000000',
       '--volume=' + Math.round((typeof o.volume === 'number' ? o.volume : 0.8) * 100),
       '--mute=' + (o.muted ? 'yes' : 'no'),
+      // 外挂字幕观感（2026-11-19）：字号与描边按「1080p 下清晰但不抢画面」调；
+      // ass 用 scale 只缩放字号、保留原样式（force 会把多行定位等排版一起抹掉）。
+      '--sub-font-size=44',
+      // 关闭 mpv 的「自动加载同名外挂字幕」（默认 exact）：字幕改由播放页自绘
+      // （内核字幕按整窗定位，会偏右/字号偏大，见 Player.vue 的 .sub-overlay 注释）。
+      // 不关会与页面字幕层重叠成两份。
+      '--sub-auto=no',
+      '--sub-border-size=2.4',
+      '--sub-shadow-offset=0',
+      '--sub-color=#FFFFFFFF',
+      '--sub-border-color=#FF000000',
+      '--sub-margin-y=0',
+      '--sub-ass-override=scale',
       '--msg-level=all=warn'
     ]
     for (const [k, v] of holeToMargins(o.hole)) args.push(`--${k}=${v}`)
     if (o.startAt > 0) args.push('--start=' + Number(o.startAt))
+    if (o.subFile) args.push('--sub-file=' + o.subFile)
     args.push(o.file)
 
     let logFile = ''
@@ -495,6 +514,8 @@ function safeName(name, allow) {
 // 直接塞给 loadfile / 命令行，不校验 —— 渲染层一旦被注入就是「用 mpv 读任意文件」。
 // 收敛为「movies 表 py 登记过的路径」；与 javtube-media:// 协议共用同一闸门实现。
 const { createVideoGate } = require('./video-gate')
+// 外挂字幕闸门（2026-11-19）：mpv 自己读字幕文件，路径同样必须限定在「库内影片对应的字幕」
+const { isLibrarySubtitle } = require('./subtitles')
 
 /**
  * 注册 mpv 控制通道。
@@ -508,6 +529,50 @@ function registerMpvIpc(ipcMain, ctx) {
   const videoGate = ctx.db ? createVideoGate(ctx.db) : null
   /** mpv 要播的文件必须是库内登记过的（gate 缺省时跳过校验，保持容错取向） */
   const gateFile = (file) => !videoGate || videoGate(String(file || ''))
+  /** 字幕文件：必须是库内影片同目录、同主干的字幕（无 db 时一律拒绝，fail-closed） */
+  const gateSub = (file) => !!ctx.db && isLibrarySubtitle(ctx.db, String(file || ''))
+  /**
+   * 给当前播放挂上外挂字幕（2026-11-19）。
+   * 幂等：同一文件已挂上就只切换选中轨（避免重复 sub-add 出现两条一样的字幕轨）。
+   * @param {string} file - 字幕绝对路径
+   * @returns {Promise<{ok:boolean, error?:string}>}
+   */
+  const addSub = async (file) => {
+    if (!gateSub(file)) {
+      // 排查日志（2026-11-19）：字幕路径没通过库内校验时会静默失败，界面表现就是"没字幕"
+      console.warn('[mpv] sub rejected (not in library):', String(file || '').slice(-60))
+      return { ok: false, error: 'file-not-in-library' }
+    }
+    if (!client) return { ok: false, error: 'not-running' }
+    // 先看现有轨道：同一外部字幕已存在 → 只选中它；不存在则清理掉别片残留后再 sub-add
+    try {
+      const tl = await client.request(['get_property', 'track-list'], 5000)
+      const tracks = Array.isArray(tl.data) ? tl.data : []
+      const target = String(file).replace(/\//g, '\\').toLowerCase()
+      const norm = (p) => String(p || '').replace(/\//g, '\\').toLowerCase()
+      const hit = tracks.find(t => t.type === 'sub' && t.external === true && norm(t['external-filename']) === target)
+      if (hit) {
+        const r0 = await client.request(['set_property', 'sid', hit.id], 5000)
+        return { ok: r0.error === 'success', error: r0.error }
+      }
+      // 换片后 mpv 实测会保留上一部用 sub-add 加进来的外部字幕轨（loadfile 只清内嵌轨），
+      // 不清理就会出现「A 片字幕 + B 片字幕」两条同时存在。这里把不属于当前文件的外部字幕删掉。
+      for (const t of tracks) {
+        if (t.type !== 'sub' || t.external !== true) continue
+        if (norm(t['external-filename']) === target) continue
+        try { await client.request(['sub-remove', t.id], 5000) } catch { /* 单条失败不影响主流程 */ }
+      }
+    } catch { /* 拿不到 track-list 就走正常 sub-add */ }
+    const r = await client.request(['sub-add', file, 'select'], 8000)
+    // 兜底：sub-add 成功但可见性被关掉（或这份 mpv 默认值异常）时，显式打开字幕显示
+    if (r.error === 'success') {
+      try { await client.request(['set_property', 'sub-visibility', true], 3000) } catch { /* 忽略 */ }
+      console.log('[mpv] sub added:', String(file).split(/[\\/]/).pop())
+    } else {
+      console.warn('[mpv] sub-add failed:', r.error, String(file).slice(-60))
+    }
+    return { ok: r.error === 'success', error: r.error }
+  }
   // margin 分母要拿真实窗口尺寸（见 holeDenominator），这里注入取窗口的方法
   getWin = typeof ctx.getMainWindow === 'function' ? ctx.getMainWindow : null
   // 事件出口：主进程 → 渲染层
@@ -529,7 +594,9 @@ function registerMpvIpc(ipcMain, ctx) {
         if (!hwnd) return { ok: false, error: 'no-hwnd' }
         // 库内闸门：mpv 是独立进程，必须给真实路径 —— 也正因如此不能放过任意路径
         if (!gateFile(payload.file)) return { ok: false, error: 'file-not-in-library' }
-        return startMpv({ ...payload, hwnd })
+        // 字幕路径不合规就丢弃（不影响播放本体）
+        const subFile = payload.subFile && gateSub(payload.subFile) ? payload.subFile : ''
+        return startMpv({ ...payload, subFile, hwnd })
       }
       case 'stop':
         return stopMpv()
@@ -541,7 +608,17 @@ function registerMpvIpc(ipcMain, ctx) {
         const args = [payload.file, 'replace']
         if (payload.startAt > 0) args.push('start=' + Number(payload.startAt))
         const r = await client.request(['loadfile', ...args], 8000)
+        // 换片后重新挂字幕（2026-11-19）：mpv 的 sub-add 会随 loadfile 被清空，必须重挂
+        if (payload.subFile && r.error === 'success') await addSub(payload.subFile)
         return { ok: r.error === 'success', error: r.error }
+      }
+      // 追加/切换外挂字幕（2026-11-19）：文件必须是库内影片对应的字幕（见 isLibrarySubtitle）；
+      // 传空表示「这部片没有字幕」——**不下发 sub-remove**：换片时 loadfile 本来就会清空字幕轨，
+      // 而这条指令是 fire-and-forget，若晚于新片的 sub-add 到达反而会把刚挂上的字幕删掉。
+      case 'sub': {
+        if (!client) return { ok: false, error: 'not-running' }
+        if (!payload.file) return { ok: true }
+        return addSub(payload.file)
       }
       case 'setHole':
         return applyHole(payload.hole)

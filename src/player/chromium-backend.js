@@ -152,8 +152,38 @@ export class ChromiumBackend {
     this._art.url = target
   }
 
-  /** 销毁内核实例（保留容器 DOM，与重构前 art.destroy(false) 一致） */
-  destroy() {
+  /**
+   * 挂载 / 清除外挂字幕（2026-11-19）。
+   * 页面已经把字幕字节解码成文本并包成 blob URL（主进程只给原始字节，见 subtitles.js），
+   * 这里交给 ArtPlayer 自己的字幕组件渲染 —— 它原生支持 vtt/srt/ass 三类。
+   * @param {{url?:string, type?:string}} info - url 为空表示清除（换片/无字幕）
+   */
+  setSubtitle(info = {}) {
+    if (!this._art) return
+    const url = info.url || ''
+    try {
+      if (!url) { this._art.subtitle.switch('').catch(() => {}); return }
+      this._art.subtitle.switch(url, {
+        type: info.type || 'vtt',
+        name: '外挂字幕',
+        encoding: 'utf-8',
+        // 观感（2026-11-19）：白字 + 双层暗影（视频亮/暗底都能读清），
+        // 字号随播放器尺寸走 clamp，避免小窗时字幕过大、全屏时过小。
+        style: {
+          color: '#fff',
+          'font-size': 'clamp(16px, 2.2vw, 30px)',
+          'line-height': '1.35',
+          'font-family': '"Microsoft YaHei", "PingFang SC", system-ui, sans-serif',
+          'text-shadow': '0 2px 5px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.85)',
+          'background-color': 'transparent',
+          padding: '0 8px',
+          'font-weight': '500'
+        }
+      }).catch(() => {})
+    } catch { /* 字幕组件不可用不影响播放 */ }
+  }
+
+  /** 销毁内核实例（保留容器 DOM，与重构前 art.destroy(false) 一致） */  destroy() {
     if (!this._art) return
     try { this._art.destroy(false) } catch { /* 已销毁 / DOM 已被移除 */ }
     this._art = null

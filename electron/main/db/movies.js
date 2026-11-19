@@ -31,6 +31,8 @@ const { invalidateActorCaches, fillCastAvatars } = require('./actress')
 const { collectMovieRefs, purgeUnreferenced } = require('./cleanup')
 // 删除影片后让首页轮播缓存失效（否则首页仍展示已删除的影片，点进去空白）
 const { invalidateHomeCache } = require('../home')
+// 外挂字幕识别（2026-11-19）：导入/换路径时顺手记录同目录字幕，省去播放时再查
+const { findSubtitle } = require('../subtitles')
 
 // === 影片表字段元数据 ===
 /**
@@ -86,7 +88,9 @@ const MOVIE_COLUMNS = [
   ['duration',   N('duration')],   // 影片时长（分钟）：刮削優先，无值时由视频文件解析补齐
   ['play_count', N('play_count')], // 观看次数（recordPlay 累加，供排序）
   // 2026-09-14 新增（演员头像）：演员列表 JSON [{name,gender,avatar}]
-  ['cast_json',  S('cast_json')]
+  ['cast_json',  S('cast_json')],
+  // 2026-11-19 新增（外挂字幕）：同目录字幕文件的绝对路径（空=无外挂字幕）
+  ['sub',       S('sub')]
 ]
 
 // INSERT 语句与参数构造器（全部 30 列）
@@ -268,6 +272,11 @@ function registerMovieIpc(ipcMain, db, dataDir) {
         for (const t of fnTags) existing.add(t)
         d.bq = Array.from(existing).join(TAG_DELIM)
       }
+      // 外挂字幕（2026-11-19）：同目录有同名/同番号字幕就记下来，番号旁显示「外挂字幕」，
+      // 内置播放器据此挂载。查不到只是留空，不影响导入。
+      if (d.py && !d.sub) {
+        d.sub = await findSubtitle(d.py)
+      }
       // 番号去重：已存在时不重复新建。但若本次传入了有效的视频路径，
       // 而库中该记录的路径为空或文件已失效（移动/改名/换盘），则回填路径——
       // 修复「扫描导入后播放提示路径不对、需手动到编辑里重选视频文件」的问题
@@ -288,7 +297,9 @@ function registerMovieIpc(ipcMain, db, dataDir) {
             }
           }
           if (newPy && (!oldPy || !oldOk)) {
-            db.run('UPDATE movies SET py=? WHERE id=?', [newPy, existId])
+            // 换路径时同步重找字幕（旧记录的字幕路径属于旧目录，不能沿用）
+            const sub = await findSubtitle(newPy)
+            db.run('UPDATE movies SET py=?, sub=? WHERE id=?', [newPy, sub, existId])
             persistSoon(db)
             return { ok: true, id: existId, updated: true }  // 已回填视频路径
           }
@@ -306,7 +317,7 @@ function registerMovieIpc(ipcMain, db, dataDir) {
 
   // IPC: movies:update — 渲染进程 → 主进程
   // 更新指定 ID 的影片记录（先读取现有数据，再合并更新）
-  ipcMain.handle(IPC.MOVIES_UPDATE, (_e, { id, data }) => {
+  ipcMain.handle(IPC.MOVIES_UPDATE, async (_e, { id, data }) => {
     try {
       // 先查询当前记录
       const r0 = db.exec('SELECT * FROM movies WHERE id=?', [Number(id)])
@@ -347,6 +358,11 @@ function registerMovieIpc(ipcMain, db, dataDir) {
         for (const t of ['中文字幕', '无码破解']) existing.delete(t)
         for (const t of fnTags) existing.add(t)
         d.bq = Array.from(existing).join(TAG_DELIM)
+      }
+      // 外挂字幕（2026-11-19）：视频路径变了就重找（旧字幕路径属于旧目录）；
+      // 调用方显式传了 sub 则尊重它（手动指定/清空）。
+      if (d.py && !(data && 'sub' in data)) {
+        d.sub = await findSubtitle(d.py)
       }
       // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
       db.run(UPDATE_MOVIE_SQL, buildMovieUpdateParams(d, id))
@@ -394,6 +410,79 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       persistSoon(db)
       try { invalidateHomeCache() } catch {}
       return { ok: true, cleaned }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // IPC: movies:scanMissing — 渲染进程 → 主进程（2026-11-19）
+  // 找出「记录里有视频路径、但文件已经不在了」的影片（移动/删除/换盘）。
+  // 只读：不删任何东西，结果交渲染层确认后再调 purgeMissing。
+  ipcMain.handle(IPC.MOVIES_SCAN_MISSING, async () => {
+    try {
+      const r = db.exec("SELECT id, ph, pm, py, dx FROM movies WHERE py IS NOT NULL AND py <> ''")[0]
+      const all = r ? r.values : []
+      const missing = []
+      let skipped = 0     // 存储根刚失败过（NAS 离线）→ 无法确认，跳过不误判
+      let cursor = 0
+      const CONC = 8
+      const worker = async () => {
+        while (cursor < all.length) {
+          const [id, ph, pm, py, dx] = all[cursor++]
+          const p = String(py || '')
+          if (isVideoReadCooling(p)) { skipped++; continue }
+          try {
+            await fs.promises.stat(p)
+            noteVideoReadResult(p, true)
+          } catch {
+            noteVideoReadResult(p, false)
+            missing.push({ id: Number(id), ph: String(ph || ''), pm: String(pm || ''), py: p, dx: Number(dx) || 0 })
+          }
+        }
+      }
+      if (all.length) await Promise.all(Array.from({ length: Math.min(CONC, all.length) }, worker))
+      missing.sort((a, b) => String(a.ph).localeCompare(String(b.ph)))
+      // 存储根聚合（2026-11-19 防误删）：同一存储根（\\server\share 或 C:\）下大量文件同时不可达，
+      // 更可能是网络存储离线/盘未挂载，而不是影片真被删了。UI 据此给出强警告，让用户先确认存储在线。
+      const rootOf = (p) => {
+        const s = String(p || '').replace(/\//g, '\\')
+        const m = /^(\\\\[^\\]+\\[^\\]+)/.exec(s)      // UNC：\\server\share
+        if (m) return m[1]
+        const d = /^([A-Za-z]:\\)/.exec(s)             // 本地盘：C:\
+        return d ? d[1] : ''
+      }
+      const rootCount = new Map()
+      for (const x of missing) {
+        const r0 = rootOf(x.py)
+        if (r0) rootCount.set(r0, (rootCount.get(r0) || 0) + 1)
+      }
+      const suspects = [...rootCount.entries()].filter(([, n]) => n >= 3)
+        .sort((a, b) => b[1] - a[1]).map(([root, n]) => ({ root, count: n }))
+      return { ok: true, data: { total: all.length, missing, skipped, suspects } }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // IPC: movies:purgeMissing — 删除这些「视频文件已不存在」的记录
+  // 图片仍走 purgeUnreferenced（进回收站，可还原）；本操作只删库记录，不碰任何视频文件。
+  ipcMain.handle(IPC.MOVIES_PURGE_MISSING, async (_e, ids) => {
+    try {
+      const list = (ids || []).map(Number).filter(Number.isFinite)
+      if (!list.length) return { ok: true, removed: 0, cleaned: 0 }
+      // 只允许删「确实已无视频文件」的记录：重新校验一次，防止渲染层传入仍在用的 id
+      const alive = []
+      for (const id of list) {
+        const rr = db.exec('SELECT py FROM movies WHERE id=?', [id])[0]?.values?.[0]
+        const py = String(rr?.[0] || '')
+        if (!py) { alive.push(id); continue }          // 本来就没有视频路径（手填条目）→ 不在此功能范围
+        if (isVideoReadCooling(py)) continue           // 无法确认 → 保守跳过
+        try { await fs.promises.stat(py) } catch { alive.push(id) }
+      }
+      if (!alive.length) return { ok: true, removed: 0, cleaned: 0 }
+      const refs = collectMovieRefs(db, alive)
+      db.run(`DELETE FROM movies WHERE id IN (${alive.map(() => '?').join(',')})`, alive)
+      const cleaned = await purgeUnreferenced(db, dataDir, refs)
+      persistSoon(db)
+      try { invalidateHomeCache() } catch {}
+      try { invalidateActorCaches() } catch {}
+      return { ok: true, removed: alive.length, cleaned }
     } catch (e) { return { ok: false, error: e.message } }
   })
 

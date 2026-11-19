@@ -25,9 +25,14 @@ import { fileBadgesOf } from '@/utils/global'
 const props = defineProps({
   py: { type: String, default: '' },       // movies.py：取文件名部分解析（为空则不渲染）
   badges: { type: Array, default: null },  // 传入则直接使用（播放页：文件名+真实分辨率 合并结果）
+  sub: { type: Boolean, default: false },  // movies.sub 非空 → 追加「外挂字幕」（2026-11-19）
   size: { type: String, default: 'md' }    // md=播放页主行同款 / sm=卡片缩略款
 })
-const list = computed(() => props.badges || fileBadgesOf(props.py))
+// 外挂字幕来自数据库字段（同目录字幕文件），无法从文件名推出，单独拼接
+const list = computed(() => {
+  const base = props.badges || fileBadgesOf(props.py)
+  return props.sub ? [...base, { kind: 'sub', label: '外挂字幕' }] : base
+})
 </script>
 
 <style>
@@ -53,6 +58,8 @@ const list = computed(() => props.badges || fileBadgesOf(props.py))
 .ft-uncen { background: var(--filetag-blue-soft); color: var(--filetag-blue); }
 .ft-cnsub { background: var(--filetag-purple-soft); color: var(--filetag-purple); }
 .ft-uhd { background: var(--filetag-gold-soft); color: var(--filetag-gold); }
+/* 外挂字幕（2026-11-19）：青绿，与「中文字幕」的紫区分开 */
+.ft-sub { background: var(--filetag-teal-soft); color: var(--filetag-teal); }
 /* 卡片里的缩小版（窄卡片，跟随 11px 小字层级） */
 .file-tag-sm { padding: 1px 8px; font-size: var(--fs-xs); border-radius: var(--r-sm); }
 </style>
