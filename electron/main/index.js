@@ -295,6 +295,10 @@ app.whenReady().then(async () => {
     // 获取数据目录路径
     dataDir = getDataDir()
     dataDirForGlobal = dataDir
+    // 图床熔断状态落盘（2026-11-20）：重启后直接生效，不必重新「发现」死图床
+    try {
+      require('./net-curl').configureHostHealth(require('path').join(dataDir, 'host-health.json'))
+    } catch { /* 优化项，失败不影响启动 */ }
     console.log('[main] calling initDb async...')
     const t0 = Date.now()
     // 初始化数据库（异步加载 sql.js WASM）

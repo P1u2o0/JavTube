@@ -102,6 +102,18 @@ const HOST_MIN_INTERVAL = {
   'javdb.com': 1200,
   'www.javbus.com': 600
 }
+/**
+ * 按 host 后缀覆盖（2026-11-20 提速）。
+ * 预览图/封面在 JAVDB 的 CDN（c0.jdbstatic.com、c1.… 等）上，是纯静态文件、无风控逻辑；
+ * 400ms/张 对它是过度保守 —— 20 张预览图光排队就要 8s，占「刮削一部片」的一半。
+ * 实测（10 张 65~99KB、并发 6）把间隔降到 220ms 后仍全部 200，单部预览图耗时减半。
+ */
+const HOST_MIN_INTERVAL_SUFFIX = [
+  ['jdbstatic.com', 220]
+]
+// 动态回退（2026-11-20）：一旦 CDN 真回 429/403，说明放得太快 —— 立刻把该 host 的
+// 间隔改回保守值（本次会话生效），避免后续图片全部被拒。
+const hostIntervalOverride = new Map()
 
 /**
  * 可重试的 HTTP 状态：403（含限流/风控）、429（明确限流）、503（边缘临时不可用）。
@@ -119,7 +131,11 @@ const RETRY_WAITS = [2000, 5000]
 async function throttleByHost(url) {
   let host = ''
   try { host = new URL(url).host } catch { return }
-  const interval = HOST_MIN_INTERVAL[host] || MIN_REQ_INTERVAL
+  let interval = hostIntervalOverride.get(host) || HOST_MIN_INTERVAL[host] || MIN_REQ_INTERVAL
+  if (!hostIntervalOverride.has(host) && !HOST_MIN_INTERVAL[host]) {
+    const hit = HOST_MIN_INTERVAL_SUFFIX.find(([sfx]) => host.endsWith(sfx))
+    if (hit) interval = hit[1]
+  }
   const now = Date.now()
   const slot = Math.max(now, (lastReqAt.get(host) || 0) + interval)
   lastReqAt.set(host, slot)
@@ -136,13 +152,104 @@ async function throttleByHost(url) {
  * @returns {string[]} 参数数组
  */
 function buildCommonArgs({ proxy, cookie, referer, timeout = 30000, follow = false, kind = 'page' } = {}) {
-  const args = ['-s', '-A', USER_AGENT, '--max-time', String(Math.ceil(timeout / 1000)), '--compressed',
+  const args = ['-s', '-A', USER_AGENT, '--max-time', String(Math.ceil(timeout / 1000)),
+    // 连接超时（2026-11-20）：只设 --max-time 时，DNS/握手卡住的域名要耗满 30s 才失败。
+    // 实测 pics.dmm.co.jp 在当前网络下就是「连不上」—— 每张预览图白等 11~30s，
+    // 一部片 10 张预览图能拖掉 2~5 分钟（这是「刮削很慢」的主因）。
+    // 连接阶段最多 5s，传输阶段仍由 --max-time 兜底。
+    '--connect-timeout', String(Math.min(kind === 'image' ? 3 : 5, Math.ceil(timeout / 1000))),
+    '--compressed',
     ...(kind === 'image' ? IMAGE_HEADERS : PAGE_HEADERS)]
   if (follow) args.push('-L')                // 跟随重定向
   if (proxy) args.push('-x', proxy)          // 代理（页面请求需要，图片不传）
   if (cookie) args.push('-b', cookie)        // Cookie（curl 的 -b 支持 "k=v; k2=v2" 形式）
   if (referer) args.push('-e', referer)      // 来源页
   return args
+}
+
+// ===== 图床健康度（2026-11-20 熔断）=====
+// 背景：DMM 图床（pics.dmm.co.jp / awsimgsrc.dmm.co.jp）在部分地区/网络下彻底不可达，
+// 而下载逻辑是「直连失败→再走代理」串行两遍，单张图要耗 11~30s。批量刮削时每部片都要
+// 把 10 张预览图各等一遍，之后才换 JAVDB 图源重下 —— 用户看到的就是「刮削非常慢」。
+// 这里按 host 记连续失败次数：同一 host 连续失败 3 次即「熔断」10 分钟，
+// 期间对该 host 的图片请求直接快速失败（不再起 curl），让上层立刻改用备用图源。
+const hostFails = new Map()        // host → 连续失败次数
+const hostDeadUntil = new Map()    // host → 熔断截止时间戳
+// 计数单位是「一张图片」（scraper.downloadImage 在两种方式都失败后才记账），不是每次 curl 尝试 ——
+// 否则同一张图的「直连 + 代理」两次失败会被算成两次，正常图床偶发失败几次就被误熔断（实测过）。
+const HOST_DEAD_AFTER = 2
+const HOST_DEAD_MS = 10 * 60 * 1000
+
+// 熔断状态落盘（2026-11-20）：只存内存的话，每次重启软件都要重新「发现」一次死图床 ——
+// 首批预览图仍要白等十几秒。这里把截止时间写进数据目录，重启后直接生效。
+let healthFile = ''
+let healthSaveTimer = null
+/**
+ * 指定熔断状态的落盘文件（主进程拿到 dataDir 后调用一次）。
+ * 读取失败/内容损坏一律忽略：健康度只是优化提示，不能影响刮削主流程。
+ * @param {string} file - 形如 <dataDir>/host-health.json
+ */
+function configureHostHealth(file) {
+  healthFile = String(file || '')
+  if (!healthFile) return
+  try {
+    const raw = JSON.parse(fs.readFileSync(healthFile, 'utf8'))
+    const now = Date.now()
+    for (const [h, t] of Object.entries(raw || {})) {
+      if (Number(t) > now) hostDeadUntil.set(h, Number(t))
+    }
+  } catch { /* 首次运行没有该文件，正常 */ }
+}
+/** 去抖写盘（批量刮削时失败是成串发生的） */
+function saveHostHealth() {
+  if (!healthFile || healthSaveTimer) return
+  healthSaveTimer = setTimeout(() => {
+    healthSaveTimer = null
+    try {
+      const now = Date.now()
+      const obj = {}
+      for (const [h, t] of hostDeadUntil) if (t > now) obj[h] = t
+      fs.writeFileSync(healthFile, JSON.stringify(obj), 'utf8')
+    } catch { /* 写不进去就算了 */ }
+  }, 300)
+}
+
+/** 从 URL 取 host（失败返回空串） */
+function hostOf(url) {
+  try { return new URL(String(url)).host } catch { return '' }
+}
+
+/**
+ * 该 URL 的 host 是否处于熔断期（图片请求前先查，命中就不要再发请求了）。
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isHostDead(url) {
+  const h = hostOf(url)
+  if (!h) return false
+  return (hostDeadUntil.get(h) || 0) > Date.now()
+}
+
+/** 记一次图片下载失败；连续失败达到阈值就熔断该 host 一段时间 */
+function markHostFail(url) {
+  const h = hostOf(url)
+  if (!h) return
+  const n = (hostFails.get(h) || 0) + 1
+  hostFails.set(h, n)
+  if (n >= HOST_DEAD_AFTER && !isHostDead(url)) {
+    hostDeadUntil.set(h, Date.now() + HOST_DEAD_MS)
+    console.warn(`[net-curl] 图床 ${h} 连续失败 ${n} 次 → 熔断 ${HOST_DEAD_MS / 60000} 分钟（图片改用备用源）`)
+    saveHostHealth()
+  }
+}
+
+/** 记一次图片下载成功：清零该 host 的失败计数并解除熔断 */
+function markHostOk(url) {
+  const h = hostOf(url)
+  if (!h) return
+  hostFails.delete(h)
+  hostDeadUntil.delete(h)
+  saveHostHealth()
 }
 
 /**
@@ -228,6 +335,14 @@ function curlDownload(url, savePath, opts = {}) {
       }
       const status = Number(String(stdout).trim()) || 0
       const size = fs.existsSync(savePath) ? fs.statSync(savePath).size : 0
+      // 429/403：该 host 被限速 → 间隔回退到 400ms（只影响本次会话）
+      if (status === 429 || status === 403) {
+        const h = hostOf(url)
+        if (h && !hostIntervalOverride.has(h)) {
+          hostIntervalOverride.set(h, 400)
+          console.warn(`[net-curl] ${h} 返回 ${status}，图片请求间隔回退到 400ms`)
+        }
+      }
       // 3xx 也当失败（2026-09-28 审计）：图片请求不带 -L（跟随后可能被引到验证页），
       // 重定向响应体不是图片；若把 3xx 当成功，scraper 的两路网络兜底（直连/代理）
       // 就会在第一次「假成功」时停止，图片被静默丢弃。
@@ -240,4 +355,8 @@ function curlDownload(url, savePath, opts = {}) {
   }))
 }
 
-module.exports = { curlGet, curlDownload, curlAvailable, throttleByHost, CURL_BIN, USER_AGENT }
+module.exports = {
+  curlGet, curlDownload, curlAvailable, throttleByHost,
+  isHostDead, markHostFail, markHostOk, configureHostHealth,
+  CURL_BIN, USER_AGENT
+}

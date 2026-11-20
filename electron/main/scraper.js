@@ -9,7 +9,7 @@
 
 // 网络层：系统 curl（见 net-curl.js 说明：Cloudflare 按 TLS 指纹放行 curl，
 // 而 Electron net.fetch / Node https 的指纹被拦截）
-const { curlGet, curlDownload, curlAvailable } = require('./net-curl')
+const { curlGet, curlDownload, curlAvailable, isHostDead, markHostFail, markHostOk } = require('./net-curl')
 const fs = require('fs')
 const path = require('path')
 const { URL } = require('url')
@@ -253,18 +253,70 @@ async function downloadImage(url, savePath, referer, proxy) {
   //     → 走代理优先（主站与图床都需代理；实测 jdbstatic 直连 HTTP 000、代理 200）
   //   - 第三方图床（DMM 等，样本图常用）→ 直连优先（经代理连接失败）
   const isMainSite = /javbus\.com|javdb\.com|jdbstatic\.com/i.test(url)
+  // 熔断（2026-11-20）：该图床刚被判定不可达 → 立刻失败，不再起 curl 白等两遍。
+  // 上层（downloadPreviewList / scrapeMovie）会据此改用备用图源。
+  if (isHostDead(url)) throw new Error('图床不可达（已熔断）')
   // 去重（2026-09-29 审计）：未配置代理时 proxy 为空串，两路参数完全相同 →
   // 原先会白白重试一遍（每遍最长 30s）。这里归一化后去重，为空时只试一次。
   const order = isMainSite ? [proxy, ''] : ['', proxy]
   const tries = [...new Set(order.map(p => p || ''))]
-  let last = null
-  for (const px of tries) {
-    const r = await curlDownload(url, savePath, { referer, proxy: px || undefined, timeout: 30000 })
-    if (r.ok) return savePath
-    last = r
+
+  // 单路（未配代理）：只能试一次
+  if (tries.length === 1) {
+    const r = await curlDownload(url, savePath, { referer, proxy: tries[0] || undefined, timeout: 20000 })
+    if (r.ok) {
+      markHostOk(url)
+      return savePath
+    }
+    markHostFail(url)
+    console.warn(`[scrape] 图片下载失败 status=${r.status} size=${r.size} url=${url.slice(0, 70)}`)
+    throw new Error(r.error || '图片下载失败')
   }
-  console.warn(`[scrape] 图片下载失败(两种方式均失败) status=${last?.status} size=${last?.size} err=${last?.error} url=${url.slice(0, 70)}`)
-  throw new Error(last?.error || '图片下载失败')
+
+  // 双路**并发**（2026-11-20）：原来是「直连失败 → 再走代理」串行两遍，
+  // 图床彻底不通时要白等 2×connect-timeout（实测单张 6~10s，20 张预览图就上百秒）。
+  // 现在两路同时起、各写各自的临时文件：**谁先成功立刻返回**（不再等另一路 ——
+  // 之前用 Promise.all 等两路都结束，慢的那一路会把整体拖住，实测头像因此多花 7s）。
+  const cands = tries.map((px, i) => ({ proxy: px || undefined, tmp: `${savePath}.${i}` }))
+  const cleanup = (list) => { for (const c of list) { try { fs.unlinkSync(c.tmp) } catch {} } }
+  return await new Promise((resolve, reject) => {
+    let done = false
+    let failed = 0
+    let last = null
+    for (const c of cands) {
+      curlDownload(url, c.tmp, { referer, proxy: c.proxy, timeout: 20000 }).then(r => {
+        if (done) { try { fs.unlinkSync(c.tmp) } catch {} ; return }
+        if (r.ok) {
+          done = true
+          try { fs.renameSync(c.tmp, savePath) } catch (e) {
+            done = false
+            reject(e)
+            return
+          }
+          cleanup(cands.filter(x => x !== c))
+          markHostOk(url)
+          resolve(savePath)
+          return
+        }
+        last = r
+        if (++failed === cands.length) {
+          done = true
+          cleanup(cands)
+          markHostFail(url)
+          console.warn(`[scrape] 图片下载失败(两种方式均失败) status=${last.status} size=${last.size} url=${url.slice(0, 70)}`)
+          reject(new Error(last.error || '图片下载失败'))
+        }
+      }).catch(() => {
+        if (done) return
+        if (++failed === cands.length) {
+          done = true
+          cleanup(cands)
+          markHostFail(url)
+          reject(new Error('图片下载失败'))
+        }
+      })
+    }
+  })
 }
 
 /**
@@ -275,6 +327,13 @@ async function downloadImage(url, savePath, referer, proxy) {
  * 打开根本看不清。用户明确「宁缺毋滥」：不合格的小图一律丢弃；但若同名位置还留有
  * 上一轮的合格旧图，则保留旧图（不因本次下载失败而丢好图）。
  * 最后清理本片文件夹里不再被引用的旧预览（文件夹按片隔离，删除是安全的）。
+ *
+ * 并发 4（2026-11-20）：原实现逐张串行，10 张图光「排队 + 传输」就要 8~12 秒。
+ * net-curl 的同 host 限速是「槽位制」（同步占位、异步等待），并发时仍会自动拉开间隔，
+ * 既提速又不会把站点打出 403。
+ * 图床熔断：某张失败后若该 host 已进入熔断（见 net-curl.isHostDead），
+ * 剩余图片直接跳过 —— 外层会发现「一张都没下到」并立刻改用备用图源，
+ * 而不是把 10 张图各等一遍超时（实测 DMM 图床单张要 11~30s）。
  * @param {string[]} list - 远程图片 URL 数组
  * @param {Object} o - { cleanPh, dataDir, referer, proxy }
  * @returns {Promise<string[]>} 成功落盘的相对路径数组
@@ -282,9 +341,12 @@ async function downloadImage(url, savePath, referer, proxy) {
 async function downloadPreviewList(list, { cleanPh, dataDir, referer, proxy }) {
   const movieDirAbs = path.join(dataDir, IMAGE_DIR, cleanPh)
   if (!fs.existsSync(movieDirAbs)) fs.mkdirSync(movieDirAbs, { recursive: true })
-  const out = []
+  const results = new Array(list.length).fill('')   // 按原顺序占位：命中的相对路径
   const keep = new Set()   // 本次保留（新下载成功或沿用旧图）的文件名
-  for (let i = 0; i < list.length; i++) {
+
+  /** 下载第 i 张（含内容校验、失败保留旧图） */
+  const one = async (i) => {
+    if (isHostDead(list[i])) return   // 该图床已熔断：不必再试
     const pExt = String(list[i]).match(/\.(jpg|jpeg|png|webp)/i)?.[0] || '.jpg'
     const relPath = previewRelPath(cleanPh, i + 1, pExt)
     const abs = path.join(dataDir, relPath)
@@ -296,9 +358,9 @@ async function downloadPreviewList(list, { cleanPh, dataDir, referer, proxy }) {
       await downloadImage(list[i], tmp, imageReferer(list[i], referer), proxy)
       if (isImageFile(tmp) && fs.statSync(tmp).size >= PREVIEW_MIN_BYTES) {
         fs.renameSync(tmp, abs)
-        out.push(relPath)
+        results[i] = relPath
         keep.add(name)
-        continue
+        return
       }
       try { fs.unlinkSync(tmp) } catch {}
     } catch (e) {
@@ -308,11 +370,27 @@ async function downloadPreviewList(list, { cleanPh, dataDir, referer, proxy }) {
     // 本次没拿到合格图片：该位置若有上一轮的合格旧图则保留（宁可留着好图，也不留小图）
     try {
       if (fs.existsSync(abs) && isImageFile(abs) && fs.statSync(abs).size >= PREVIEW_MIN_BYTES) {
-        out.push(relPath)
+        results[i] = relPath
         keep.add(name)
       }
     } catch {}
   }
+
+  // 并发 6（2026-11-20 由 4 上调）：单张图传输约 0.7s，而同 host 限速占 0.4s/张，
+  // 4 路并行时传输与限速重叠不足；6 路把 10~20 张的耗时再压掉约 1/3。
+  // 真正的反爬保护在同 host 的槽位限速（net-curl.throttleByHost），并发数只影响本机重叠度。
+  const CONC = Math.min(6, list.length)
+  let next = 0
+  const worker = async () => {
+    while (true) {
+      const i = next++
+      if (i >= list.length) return
+      await one(i)
+    }
+  }
+  await Promise.all(Array.from({ length: CONC }, worker))
+
+  const out = results.filter(Boolean)
   // 清理本片文件夹内不再被引用的旧预览（只动「<番号>-数字」命名的文件；海报 <番号>.<ext> 不受影响）
   try {
     for (const f of fs.readdirSync(movieDirAbs)) {
@@ -963,6 +1041,10 @@ async function scrapeMovie(ph, {
 
   // 按优先级依次尝试各个来源
   let lastError = ''
+  // JAVBUS 命中后「静默补抓 JAVDB」拿到的预览图 URL 缓存（2026-11-20）：
+  // JAVBUS 的预览图托管在 DMM 图床，不可达时整批失败 —— 原来这里要再抓一次 JAVDB 才能换源，
+  // 多花 3~4 秒。补全阶段本来就已经拿到 JAVDB 的预览图列表，直接复用即可。
+  let javdbPreviews = []
   for (const sid of sourceIds) {
     const src = WEB_SOURCES.find(s => s.id === sid)
     if (!src) continue
@@ -996,6 +1078,8 @@ async function scrapeMovie(ph, {
               if (!(result.previews || []).length && (jd.previews || []).length) {
                 result.previews = jd.previews
               }
+              // 缓存 JAVDB 的预览图列表：下面 JAVBUS 图源下载全失败时可换源而无需二次抓取
+              if ((jd.previews || []).length) javdbPreviews = jd.previews
               // 统计：JAVDB 专有（JAVBUS 站点无评分体系）
               if (jd.want) result.want = jd.want
               if (jd.watched) result.watched = jd.watched
@@ -1110,8 +1194,13 @@ async function scrapeMovie(ph, {
           // JAVDB 的预览图在自家 CDN（jdbstatic.com）可以正常取，故首选源全军覆没时换它再试一次。
           if (!localPreviews.length && src.name === 'JAVBUS') {
             try {
-              const jd = await scrapeJavDb(cleanPh, type, { fetchStats: false, cookie: javdbCookie, proxy })
-              const jlist = (jd && Array.isArray(jd.previews)) ? jd.previews : []
+              // 优先用补全阶段已经拿到的 JAVDB 预览图（省一次搜索请求）；
+              // 没有缓存时才补抓一次
+              let jlist = javdbPreviews
+              if (!jlist.length) {
+                const jd = await scrapeJavDb(cleanPh, type, { fetchStats: false, cookie: javdbCookie, proxy })
+                jlist = (jd && Array.isArray(jd.previews)) ? jd.previews : []
+              }
               if (jlist.length) {
                 console.log(`[scrape] ${cleanPh} 预览图首选源下载失败，改用 JAVDB 图源（${jlist.length} 张）`)
                 localPreviews = await downloadPreviewList(jlist, { cleanPh, dataDir, referer: 'https://javdb.com/', proxy })

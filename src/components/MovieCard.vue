@@ -51,12 +51,6 @@
       <div class="cover-tags">
         <FileTags :py="m.py" :sub="!!m.sub" size="sm" />
       </div>
-      <!-- 观看进度条（2026-11-08）：看过但没看完时贴在海报下沿，一眼看出"这部看到哪了"。
-           数据来自 play_pos/play_dur（播放页每 5 秒记一次）；进度 ≥97% 视为看完，不显示。 -->
-      <div v-if="watchState.pct > 0" class="prog" :class="{ done: watchState.done }"
-           :title="watchState.done ? '已看完' : `已看 ${Math.round(watchState.pct * 100)}%`">
-        <i :style="{ width: (watchState.pct * 100) + '%' }"></i>
-      </div>
       <!-- 多选模式下的勾选框（自绘圆形：未选白圆描边，选中品牌红实心圆 + 白色对勾，内联 SVG 零依赖） -->
       <div v-if="selectMode" class="check" :class="{ checked: isSel }" @click.stop="$emit('toggle')">
         <svg v-if="isSel" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
@@ -65,10 +59,14 @@
         </svg>
       </div>
     </div>
-    <!-- 影片信息区域：番号 + 标题同一行（2026-11-19 用户要求），中间留一个空格 -->
+    <!-- 影片信息区域：番号 + 标题同一行（2026-11-19 用户要求），标题最多两行；
+         第二行回到最左侧、与番号第一个字符对齐（2026-11-19 追加要求）→
+         用「内联流 + 两行高度裁剪」而不是 flex/line-clamp（后者第二行会被番号宽度顶开） -->
     <div class="info">
-      <span class="code">{{ m.ph || '—' }}</span>
-      <span class="title" :title="m.pm">{{ m.pm || '无标题' }}</span>
+      <div class="info-flow">
+        <span class="code">{{ m.ph || '—' }}</span>
+        <span class="title" :title="m.pm">{{ m.pm || '无标题' }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -106,26 +104,6 @@ function onErr() { errd.value = true }
 
 // 是否已收藏（cl 字段为 'y' 表示已收藏）
 const isFav = computed(() => props.m.cl === 'y')
-
-/**
- * 观看进度的展示状态（2026-11-09 审计后调整）：
- *   · 没看过 / 没时长数据 → 不显示（pct = 0）
- *   · 不到 1%           → 不显示（原来 0.1% 也会画一条 1% 的线，看着像脏点）
- *   · ≥97%              → 显示**满格 + 变淡**（done），这样"看完了"和"没看过"能区分开
- *   · 其余              → 按比例显示
- * ⚠️ 只做展示，不参与续播 —— 续播位置由播放页自己的内存续播点决定（不读 play_pos，
- *    见 src/utils/playResume.js 与 Player.vue 的 resumeIfNeeded）。
- * @returns {{ pct: number, done: boolean }}
- */
-const watchState = computed(() => {
-  const pos = Number(props.m.play_pos) || 0
-  const dur = Number(props.m.play_dur) || 0
-  if (!(pos > 0) || !(dur > 0)) return { pct: 0, done: false }
-  const r = pos / dur
-  if (r >= 0.97) return { pct: 1, done: true }
-  if (r < 0.01) return { pct: 0, done: false }
-  return { pct: r, done: false }
-})
 
 /**
  * 喜欢按钮点击：用 Web Animations API 播放轻微弹跳（与状态解耦、确定性播放），
@@ -287,16 +265,6 @@ watch(dataDirRef, () => { errd.value = false })
   pointer-events: none;
 }
 
-/* 观看进度条：贴在海报下沿的细线，品牌红表示已看部分 */
-.prog {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
-  background: var(--overlay-badge);
-  pointer-events: none;
-}
-.prog i { display: block; height: 100%; background: var(--accent); }
-/* 看完的影片：满格但变淡 —— 与"没看过"（不显示）区分开 */
-.prog.done i { background: var(--text-2); opacity: .55; }
-
 /* 多选模式勾选框：磨砂玻璃圆形（与右上角喜欢按钮同一质感），选中态为品牌红实心 */
 .check {
   position: absolute; top: 8px; left: 8px;
@@ -318,7 +286,7 @@ watch(dataDirRef, () => { errd.value = false })
   border-color: var(--accent);
 }
 /* 海报左下角的属性标签（2026-11-19）：贴在海报上，需保证任意底色上都能读清，
-   因此给标签本身加一点投影；位置避开右下角的播放次数胶囊与底部 3px 进度条 */
+   因此给标签本身加一点投影；位置避开右下角的播放次数胶囊 */
 .cover-tags {
   position: absolute;
   left: 8px;
@@ -331,31 +299,33 @@ watch(dataDirRef, () => { errd.value = false })
 }
 .cover-tags :deep(.file-tags) { margin-left: 0; }
 
-/* 信息区域：番号与标题同一行 */
+/* 信息区域：番号与标题同一行；标题换行后第二行回到最左（与番号首字对齐） */
 .info {
   padding: 10px 12px 12px;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;              /* 「番号 名称」之间的空格 */
-  min-width: 0;
 }
-/* 番号：拉丁展示字 + 等宽数字，工具软件的"仪表盘感"；不参与收缩 */
+/* 两行裁剪容器：行高 1.5 × 2 行 = 3em，超出部分裁掉。
+   用「内联流 + 高度裁剪」而不是 -webkit-line-clamp：clamp 会把标题当成独立块，
+   第二行会从番号右侧开始（用户明确要求第二行回到最左侧）。 */
+.info-flow {
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  min-height: 3em;   /* 单行标题的卡片与两行的保持等高，网格不参差 */
+  max-height: 3em;
+  overflow: hidden;
+}
+/* 番号：拉丁展示字 + 等宽数字，工具软件的"仪表盘感"；内联参与文字流 */
 .code {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 600; font-size: var(--fs-base);
   letter-spacing: var(--ls-caps);
-  flex: 0 0 auto;
+  margin-right: 6px;   /* 「番号 名称」之间的空格 */
   white-space: nowrap;
 }
-/* 标题：同一行内单行省略（空间不足时截断，完整标题在悬浮提示里） */
+/* 标题：紧接番号，最多两行（超出被 .info-flow 裁掉，全文见悬浮提示） */
 .title {
-  font-size: var(--fs-base); color: var(--text); line-height: 1.5;
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--text);
+  word-break: break-word;
 }
 </style>

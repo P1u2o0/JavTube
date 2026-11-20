@@ -28,10 +28,14 @@ const props = defineProps({
   sub: { type: Boolean, default: false },  // movies.sub 非空 → 追加「外挂字幕」（2026-11-19）
   size: { type: String, default: 'md' }    // md=播放页主行同款 / sm=卡片缩略款
 })
-// 外挂字幕来自数据库字段（同目录字幕文件），无法从文件名推出，单独拼接
+// 外挂字幕来自数据库字段（同目录字幕文件），无法从文件名推出，单独拼接。
+// 有外挂字幕 = 该片一定有中文字幕（2026-11-19 用户要求）：文件名没带 -C/-UC 时补一枚
+// 「中文字幕」，避免出现「只有外挂字幕、没有中文字幕」的怪组合。
 const list = computed(() => {
   const base = props.badges || fileBadgesOf(props.py)
-  return props.sub ? [...base, { kind: 'sub', label: '外挂字幕' }] : base
+  if (!props.sub) return base
+  const hasCn = base.some(b => b.kind === 'cnsub')
+  return [...base, ...(hasCn ? [] : [{ kind: 'cnsub', label: '中文字幕' }]), { kind: 'sub', label: '外挂字幕' }]
 })
 </script>
 

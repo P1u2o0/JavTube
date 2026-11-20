@@ -17,8 +17,8 @@ const path = require('path')
 let appRef = null
 try { const m = require('electron'); appRef = m && m.app ? m.app : null } catch { appRef = null }
 // 封面目录名等共享常量（集中定义于 constants.js）
-const { COVER_DIR, IMAGE_DIR } = require('../constants')
-const { filenameTagsOf } = require('./util')
+const { COVER_DIR, IMAGE_DIR, TAG_DELIM } = require('../constants')
+const { filenameTagsOf, derivedTagsOf } = require('./util')
 
 // sql.js 实例缓存，避免重复初始化
 let SQL = null
@@ -518,6 +518,43 @@ async function initDb(dataDir) {
     }
   } catch (e) {
     console.warn('[db] 文件名派生标签迁移异常:', e.message)
+  }
+
+  // === 外挂字幕派生标签迁移（2026-11-20）===
+  // 用户要求：有外挂字幕的影片，标签里也要有「中文字幕」（此前只有徽标，标签筛选里搜不到）。
+  //   · 有 py：按「文件名 + 字幕」重算（与导入/编辑时的口径一致）
+  //   · 无 py 但有字幕：只补「中文字幕」，不删任何已有标签（没有文件名可依据，不能反推）
+  // 一次性：用 settings.derived_tags_v3 标记。
+  try {
+    const migRow = db.exec("SELECT value FROM settings WHERE key='derived_tags_v3'")
+    const migrated = !!(migRow && migRow[0] && migRow[0].values[0] && String(migRow[0].values[0][0]) === '1')
+    if (!migrated) {
+      const res = db.exec("SELECT id, py, sub, bq FROM movies")
+      let n = 0
+      if (res && res[0]) {
+        for (const row of res[0].values) {
+          const id = row[0], py = row[1] || '', sub = row[2] || '', bq = row[3] || ''
+          const existing = new Set(String(bq).split(/[，,]/).map(s => s.trim()).filter(Boolean))
+          let changed = false
+          if (py) {
+            for (const t of ['中文字幕', '无码破解']) if (existing.delete(t)) changed = true
+            for (const t of derivedTagsOf(py, sub)) if (!existing.has(t)) { existing.add(t); changed = true }
+          } else if (sub && !existing.has('中文字幕')) {
+            existing.add('中文字幕')
+            changed = true
+          }
+          if (changed) {
+            db.run('UPDATE movies SET bq=? WHERE id=?', [Array.from(existing).join(TAG_DELIM), id])
+            n++
+          }
+        }
+      }
+      db.run("INSERT OR REPLACE INTO settings(key,value) VALUES('derived_tags_v3','1')")
+      force()
+      console.log(`[db] 外挂字幕派生标签迁移(v3)完成，更新 ${n} 条影片`)
+    }
+  } catch (e) {
+    console.warn('[db] 外挂字幕派生标签迁移异常:', e.message)
   }
 
   return db

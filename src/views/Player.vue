@@ -99,14 +99,23 @@
         </div>
       </div>
 
-      <!-- 播放器下方第一行：影片全部标签（体型/行为/玩法 置前）… 最右：属性标签 + 喜欢 + 详情 -->
-      <div class="tag-row swap-in" v-if="m" :key="'tags-' + m.id">
-        <div class="tags">
-          <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
+      <!-- 播放器下方第一行（2026-11-19 用户要求交换位置）：
+           左 = 女优（圆形头像 + 名字，点击进入女优影片页；多位共演时全部平铺），
+           右 = 文件名属性标签 + 喜欢 + 详情 —— 女优与右侧徽章**同一行**。
+           原「★ 评分」显示已按用户要求移除（2026-10-04） -->
+      <div class="meta-row swap-in" v-if="m" :key="'meta-' + m.id">
+        <div class="actress-row">
+          <button v-for="(a, i) in actressesView" :key="a.name + '-' + i" type="button" class="actress"
+                  :title="`查看 ${a.name} 的全部影片`"
+                  @click="goActor(a.name)">
+            <span class="ac-avatar">
+              <img v-if="a.src" :src="a.src" :alt="a.name" @error="markAvatarBroken(a.name)" />
+              <span v-else class="ac-fallback">{{ a.name.slice(0, 1) }}</span>
+            </span>
+            <span class="ac-name">{{ a.name }}</span>
+          </button>
         </div>
         <div class="row-actions">
-          <!-- 文件名属性标签（2026-10-04）：无码破解 / 中文字幕 / 4K，位于喜欢按钮左侧。
-               原「★ 评分」显示已按用户要求移除（2026-10-04，播放页两处评分都去掉） -->
           <span v-for="b in fileBadges" :key="b.kind" class="file-tag" :class="'ft-' + b.kind">{{ b.label }}</span>
           <button type="button" class="pill-btn fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
                   :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
@@ -120,18 +129,11 @@
         </div>
       </div>
 
-      <!-- 第二行：女优（圆形头像 + 名字，点击进入女优影片页）。
-           2026-10-04：多位女优共演时**全部平铺显示**（原先只显示首位 + "+N" 悬浮提示） -->
-      <div class="actress-row swap-in" v-if="m" :key="'act-' + m.id">
-        <button v-for="(a, i) in actressesView" :key="a.name + '-' + i" type="button" class="actress"
-                :title="`查看 ${a.name} 的全部影片`"
-                @click="goActor(a.name)">
-          <span class="ac-avatar">
-            <img v-if="a.src" :src="a.src" :alt="a.name" @error="markAvatarBroken(a.name)" />
-            <span v-else class="ac-fallback">{{ a.name.slice(0, 1) }}</span>
-          </span>
-          <span class="ac-name">{{ a.name }}</span>
-        </button>
+      <!-- 第二行：影片全部标签（体型/行为/玩法 置前） -->
+      <div class="tag-row swap-in" v-if="m" :key="'tags-' + m.id">
+        <div class="tags">
+          <span v-for="t in sortedTags" :key="t" class="cat-tag">{{ t }}</span>
+        </div>
       </div>
     </div>
 
@@ -271,8 +273,12 @@ const subCues = ref([])
 const subText = ref('')
 const fileBadges = computed(() => {
   const base = fileBadgesOf(m.value?.py, { is4k: res4k.value[m.value?.py] === true })
-  // 外挂字幕（2026-11-19）：来自 movies.sub（同目录字幕文件），文件名推不出来
-  return subPath.value ? [...base, { kind: 'sub', label: '外挂字幕' }] : base
+  // 外挂字幕（2026-11-19）：来自 movies.sub（同目录字幕文件），文件名推不出来。
+  // 有外挂字幕 = 该片一定有中文字幕（用户要求）：文件名没带 -C/-UC 时补一枚「中文字幕」，
+  // 与 FileTags.vue 的口径保持一致（卡片/详情页会用同一规则）。
+  if (!subPath.value) return base
+  const hasCn = base.some(b => b.kind === 'cnsub')
+  return [...base, ...(hasCn ? [] : [{ kind: 'cnsub', label: '中文字幕' }]), { kind: 'sub', label: '外挂字幕' }]
 })
 
 /** 把标签挂到推荐项上（模板直接读 r._badges，避免在模板里调函数重算 —— 项目约定） */
@@ -350,6 +356,8 @@ const actressesView = computed(() => actresses.value.map(a => {
 
 // ====== 标签：全部展示，其中「体型 / 行为 / 玩法」三类排到最前 ======
 const CAT_WHITELIST = ['体型', '行为', '玩法']
+/** 由文件名/字幕推导、已用「属性徽标」表达的标签：播放页标签行不再重复列一遍 */
+const BADGE_DUP_TAGS = new Set(['中文字幕', '无码破解', '4K', '外挂字幕'])
 /**
  * 影片全部标签（bq）重排：
  *  1) 先输出「体型 → 行为 → 玩法」三类里命中的标签（类内保持分类配置顺序，跨类去重）
@@ -368,7 +376,10 @@ const sortedTags = computed(() => {
     for (const t of c.tags) if (present.has(t) && !keyTags.includes(t)) keyTags.push(t)
   }
   const keySet = new Set(keyTags)
-  return [...keyTags, ...all.filter(t => !keySet.has(t))]
+  const merged = [...keyTags, ...all.filter(t => !keySet.has(t))]
+  // 与属性徽标重复的标签不再重复展示（2026-11-19 用户要求）：
+  // 「中文字幕 / 无码破解 / 4K / 外挂字幕」由右侧徽标表达，标签行只留内容类标签
+  return merged.filter(t => !BADGE_DUP_TAGS.has(String(t).trim()))
 })
 
 /** 键位配置：默认值 + 设置表 hotkeys 覆盖 */
@@ -1407,7 +1418,11 @@ onBeforeUnmount(() => {
    渲染路径与平时完全一致，mpv 侧再由 fullscreenchange 触发 syncHole 重下发 margin。
    ⚠️ 只隐藏「与视频无关的面板」，**错误面板与质量提示保留** ——
       全屏途中若播放失败，用户必须还能看到提示与「使用外部播放器打开」。 */
+/* ⚠️ 2026-11-19：.meta-row 必须一起隐藏 —— 女优行 + 属性徽标从 .tag-row/.actress-row
+   合并到这个新容器后，全屏时旧规则没覆盖它，左上角会残留「头像名字 + 无码破解/外挂字幕」，
+   用户看到的就是「全屏左上角出现了影片徽标」。 */
 html.mpv-fs .info-head,
+html.mpv-fs .meta-row,
 html.mpv-fs .tag-row,
 html.mpv-fs .actress-row,
 html.mpv-fs .rec-col {
@@ -1454,8 +1469,8 @@ html.mpv-fs .mpv-shield { border-radius: 0; }
 .info-head,
 .player-wrap,
 .player-box,
+.meta-row,
 .tag-row,
-.actress-row,
 .media-error {
   width: 100%;
   max-width: var(--box-max-w);
@@ -1490,10 +1505,13 @@ html.mpv-fs .mpv-shield { border-radius: 0; }
   /* 字号跟随窗口宽度缩放：窗口 1400 → 约 28px（上限 40px 防超大屏糊脸） */
   font-size: clamp(15px, 2vw, 40px);
   line-height: 1.4;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, .95), 0 0 3px rgba(0, 0, 0, .9);
-  background: rgba(0, 0, 0, .18);
-  border-radius: 6px;
-  padding: 2px 10px;
+  /* 不加任何背景块/区域阴影（2026-11-19 用户要求「不要区域阴影」）：
+     只用**文字自身描边**（-webkit-text-stroke + paint-order: stroke fill，
+     描边画在字面之下，笔画内部仍是纯白）+ 一层极轻的贴地投影。
+     不再用 6~8px 的大模糊投影 —— 那会在字周围糊出一圈灰雾，看着就像加了底。 */
+  -webkit-text-stroke: 0.045em rgba(0, 0, 0, .92);
+  paint-order: stroke fill;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .75);
 }
 /* 全屏时字幕明显放大（2026-11-19 用户要求「全屏还是小了些」）：
    mpv 的窗口级全屏 → html.mpv-fs；Chromium 的页面内全屏 → :fullscreen。
@@ -1697,12 +1715,32 @@ html.mpv-fs .sub-overlay,
   text-overflow: ellipsis;
 }
 
-/* 播放器下方第一行：标签 … 最右 属性标签 + 喜欢 + 详情 */
-.tag-row {
+/* 播放器下方第一行（2026-11-19）：左 = 女优头像+名字，右 = 属性标签 + 喜欢 + 详情。
+   两者同一行 —— 女优区撑开剩余宽度（flex:1），操作按钮组靠右不收缩 */
+.meta-row {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 12px;
+  font-size: var(--fs-base);
+  color: var(--muted);
+}
+.meta-row .actress-row { flex: 1 1 auto; min-width: 0; }
+/* 同一行里的女优列表：多位女优共演全部平铺（2026-10-04），空间不够才换行 */
+.actress-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: var(--fs-base);
+  color: var(--muted);
+}
+/* 播放器下方第二行：影片分类标签（体型/行为/玩法…） */
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
   font-size: var(--fs-base);
   color: var(--muted);
 }
@@ -1714,15 +1752,6 @@ html.mpv-fs .sub-overlay,
   gap: 7px 9px;
 }
 /* 第二行：女优（头像 + 名字）。2026-10-04：多位女优共演全部平铺 → 允许换行 */
-.actress-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 8px;
-  font-size: var(--fs-base);
-  color: var(--muted);
-}
 .actress {
   flex-shrink: 0;
   display: inline-flex;

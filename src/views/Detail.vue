@@ -15,13 +15,16 @@
 <template>
   <!-- 详情根容器，仅在有数据时渲染 -->
   <div class="detail" v-if="m">
-    <!-- 红：标题区（圆形返回按钮 + 番号 + 标题，同一行） -->
+    <!-- 红：标题区（圆形返回按钮 + 「番号 片名 + 属性徽标」两行文字流，2026-11-19 用户要求） -->
     <div class="title-row">
       <BackButton />
-      <span class="code">{{ m.ph || '—' }}</span>
-      <!-- 文件名属性标签（无码破解/中文字幕/4K/外挂字幕，与播放页同款样式，2026-10-05） -->
-      <FileTags :py="m.py" :sub="!!m.sub" />
-      <span class="title-text">{{ m.pm || '无标题' }}</span>
+      <!-- 内联文字流：番号 → 片名 → 徽标 依次排列，超过一行自然换行，最多两行 -->
+      <div class="title-flow">
+        <span class="code">{{ m.ph || '—' }}</span>
+        <span class="title-text" :title="m.pm">{{ m.pm || '无标题' }}</span>
+        <!-- 文件名属性标签（无码破解/中文字幕/4K/外挂字幕，与播放页同款样式） -->
+        <FileTags :py="m.py" :sub="!!m.sub" />
+      </div>
     </div>
 
     <!-- 主行：绿=海报展示区（左） + 蓝=影片信息卡（右） -->
@@ -676,20 +679,32 @@ onMounted(async () => {
 
 /* 红：标题行（圆形返回 + 番号 + 标题） */
 .title-row {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  display: flex; align-items: flex-start; gap: 14px;
   margin-bottom: 14px;
 }
+/* 标题文字流（2026-11-19）：番号 → 片名 → 徽标 内联排列，最多两行，超出裁剪。
+   行高 1.5 × 2 行 = 3em（em 基准取这里的 font-size，与内部番号/片名一致）。 */
+.title-flow {
+  flex: 1; min-width: 0;
+  font-size: var(--fs-3xl);
+  line-height: 1.5;
+  max-height: 3em;
+  overflow: hidden;
+}
 /* 圆形返回按钮的样式已抽到公共组件 @/components/BackButton.vue */
-/* 番号样式：展示字 + 等宽数字 */
+/* 番号样式：展示字 + 等宽数字；内联参与文字流，后面空一格接片名 */
 .code {
   color: var(--primary);
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
   font-weight: 700; font-size: var(--fs-3xl);
   letter-spacing: var(--ls-display);   /* 20px 大字号 → 收紧（此前误用 +0.02em，与 Apple 相反） */
+  margin-right: 8px;
 }
-/* 标题样式：与番号同行，长标题自动换行 */
-.title-text { font-size: var(--fs-3xl); font-weight: 600; color: var(--text); line-height: 1.5; word-break: break-all; }
+/* 标题样式：紧接番号，长标题自动换行（第二行与番号首字对齐） */
+.title-text { font-weight: 600; color: var(--text); word-break: break-all; }
+/* 徽标跟在片名后面，与文字基线大致对齐 */
+.title-flow :deep(.file-tags) { vertical-align: middle; }
 
 /* 主行：海报区（左，尺寸按海报比例放大）+ 信息卡（右，等高对齐） */
 .main-row { display: flex; gap: 20px; align-items: stretch; }

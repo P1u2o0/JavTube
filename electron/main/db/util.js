@@ -128,4 +128,21 @@ function filenameTagsOf(py) {
   return tags
 }
 
-module.exports = { rows, firstRow, firstScalar, nowLocal, persist, persistSoon, filenameTagsOf }
+/**
+ * 影片的「派生标签」= 文件名派生 + 外挂字幕派生（2026-11-20 用户要求）。
+ *
+ * 用户在界面上看到「外挂字幕 / 中文字幕」徽标时，会期望该片在标签体系里同样有「中文字幕」
+ * （标签筛选、详情页标签区都能命中），否则会出现「有徽标、筛选不到」的割裂。
+ * 因此：有外挂字幕 = 一定有中文字幕标签（字幕文件本身多半就是中文的）。
+ *
+ * @param {string} py - 视频绝对路径（可为空）
+ * @param {string} sub - 外挂字幕绝对路径（可为空）
+ * @returns {string[]} 标签数组（已去重）
+ */
+function derivedTagsOf(py, sub) {
+  const tags = filenameTagsOf(py)
+  if (sub && !tags.includes('中文字幕')) tags.push('中文字幕')
+  return tags
+}
+
+module.exports = { rows, firstRow, firstScalar, nowLocal, persist, persistSoon, filenameTagsOf, derivedTagsOf }

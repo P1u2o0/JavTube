@@ -50,7 +50,9 @@ const MULTI_ACTRESS_MIN = 3  // 断言下限取 3（防数据漂移；实际 9�
 // 末尾的「中文字幕」是 v3.6.0 的「文件名派生标签」按 `-C` 后缀自动追加的（见 HANDOFF §5.3），
 // 期望值必须带上它 —— 否则这条断言自那次功能上线起就一直是假失败（2026-10-07 修正）。
 const EXPECT_KEY_FIRST = ['口交', '接吻']                                    // 三类命中项（排最前）
-const EXPECT_ALL = ['口交', '接吻', '第一人称摄影', '女教师', '单体作品', '中文字幕']  // 全部标签
+const EXPECT_ALL = ['口交', '接吻', '第一人称摄影', '女教师', '单体作品']              // 全部标签
+// 「中文字幕」已不在标签行（2026-11-19：与属性徽标重复，只由徽标表达）
+const BADGE_DUP = ['中文字幕', '无码破解', '4K', '外挂字幕']
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 /** dev 库直读/直写（app 已退出时用；点喜欢会改 movies.cl，收尾还原） */
@@ -96,8 +98,8 @@ async function pageUI() {
   const ph = q('.info-ph'), nameEl = q('.info-name'), act = q('.actress'), av = q('.ac-avatar')
   const avImg = q('.ac-avatar img')
   const cats = [...document.querySelectorAll('.cat-tag')].map(e => e.textContent.trim())
-  const fileTags = [...document.querySelectorAll('.tag-row .file-tag')].map(e => e.textContent.trim())
-  const fileTagEls = [...document.querySelectorAll('.tag-row .file-tag')]
+  const fileTags = [...document.querySelectorAll('.meta-row .file-tag')].map(e => e.textContent.trim())
+  const fileTagEls = [...document.querySelectorAll('.meta-row .file-tag')]
   return {
     bg: page ? getComputedStyle(page).backgroundColor : '',
     bodyBg: getComputedStyle(document.body).backgroundColor,
@@ -106,6 +108,8 @@ async function pageUI() {
     nameText: nameEl ? nameEl.textContent.trim() : '',
     phBox: rect(ph), nameBox: rect(nameEl),
     titleBox: rect(q('.info-title')), subBox: rect(q('.actress-row')), tagRowBox: rect(q('.tag-row')),
+    metaRowBox: rect(q('.meta-row')),
+    fileTagBoxes: fileTagEls.map(e => rect(e)),
     headBox: rect(q('.info-head')), recHeadBox: rect(q('.rec-head')),
     playerBox: rect(q('.player-box')), thumbBox: rect(q('.rec-item .thumb')),
     recCount: document.querySelectorAll('.rec-item').length,
@@ -186,7 +190,7 @@ async function pageUI() {
     videoT: (() => { const v = q('.player-box video'); return v ? v.currentTime : -1 })(),
     videoReady: (() => { const v = q('.player-box video'); return v ? v.readyState : -1 })(),
     infoName: q('.info-name') ? q('.info-name').textContent.trim() : '',
-    swapAnim: q('.actress-row') ? getComputedStyle(q('.actress-row')).animationName : '',
+    swapAnim: q('.meta-row') ? getComputedStyle(q('.meta-row')).animationName : '',
     hash: location.hash
   }
 }
@@ -281,14 +285,19 @@ async function main() {
       s.titlePhFirst && s.phBox && s.nameBox && s.phBox.l <= s.nameBox.l && sameRow,
       `ph="${s.phText}" x=${s.phBox && Math.round(s.phBox.l)} | title x=${s.nameBox && Math.round(s.nameBox.l)} | 同行=${sameRow}`)
 
-    // U3 第一行标签 / 第二行 圆形头像 + 名字（头像 44px + 名字 17px）
+    // U3 第一行：女优圆形头像 + 名字（头像 44px + 名字 17px），与右侧属性标签同行
     const circle = s.avBox && Math.abs(s.avBox.w - s.avBox.h) < 1 && s.avBox.w >= 20
-    ok('U3 第二行：圆形头像（44px）+ 名字（放大可点击）',
-      circle && s.avBox.w === 44 && s.acFontSize === '17px' && s.subBox && s.tagRowBox && s.subBox.t >= s.tagRowBox.b - 2 && !!s.acName,
+    ok('U3 第一行：圆形头像（44px）+ 名字（放大可点击）',
+      circle && s.avBox.w === 44 && s.acFontSize === '17px' && s.subBox && s.metaRowBox && s.subBox.t >= s.metaRowBox.t - 2 && !!s.acName,
       `avatar=${s.avBox && Math.round(s.avBox.w) + 'x' + Math.round(s.avBox.h)} radius=${s.avRadius} 名字字号=${s.acFontSize} 女优="${s.acName}"`)
-    ok('U3b 行序：第一行标签、第二行女优',
-      s.tagRowBox && s.subBox && s.tagRowBox.t < s.subBox.t && s.catBox && s.catBox.t >= s.tagRowBox.t - 1 && s.catBox.b <= s.tagRowBox.b + 1,
-      `tagRow=${Math.round(s.tagRowBox && s.tagRowBox.t)}~${Math.round(s.tagRowBox && s.tagRowBox.b)} actressRow=${Math.round(s.subBox && s.subBox.t)}`)
+    ok('U3b 行序：第一行女优（与属性标签同行）、第二行分类标签',
+      s.metaRowBox && s.subBox && s.tagRowBox && s.subBox.b <= s.tagRowBox.t + 2 && s.catBox && s.catBox.t >= s.tagRowBox.t - 1 && s.catBox.b <= s.tagRowBox.b + 1,
+      `metaRow=${Math.round(s.metaRowBox && s.metaRowBox.t)}~${Math.round(s.metaRowBox && s.metaRowBox.b)} tagRow=${Math.round(s.tagRowBox && s.tagRowBox.t)}~${Math.round(s.tagRowBox && s.tagRowBox.b)}`)
+    // U3c 女优与右侧属性标签在同一行（纵向重叠 ≥ 一半行高）
+    ok('U3c 女优与右侧属性标签同一行',
+      s.subBox && s.fileTagBoxes.length > 0 && s.metaRowBox &&
+      Math.abs((s.subBox.t + s.subBox.b) / 2 - (s.fileTagBoxes[0].t + s.fileTagBoxes[0].b) / 2) < s.metaRowBox.h / 2 + 2,
+      `actressRow=${Math.round(s.subBox && s.subBox.t)}~${Math.round(s.subBox && s.subBox.b)} fileTag=${Math.round(s.fileTagBoxes[0] && s.fileTagBoxes[0].t)}~${Math.round(s.fileTagBoxes[0] && s.fileTagBoxes[0].b)}`)
 
     // U4 头像图真实加载
     ok('U4 头像图片加载成功（非破图）', s.avImgOk && s.avImgW > 0, `${s.avImgSrc}… naturalW=${s.avImgW} fallback=${s.fallback || '无'}`)
@@ -296,6 +305,9 @@ async function main() {
     // U6/U7 标签全部显示，三类排最前
     ok('U6 标签全部显示且三类排最前', JSON.stringify(s.cats) === JSON.stringify(EXPECT_ALL),
       `实际=${JSON.stringify(s.cats)} 期望=${JSON.stringify(EXPECT_ALL)}`)
+    ok('U6b 与属性徽标重复的标签不再出现在标签行',
+      !s.cats.some(t => BADGE_DUP.includes(t)) && s.fileTags.length > 0,
+      `cats=${JSON.stringify(s.cats)} 徽标=${JSON.stringify(s.fileTags)}`)
     ok('U7 三类命中项排在最前（体型→行为→玩法 顺序）',
       JSON.stringify(s.cats.slice(0, EXPECT_KEY_FIRST.length)) === JSON.stringify(EXPECT_KEY_FIRST),
       `头部=${JSON.stringify(s.cats.slice(0, EXPECT_KEY_FIRST.length))}`)
@@ -358,16 +370,28 @@ async function main() {
     // U17 换片过渡动画已挂载（scoped style 会重命名 keyframes → 前缀匹配）
     ok('U17 信息区换片过渡动画已生效', String(s.swapAnim).startsWith('jt-swap-in'), `animationName=${s.swapAnim}`)
 
+    // U25 全屏（mpv-fs）时信息区必须整体隐藏 —— 女优行/属性徽标合并进 .meta-row 后
+    // 曾漏掉这条规则，表现为「全屏左上角出现影片徽标」（2026-11-19 用户反馈）
+    const fsHide = await raw(`(() => {
+      document.documentElement.classList.add('mpv-fs')
+      const g = sel => { const e = document.querySelector(sel); return e ? getComputedStyle(e).display : 'absent' }
+      const r = { meta: g('.meta-row'), head: g('.info-head'), tag: g('.tag-row'), rec: g('.rec-col') }
+      document.documentElement.classList.remove('mpv-fs')
+      return r
+    })()`)
+    ok('U25 全屏时信息区/女优徽标行全部隐藏（左上角不再残留徽标）',
+      Object.values(fsHide || {}).every(v => v === 'none'), JSON.stringify(fsHide))
+
     // U13 喜欢按钮形态与位置（第一行标签行的最右）
     ok('U13a 标题后旧图标按钮已移除', !s.hasIconBtns, `hasIconBtns=${s.hasIconBtns}`)
-    ok('U13b 喜欢按钮=图标+文字，位于标签行右侧按钮组', s.favHasIcon && /^(喜欢|已喜欢)$/.test(s.favText) && s.favInRow &&
-      s.favBox && s.tagRowBox && s.favBox.r <= s.tagRowBox.r + 1,
-      `text="${s.favText}" icon=${s.favHasIcon} 在按钮组=${s.favInRow} favRight=${Math.round(s.favBox.r)} tagRowRight=${Math.round(s.tagRowBox.r)}`)
+    ok('U13b 喜欢按钮=图标+文字，位于女优行右侧的按钮组', s.favHasIcon && /^(喜欢|已喜欢)$/.test(s.favText) && s.favInRow &&
+      s.favBox && s.metaRowBox && s.favBox.r <= s.metaRowBox.r + 1,
+      `text="${s.favText}" icon=${s.favHasIcon} 在按钮组=${s.favInRow} favRight=${Math.round(s.favBox.r)} metaRowRight=${Math.round(s.metaRowBox.r)}`)
 
     // U15 详情按钮（样式与喜欢按钮一致，点击进详情页）
     ok('U15a 详情按钮=图标+文字、样式与喜欢按钮一致、位于其右侧',
       s.detailHasIcon && s.detailText === '详情' && s.detailSameStyle &&
-      s.detailBox && s.favBox && s.detailBox.l >= s.favBox.r - 1 && s.detailBox.r <= s.tagRowBox.r + 1,
+      s.detailBox && s.favBox && s.detailBox.l >= s.favBox.r - 1 && s.detailBox.r <= s.metaRowBox.r + 1,
       `text="${s.detailText}" icon=${s.detailHasIcon} 同款=${s.detailSameStyle} x=${Math.round(s.detailBox && s.detailBox.l)}≥${Math.round(s.favBox && s.favBox.r)} right=${Math.round(s.detailBox && s.detailBox.r)}`)
 
     // U13c 点击切换（点两次回到原状态）
