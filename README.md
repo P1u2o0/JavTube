@@ -6,6 +6,8 @@
 
 本地刮削 · 双播放内核 · 全程离线 · Windows 桌面
 
+<sub>Local-first video metadata manager for Windows — poster wall, tag filters, JAVBUS / JAVDB scraping, mpv & Chromium playback, fully offline. Built with Electron + Vue 3.</sub>
+
 [![Release](https://img.shields.io/github/v/release/P1u2o0/JavTube?color=e21a20)](https://github.com/P1u2o0/JavTube/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/P1u2o0/JavTube/releases)
 [![Electron](https://img.shields.io/badge/Electron-40-47848f)](https://www.electronjs.org/)
@@ -110,6 +112,10 @@
 
 **查重会删我的文件吗？**
 不会。扫描全程只读，处置只有一个动作：把文件移入**系统回收站**（可还原），而且必须逐条确认。
+
+## 技术栈
+
+Electron · Vue 3 · Vite · Pinia · vue-router · sql.js（本地 SQLite，无需安装数据库）· ArtPlayer · mpv
 
 ## 本地开发
 
