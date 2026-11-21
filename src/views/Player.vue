@@ -129,6 +129,26 @@
         </div>
         <div class="row-actions">
           <span v-for="b in fileBadges" :key="b.kind" class="file-tag" :class="'ft-' + b.kind">{{ b.label }}</span>
+          <!-- 字幕同步（2026-11-21）：字幕与影片时间轴对不上时手动校准，按片记忆。
+               两内核通用（字幕是页面自绘）；全屏时用 [ / ] 快捷键。 -->
+          <el-popover v-if="subPath" trigger="click" placement="top" :width="232" popper-class="sub-sync-pop">
+            <template #reference>
+              <button type="button" class="pill-btn sub-sync-btn" :class="{ on: subOffset !== 0 }"
+                      title="字幕不同步时手动校准（快捷键 [ ]）">
+                <span>字幕{{ subOffset ? ' ' + (subOffset > 0 ? '+' : '') + subOffset + 's' : '' }}</span>
+              </button>
+            </template>
+            <div class="ss-head">字幕同步</div>
+            <div class="ss-btns">
+              <button type="button" @click="setSubOffset(subOffset - 1)">-1s</button>
+              <button type="button" @click="setSubOffset(subOffset - 0.1)">-0.1s</button>
+              <button type="button" class="ss-zero" @click="setSubOffset(0)">0</button>
+              <button type="button" @click="setSubOffset(subOffset + 0.1)">+0.1s</button>
+              <button type="button" @click="setSubOffset(subOffset + 1)">+1s</button>
+            </div>
+            <div class="ss-val">当前 <b>{{ subOffset > 0 ? '+' : '' }}{{ subOffset }}s</b></div>
+            <div class="ss-tip">正值 = 字幕延后出现；调整后自动记住这部影片</div>
+          </el-popover>
           <button type="button" class="pill-btn fav-pill" :class="{ on: m.cl === 'y' }" @click="toggleFav"
                   :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
             <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="16" />
@@ -284,6 +304,8 @@ let subPayload = null
 // 解析后的字幕 cue 列表与当前应显示文本（页面自绘字幕层用）
 const subCues = ref([])
 const subText = ref('')
+/** 字幕偏移（秒，正=字幕延后出现）。按片记忆在 movies.sub_offset（2026-11-21） */
+const subOffset = ref(0)
 const fileBadges = computed(() => {
   const base = fileBadgesOf(m.value?.py, { is4k: res4k.value[m.value?.py] === true })
   // 外挂字幕（2026-11-19）：来自 movies.sub（同目录字幕文件），文件名推不出来。
@@ -541,6 +563,14 @@ function onKeyDown(e) {
   else if (k === keys.fullscreen) { e.preventDefault(); player.fullscreenWeb = false; player.fullscreen = !player.fullscreen }
   else if (k === keys.volUp) { e.preventDefault(); player.volume = Math.min(1, Math.round((player.volume + 0.05) * 100) / 100) }
   else if (k === keys.volDown) { e.preventDefault(); player.volume = Math.max(0, Math.round((player.volume - 0.05) * 100) / 100) }
+  // 字幕偏移（2026-11-21）：[ / ] 微调 0.1s，按住 Shift 调 1s。
+  // 放快捷键而不是只放面板：全屏时信息区是隐藏的（U25），这里仍然可用。
+  // ⚠️ 用 e.code 而不是 e.key：按住 Shift 时 `]` 的 key 会变成 `}`，按 key 判断会失效。
+  else if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    e.preventDefault()
+    const step = (e.shiftKey ? 1 : 0.1) * (e.code === 'BracketRight' ? 1 : -1)
+    setSubOffset(subOffset.value + step)
+  }
   // 处理完快捷键后，把焦点从「非文字输入」的控件上摘掉（2026-10-09）。
   // 为什么：持焦的按钮/滑块会被浏览器画上 :focus-visible 描边（本项目是墨黑 2px），
   // 而控件条按钮点过一次、音量条拖过一次之后都会一直持焦 —— 之后不管按哪个快捷键，
@@ -1087,8 +1117,32 @@ async function applySubtitle(movieId) {
 /** 按当前播放时间刷新字幕文本（两种内核都由 timeupdate 驱动） */
 function syncSubtitleText() {
   if (!subCues.value.length) { if (subText.value) subText.value = ''; return }
-  const next = findActiveText(subCues.value, player.currentTime || 0)
+  // 字幕偏移（2026-11-21）：正 offset = 字幕延后出现（用更早的时间点去查 cue），负 = 提前
+  const next = findActiveText(subCues.value, (player.currentTime || 0) - subOffset.value)
   if (next !== subText.value) subText.value = next
+}
+
+/**
+ * 调整字幕偏移（秒）：clamp ±60s、0.1s 精度；改完立即刷新画面上的字幕，
+ * 并在 800ms 后写库（按片记忆，下次进同一部自动应用）。
+ */
+let subOffsetTimer = null
+function setSubOffset(next) {
+  const v = Math.max(-60, Math.min(60, Math.round(Number(next || 0) * 10) / 10))
+  if (v === subOffset.value) return
+  subOffset.value = v
+  // 先把「写库」排上（2026-11-21）：后面 syncSubtitleText/toast 任一步抛错都不能影响记忆。
+  const id = m.value?.id
+  if (id) {
+    if (subOffsetTimer) clearTimeout(subOffsetTimer)
+    subOffsetTimer = setTimeout(() => {
+      subOffsetTimer = null
+      try { window.api?.updateMovie(id, { sub_offset: v })?.catch?.(() => {}) } catch { /* 忽略 */ }
+    }, 800)
+  }
+  try { syncSubtitleText() } catch { /* 字幕层未就绪 */ }
+  // 即时反馈：全屏时信息区被隐藏，看不到面板里的数值
+  try { ElMessage({ message: `字幕同步 ${v > 0 ? '+' : ''}${v}s`, duration: 700, grouping: true }) } catch { /* 忽略 */ }
 }
 
 /** 首次真正开始播放时才记一次观看（同一影片一次会话只记一次，2026-11-21） */
@@ -1108,6 +1162,7 @@ async function loadMovie(id) {
   if (seq !== loadSeq) return
   if (!r || !r.ok) { ElMessage.error(r?.error || '无法加载该影片的资料'); router.replace('/library'); return }
   m.value = r.data
+  subOffset.value = Number(r.data?.sub_offset) || 0   // 字幕偏移按片恢复（2026-11-21）
   resetMediaErr()
 
   // 观看记录改到「真的开始播放」后再记（2026-11-21 审计）：
@@ -1353,6 +1408,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 字幕偏移：把防抖中的最后值立即落库（2026-11-21）
+  if (subOffsetTimer) {
+    clearTimeout(subOffsetTimer); subOffsetTimer = null
+    if (m.value?.id) window.api?.updateMovie(m.value.id, { sub_offset: subOffset.value }).catch(() => {})
+  }
   window.removeEventListener('keydown', onKeyDown, true)
   window.removeEventListener('keyup', onKeyUp, true)
   window.removeEventListener('blur', loseHold)
@@ -1787,6 +1847,8 @@ html.jt-page-fs .sub-overlay {
    auto 会按「8 列 × 136px」的固有宽度参与分配，把右侧按钮组挤到下一行；
    基准 0 表示「只吃剩余空间」，grid 再在剩余宽度内自动分列。 */
 .meta-row .actress-row { flex: 1 1 0; min-width: 0; }
+/* 字幕同步按钮：有偏移时高亮，与「喜欢」同一套强调态（2026-11-21） */
+.sub-sync-btn.on { color: var(--accent) !important; border-color: var(--accent) !important; background: var(--accent-soft) !important; }
 /* 等宽网格（2026-11-21）：原来 flex-wrap 按名字长度排，换行后参差不齐；
    改为自适应等宽列，每格「头像 + 名字」左对齐，名字过长省略。 */
 .actress-row {

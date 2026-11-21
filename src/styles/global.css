@@ -452,6 +452,33 @@ html.mpv-fs .pc-bar { border-radius: 0; }
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* ====== 字幕同步面板（2026-11-21，播放页 el-popover）======
+   popover 内容挂在 body 下，组件 scoped 样式命中不了，这里统一给样式。 */
+.sub-sync-pop { padding: 12px !important; }
+.sub-sync-pop .ss-head {
+  font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); margin-bottom: 9px;
+}
+.sub-sync-pop .ss-btns { display: flex; gap: 6px; }
+.sub-sync-pop .ss-btns button {
+  flex: 1; height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.sub-sync-pop .ss-btns button:hover {
+  background: var(--surface-2); border-color: var(--muted); color: var(--text);
+}
+.sub-sync-pop .ss-btns .ss-zero { font-weight: 600; }
+.sub-sync-pop .ss-val { margin-top: 10px; font-size: var(--fs-sm); color: var(--muted); }
+.sub-sync-pop .ss-val b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sub-sync-pop .ss-tip { margin-top: 4px; font-size: var(--fs-xs); color: var(--muted); line-height: 1.5; }
 /* 文字按钮 */
 .el-button.is-link { font-weight: 500; }
 

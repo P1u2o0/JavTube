@@ -90,7 +90,9 @@ const MOVIE_COLUMNS = [
   // 2026-09-14 新增（演员头像）：演员列表 JSON [{name,gender,avatar}]
   ['cast_json',  S('cast_json')],
   // 2026-11-19 新增（外挂字幕）：同目录字幕文件的绝对路径（空=无外挂字幕）
-  ['sub',       S('sub')]
+  ['sub',       S('sub')],
+  // 2026-11-21 新增（字幕偏移）：秒，正=字幕延后；用户手动校准后按片记忆
+  ['sub_offset', N('sub_offset')]
 ]
 
 // INSERT 语句与参数构造器（全部 30 列）

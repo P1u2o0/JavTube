@@ -377,7 +377,9 @@ async function initDb(dataDir) {
     ['play_pos', 'REAL DEFAULT 0'],
     ['play_dur', 'REAL DEFAULT 0'],
     // 外挂字幕（2026-11-19）：同目录字幕文件绝对路径，空=无
-    ['sub', 'TEXT']
+    ['sub', 'TEXT'],
+    // 字幕偏移（2026-11-21）：秒，正=字幕延后出现（用于手动校准不同步的字幕，按片记忆）
+    ['sub_offset', 'REAL DEFAULT 0']
   ])
   // actress.gender — 女优/男优标记（'f' 默认 / 'm'），用于演员页与默认剪影选择
   ensureColumns('actress', [
