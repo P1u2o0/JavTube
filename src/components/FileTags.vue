@@ -29,13 +29,12 @@ const props = defineProps({
   size: { type: String, default: 'md' }    // md=播放页主行同款 / sm=卡片缩略款
 })
 // 外挂字幕来自数据库字段（同目录字幕文件），无法从文件名推出，单独拼接。
-// 有外挂字幕 = 该片一定有中文字幕（2026-11-19 用户要求）：文件名没带 -C/-UC 时补一枚
-// 「中文字幕」，避免出现「只有外挂字幕、没有中文字幕」的怪组合。
+// 2026-11-21 用户要求：**只要有外挂字幕，就不再显示「中文字幕」徽章** ——
+// 外挂字幕本身已经表达了「有中文字幕」，两枚并排是重复信息。
 const list = computed(() => {
   const base = props.badges || fileBadgesOf(props.py)
   if (!props.sub) return base
-  const hasCn = base.some(b => b.kind === 'cnsub')
-  return [...base, ...(hasCn ? [] : [{ kind: 'cnsub', label: '中文字幕' }]), { kind: 'sub', label: '外挂字幕' }]
+  return [...base.filter(b => b.kind !== 'cnsub'), { kind: 'sub', label: '外挂字幕' }]
 })
 </script>
 

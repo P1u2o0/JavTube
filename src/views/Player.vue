@@ -287,11 +287,10 @@ const subText = ref('')
 const fileBadges = computed(() => {
   const base = fileBadgesOf(m.value?.py, { is4k: res4k.value[m.value?.py] === true })
   // 外挂字幕（2026-11-19）：来自 movies.sub（同目录字幕文件），文件名推不出来。
-  // 有外挂字幕 = 该片一定有中文字幕（用户要求）：文件名没带 -C/-UC 时补一枚「中文字幕」，
-  // 与 FileTags.vue 的口径保持一致（卡片/详情页会用同一规则）。
+  // 2026-11-21 用户要求：只要存在外挂字幕，就只显示「外挂字幕」，去掉「中文字幕」
+  // （口径与 FileTags.vue 一致：外挂字幕本身已表达有中文字幕）。
   if (!subPath.value) return base
-  const hasCn = base.some(b => b.kind === 'cnsub')
-  return [...base, ...(hasCn ? [] : [{ kind: 'cnsub', label: '中文字幕' }]), { kind: 'sub', label: '外挂字幕' }]
+  return [...base.filter(b => b.kind !== 'cnsub'), { kind: 'sub', label: '外挂字幕' }]
 })
 
 /** 把标签挂到推荐项上（模板直接读 r._badges，避免在模板里调函数重算 —— 项目约定） */
