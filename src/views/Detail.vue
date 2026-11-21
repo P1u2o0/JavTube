@@ -35,7 +35,9 @@
       <div class="main-image" :style="{ width: boxW + 'px', height: boxH + 'px' }">
         <img v-if="cover && !imgErr" :src="cover" @load="onPosterLoad" @error="imgErr = true" />
         <div v-if="!cover || imgErr" class="no-cover">暂无封面</div>
-        <div class="main-hover" :class="{ playable: !!m.py }" @click="onPlay">
+        <!-- 2026-11-21 审计：无 py 时也允许点击 —— 由 playMovie 给出「未设置视频文件路径」提示；
+             原来的 pointer-events:none 让海报完全点不动，提示路径根本进不去 -->
+        <div class="main-hover playable" @click="onPlay">
           <button v-if="m.py" class="play-btn" aria-label="播放">
             <AppIcon name="play" :size="22" />
           </button>
@@ -175,8 +177,10 @@
     </Teleport>
 
     <!-- 编辑对话框 - 复用 ManualForm 手动录入表单 -->
-    <el-dialog v-model="editShow" title="编辑影片" width="820px" destroy-on-close append-to-body>
-      <ManualForm :initial="m" @submit="onSaveEdit" />
+    <!-- 2026-11-21 审计：禁止点遮罩误关（编辑十几项后一点空白就全丢），并接住表单的「取消」 -->
+    <el-dialog v-model="editShow" title="编辑影片" width="820px" destroy-on-close append-to-body
+               :close-on-click-modal="false">
+      <ManualForm :initial="m" @submit="onSaveEdit" @cancel="editShow = false" />
     </el-dialog>
   </div>
 </template>
@@ -207,6 +211,7 @@ const scrapeStore = useScrapeStore()
 // 响应式状态
 const m = ref(null)            // 当前影片数据对象
 const editShow = ref(false)    // 编辑对话框显示状态
+const editSaving = ref(false)  // 编辑保存进行中（防连点重复提交，2026-11-21 审计）
 const scraping = ref(false)    // 刮削进行中标志
 const imgErr = ref(false)      // 海报加载失败标志
 const stripRef = ref(null)     // 预览小图条轨道 DOM 引用
@@ -545,13 +550,23 @@ async function onDel() {
  * @param {Object} data - 表单提交的影片数据
  */
 async function onSaveEdit(data) {
-  if (!window.api) return
-  const r = await window.api.updateMovie(m.value.id, JSON.parse(JSON.stringify(data)))
-  if (r.ok) {
-    ElMessage.success('保存成功')
-    editShow.value = false
-    await load(m.value.id)
-  } else ElMessage.error(r.error)
+  if (!window.api || editSaving.value) return
+  editSaving.value = true
+  try {
+    const r = await window.api.updateMovie(m.value.id, JSON.parse(JSON.stringify(data)))
+    if (r && r.ok) {
+      ElMessage.success('保存成功')
+      editShow.value = false
+      await load(m.value.id)
+    } else {
+      ElMessage.error((r && r.error) || '保存失败')
+    }
+  } catch (e) {
+    // IPC reject 时此前是未处理拒绝，界面停在「保存中」无提示（2026-11-21 审计）
+    ElMessage.error('保存失败：' + ((e && e.message) || e))
+  } finally {
+    editSaving.value = false
+  }
 }
 
 /**

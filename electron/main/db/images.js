@@ -179,8 +179,12 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
   // ② 删除前确认该文件不被任何影片引用。
   try {
     const keep = new Set(dbPrevs.map(rel => path.basename(rel)))
-    const prevDir = path.join(dataDir, COVER_DIR, 'previews')
-    if (keep.size && fs.existsSync(prevDir)) {
+    // 目录直接取自本片仍在引用的文件（兼容新布局 images/<ph>/ 与旧布局 covers/previews/）。
+    // 2026-11-21 审计：原写法拼死 `COVER_DIR` 且该变量未 import —— ReferenceError 被
+    // 外层 catch 吞掉，这段「清理孤儿预览图」从来没执行过。
+    const firstRel = dbPrevs.find(rel => underImageDir(dataDir, rel))
+    const prevDir = firstRel ? path.dirname(path.join(dataDir, firstRel)) : ''
+    if (keep.size && prevDir && fs.existsSync(prevDir)) {
       const sample = [...keep][0]
       const prefix = sample.replace(/-\d+\.[A-Za-z0-9]+$/, '')
       if (prefix && prefix !== sample) {
@@ -197,7 +201,9 @@ async function repairMovie(db, dataDir, id, { proxy = '', cookie = '' } = {}) {
         }
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn('[images] 清理孤儿预览图失败：', (e && e.message) || e)
+  }
 
   // 仍然不可用的：把垃圾文件删掉（空文件 / 全零 / 覆盖为站内资源的 SVG 等）。
   // 留着只会是一张打不开的图；删掉不损失任何数据，源站恢复后下次检查会自动补上。

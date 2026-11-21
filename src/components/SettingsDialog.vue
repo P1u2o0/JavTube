@@ -13,7 +13,9 @@
 -->
 <template>
   <!-- 设置对话框：v-model 控制显隐，align-center 垂直水平居中，整体固定尺寸 -->
-  <el-dialog v-model="show" title="设置" width="900px" align-center destroy-on-close class="settings-dialog">
+  <!-- 2026-11-21 审计：禁止点遮罩误关；关闭前若有未保存改动则二次确认 -->
+  <el-dialog v-model="show" title="设置" width="900px" align-center destroy-on-close class="settings-dialog"
+             :close-on-click-modal="false" :before-close="onBeforeClose">
     <!-- 标签页容器 -->
     <el-tabs v-model="tab">
       <!-- ============ 基础设置 ============ -->
@@ -142,7 +144,7 @@
                 <button class="row-del" title="删除该类别" @click="catRows.splice(idx, 1)">
                   <AppIcon name="close" :size="14" />
                 </button>
-                <el-button v-if="idx === 0" class="add-btn" title="添加类别" @click="addCat">
+                <el-button v-if="idx === 0" class="icon-add-btn" title="添加类别" @click="addCat">
                   <AppIcon name="plus" :size="14" />
                 </el-button>
               </div>
@@ -160,7 +162,7 @@
                 <button class="row-del" title="删除该映射" @click="mapRows.splice(idx, 1)">
                   <AppIcon name="close" :size="14" />
                 </button>
-                <el-button v-if="idx === 0" class="add-btn" title="添加映射" @click="addMap">
+                <el-button v-if="idx === 0" class="icon-add-btn" title="添加映射" @click="addMap">
                   <AppIcon name="plus" :size="14" />
                 </el-button>
               </div>
@@ -309,9 +311,12 @@
         </div>
       </el-tab-pane>
     </el-tabs>
-    <!-- 统一保存按钮（右下角）：一次性保存所有标签页的设置 -->
+    <!-- 底部操作区（2026-11-21 P2）：与其它表单弹窗统一「取消 + 主操作」右对齐 -->
     <template #footer>
-      <el-button type="primary" @click="saveAll">保存设置</el-button>
+      <div class="set-footer">
+        <el-button @click="onCancel">取消</el-button>
+        <el-button type="primary" @click="saveAll">保存设置</el-button>
+      </div>
     </template>
   </el-dialog>
 
@@ -520,6 +525,25 @@ let keySeq = 0
 const catRows = ref([])
 const mapRows = ref([])
 
+// ── 未保存改动保护（2026-11-21 审计）─────────────────────────────────
+// 原来点遮罩 / 按 ESC 会直接关窗，六个 tab 的改动全部静默丢弃且无法撤销。
+// 这里用「已保存快照」判断是否有改动，有改动时关闭前二次确认。
+const dirtyBase = ref('')
+const formSnapshot = () => JSON.stringify({ st, cats: catRows.value, maps: mapRows.value })
+const isDirty = computed(() => !!dirtyBase.value && formSnapshot() !== dirtyBase.value)
+async function onBeforeClose(done) {
+  if (!isDirty.value) { done(); return }
+  try {
+    await ElMessageBox.confirm('设置尚未保存，关闭将丢弃本次修改。', '提示', {
+      confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning'
+    })
+    done()
+  } catch { /* 继续编辑 */ }
+}
+
+/** 「取消」按钮：与关闭按钮走同一套脏检查，避免误丢六个 tab 的改动（2026-11-21 P2） */
+function onCancel() { onBeforeClose(() => { show.value = false }) }
+
 /**
  * 加载设置（对话框每次打开时调用）
  * 功能：从数据库读取设置项，填充基础/刮削表单，并加载标签类别与映射
@@ -542,6 +566,8 @@ async function load() {
     } catch { /* 解析失败按默认键位 */ }
   }
   await loadCats()
+  // 记录「已保存」基线（2026-11-21）：用于关闭前的未保存改动判定
+  dirtyBase.value = formSnapshot()
 }
 
 /**
@@ -665,7 +691,9 @@ async function confirmApplyMap() {
     mapPreviewShow.value = false
     ElMessage.success(`已更新 ${r.applied} 部影片的标签`)
     await store.loadAllDbTags()
-    location.reload()
+    // 2026-11-21 审计：不要 location.reload() —— 它会把其它 tab 尚未保存的改动一起丢掉，
+    // 而本操作只改标签。就地刷新标签库 + 列表数据即可。
+    store.requestDataRefresh?.()
   } finally {
     mapApplying.value = false
   }
@@ -853,12 +881,12 @@ async function clearDb() {
 }
 
 /* 加号按钮：圆形图标按钮，与删除按钮同规格（32px 圆形 + 细描边 + 透明底） */
-.add-btn {
+.icon-add-btn {
   width: var(--icon-btn-md); height: var(--icon-btn-md); padding: 0; border-radius: 50%; flex-shrink: 0;
   border: 1px solid var(--border); background: transparent; color: var(--muted);
 }
-.add-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--border-strong); }
-.add-btn:active { transform: scale(0.96); }
+.icon-add-btn:hover { background: var(--surface-2); color: var(--primary); border-color: var(--border-strong); }
+.icon-add-btn:active { transform: scale(0.96); }
 
 /* 标签映射「应用到现有影片」操作行（按钮 + 说明小字同排，窄宽时换行） */
 .map-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
@@ -939,6 +967,8 @@ async function clearDb() {
   padding-top: 4px;
 }
 .settings-dialog .el-dialog__footer { flex-shrink: 0; }
+/* 底部操作区：取消 + 保存右对齐（2026-11-21 P2） */
+.set-footer { display: flex; justify-content: flex-end; gap: 10px; }
 .settings-dialog .el-dialog__body::-webkit-scrollbar { width: 8px; }
 .settings-dialog .el-dialog__body::-webkit-scrollbar-thumb {
   background: var(--border-strong);

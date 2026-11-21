@@ -53,7 +53,7 @@
         </button>
       </div>
       <!-- 导入按钮，点击打开添加影片对话框 -->
-      <button class="add-btn" @click="onAdd">
+      <button class="import-btn" @click="onAdd">
         <AppIcon name="import" :size="16" />
         <span>导入</span>
       </button>
@@ -225,7 +225,7 @@ function onSearch() {
 /* 所有可交互元素排除拖拽：否则点击/悬停被拖拽区吞掉 */
 .topnav button, .topnav a, .topnav input,
 .topnav .tab, .topnav .logo, .topnav .search-box,
-.topnav .search-btn, .topnav .add-btn,
+.topnav .search-btn, .topnav .import-btn,
 .topnav .bell-btn, .topnav .settings-btn, .topnav .bell-wrap {
   -webkit-app-region: no-drag;
 }
@@ -260,16 +260,19 @@ function onSearch() {
   display: flex; align-items: center;
   /* 弹性宽度：窗口宽时 260px，窗口收窄时自动缩小（最小 150px） */
   flex: 1 1 220px; min-width: 150px; max-width: 260px; height: 38px;
-  border: 1px solid var(--border-strong);
+  border: none;
   border-radius: var(--r-pill);
   overflow: hidden;
   background: var(--surface);
-  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+  /* 与 EP 输入框同一套焦点语言（2026-11-21 P2）：静置 1px → 聚焦 2px 墨黑 inset。
+     不再用「1px 边框 + 外部光圈」那套只属于搜索框的写法。 */
+  box-shadow: 0 0 0 1px var(--border-strong) inset;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
 }
+.search-box:hover { box-shadow: 0 0 0 1px var(--muted) inset; }
 /* 聚焦时整框高亮 */
 .search-box:focus-within {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(29, 28, 26, .08);
+  box-shadow: 0 0 0 2px var(--primary) inset;
 }
 /* 搜索输入框 */
 .search-input {
@@ -279,7 +282,7 @@ function onSearch() {
   background: transparent;
   font-family: var(--font-body);
 }
-.search-input::placeholder { color: var(--muted); }
+.search-input::placeholder { color: var(--el-text-color-placeholder); }
 /* 搜索按钮 */
 .search-btn {
   flex-shrink: 0; width: 42px; height: 100%;
@@ -290,7 +293,7 @@ function onSearch() {
 }
 .search-btn:hover { background: var(--surface-2); color: var(--text); }
 /* 导入按钮：墨黑胶囊 */
-.add-btn {
+.import-btn {
   display: flex; align-items: center; gap: 6px;
   padding: 0 16px; height: 38px;
   border: none; border-radius: var(--r-pill);
@@ -298,14 +301,14 @@ function onSearch() {
   font-size: var(--fs-md); font-weight: 500; cursor: pointer;
   transition: background var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
-.add-btn:hover { background: var(--primary-hover); }
-.add-btn:active { transform: scale(0.97); }
+.import-btn:hover { background: var(--primary-hover); }
+.import-btn:active { transform: scale(0.97); }
 /* 窄窗口适配（Electron 最小宽 1000px）：收紧间距，避免顶栏挤压 */
 @media (max-width: 1200px) {
   .left { gap: 18px; }
   .tab { padding: 0 8px; font-size: var(--fs-base); }
   .right { gap: 8px; }
-  .add-btn { padding: 0 12px; }
+  .import-btn { padding: 0 12px; }
 }
 
 /* 设置按钮：圆形描边 */
@@ -323,12 +326,13 @@ function onSearch() {
 }
 .bell-btn:hover { background: var(--surface-2); color: var(--text); }
 .bell-btn.has-task { color: var(--accent); border-color: var(--accent); }
-/* 红色圆形角标：进行中的刮削数量 */
+/* 红色圆形角标：进行中的刮削数量（2026-11-21 P2：圆角统一到 pill 族，
+   原先 10px 是唯一一个「方角」角标） */
 .bell-badge {
   position: absolute; top: -4px; right: -4px;
   min-width: 17px; height: 17px;
   padding: 0 4px;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: var(--accent);
   color: #fff;
   font-size: var(--fs-xs); font-weight: 600;

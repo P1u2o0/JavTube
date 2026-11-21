@@ -35,8 +35,8 @@
 <script setup>
 // 引入顶部导航栏组件
 import TopNav from '@/components/TopNav.vue'
-// 引入 Vue 的 onMounted / ref / watch 生命周期与响应式 API
-import { onMounted, ref, watch } from 'vue'
+// 引入 Vue 的 onMounted / ref / watch / nextTick 生命周期与响应式 API
+import { nextTick, onMounted, ref, watch } from 'vue'
 // 引入路由实例（路由 key 与滚动复位用）
 import { useRoute } from 'vue-router'
 // 引入影片状态管理 Store
@@ -64,8 +64,23 @@ function viewKey(r) {
 // 视图真的换了（key 变化）才把主内容区滚回顶部：此前不重置，从滚到一半的
 // 片库点进详情/播放页会停在中间位置（2026-10-02 修复）。
 // 播放页之间是同一实例（换片不重建），保持当前滚动位置、不打断用户。
-watch(() => viewKey(route), () => {
-  if (mainRef.value) mainRef.value.scrollTop = 0
+//
+// 2026-11-21 审计：改为「记住每个视图的滚动位置」——
+// 原实现一刀切置 0，导致「列表滚到第 3 页 → 进详情 → 返回」永远回页首。
+// 列表数据是异步加载的，恢复要等高度足够，所以在 320ms 后再复查一次。
+const scrollMemo = new Map()
+watch(() => viewKey(route), (nv, ov) => {
+  if (!mainRef.value) return
+  if (ov) scrollMemo.set(ov, mainRef.value.scrollTop)
+  const saved = scrollMemo.get(nv) || 0
+  if (!saved) { mainRef.value.scrollTop = 0; return }
+  nextTick(() => {
+    if (!mainRef.value) return
+    mainRef.value.scrollTop = saved
+    setTimeout(() => {
+      if (mainRef.value && mainRef.value.scrollTop < saved - 4) mainRef.value.scrollTop = saved
+    }, 320)
+  })
 })
 
 // ====== 空闲预热内置播放器（2026-09-30 加，2026-10-10 收口到内核层）======

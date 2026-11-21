@@ -127,4 +127,6 @@ async function onRemove(f) {
   font-size: var(--fs-xs);
 }
 .sf-del:hover { color: var(--danger); }
+/* 2026-11-21 P2：hover 变色补过渡，避免瞬时跳变 */
+.sf-del { transition: color var(--dur-fast) var(--ease-out); }
 </style>

@@ -24,7 +24,8 @@
     <!-- 空状态：无收藏影片时显示提示。
          标签栏的选中状态是跨页共享的，若带着标签筛选进来，底下其实有收藏却显示
          「还没有收藏影片」会让人误以为收藏丢了 —— 有筛选时给出可操作的说明 -->
-    <el-empty v-if="store.total === 0 && !store.loading"
+    <!-- 加载失败时不要走空态（2026-11-21）：否则「加载挂了」会显示成「还没有收藏」 -->
+    <el-empty v-if="!store.listError && store.total === 0 && !store.loading"
               :description="hasTagFilter ? '当前标签筛选下没有收藏影片，点标签栏的「全部」查看全部收藏' : '还没有收藏影片，去片库挑选喜欢的吧'" />
     <!-- 影片网格组件 -->
     <MovieGrid v-else
@@ -36,6 +37,8 @@
       :cols="store.colsPerRow"
       :selectMode="store.selectMode"
       :selectedIds="store.selectedIds"
+      :error="store.listError"
+      @retry="onRefresh"
       @page="onPageChange"
       @click="onDetail"
       @play="onPlay"

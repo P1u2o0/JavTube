@@ -354,11 +354,15 @@ function registerMovieIpc(ipcMain, db, dataDir) {
       // 外挂字幕（2026-11-19）：视频路径变了就重找（旧字幕路径属于旧目录）；
       // 调用方显式传了 sub 则尊重它（手动指定/清空）。
       // ⚠️ 先算字幕再算标签：有外挂字幕 → 也要有「中文字幕」标签（2026-11-20）。
-      if (d.py && !(data && 'sub' in data)) {
-        d.sub = await findSubtitle(d.py)
+      // 2026-11-21：只有本次真的改了 py 才重找 —— 旧实现每次更新都 await（NAS readdir
+      // 可达数百毫秒），那个窗口足以让并发写入被旧快照覆盖。
+      if ('py' in patch) {
+        if (!d.py) d.sub = ''                       // 路径被清空 → 旧字幕路径失效
+        else if (!(data && 'sub' in data)) d.sub = await findSubtitle(d.py)
       }
-      // 文件名 + 外挂字幕派生标签（见 util.derivedTagsOf）
-      if (d.py) {
+      // 文件名 + 外挂字幕派生标签（见 util.derivedTagsOf）：只在 py/sub 变化时重算。
+      // 旧实现任何更新都会重写 bq，会把并发写入的标签一起覆盖。
+      if (('py' in patch || 'sub' in patch) && d.py) {
         const fnTags = derivedTagsOf(d.py, d.sub)
         const existing = new Set(String(d.bq || '').split(TAG_DELIM).filter(Boolean))
         // 只清「中文字幕」「无码破解」——这两个按用户要求只认本地来源，刮削来的要剔除；
@@ -367,8 +371,16 @@ function registerMovieIpc(ipcMain, db, dataDir) {
         for (const t of fnTags) existing.add(t)
         d.bq = Array.from(existing).join(TAG_DELIM)
       }
-      // 执行更新（SQL 与参数由 MOVIE_COLUMNS 元数据统一生成；tjrq 不在更新列中，添加日期保持不变）
-      db.run(UPDATE_MOVIE_SQL, buildMovieUpdateParams(d, id))
+      // 只写本次真正改动的列（2026-11-21 审计）：原本用 MOVIE_COLUMNS 全列写回，
+      // 「读快照 → await → 写回」之间任何并发写（喜欢/play_count/字幕回填）都会被旧值回滚。
+      const dirty = new Set(Object.keys(patch))
+      if ('yid' in patch) dirty.add('cast_json')
+      if ('py' in patch || 'sub' in patch) { dirty.add('sub'); dirty.add('bq') }
+      const setCols = UPDATE_COLS.filter(([c]) => dirty.has(c))
+      if (setCols.length) {
+        const sql = `UPDATE movies SET ${setCols.map(([c]) => `${c}=?`).join(',')} WHERE id=?`
+        db.run(sql, [...setCols.map(([, get]) => get(d)), Number(id)])
+      }
       persistSoon(db)
       // 演员/性别等字段变了要让演员侧缓存立即失效（2026-09-28 审计）：
       // 演员总览与热度排名的缓存键只含 COUNT/MAX(id)，改 cast_json 不会让它失效 ——

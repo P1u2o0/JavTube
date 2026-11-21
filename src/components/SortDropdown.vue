@@ -16,7 +16,7 @@
 -->
 <template>
   <el-dropdown trigger="click" @command="onCommand">
-    <el-button class="sort-btn">
+    <el-button class="sort-btn" :size="size">
       <AppIcon v-if="random" name="shuffle" :size="14" style="margin-right:5px" />
       <span>{{ label }}</span>
       <span v-if="arrow" class="sort-dir" :class="order === 'ASC' ? 'asc' : 'desc'">
@@ -62,7 +62,9 @@ const props = defineProps({
     ]
   },
   /** 是否提供「随机排序」（观看记录页关掉：按观看行为排序才有意义） */
-  showRandom: { type: Boolean, default: true }
+  showRandom: { type: Boolean, default: true },
+  /** 按钮尺寸：与所在容器的其它按钮保持一致（2026-11-21 P2，状态栏传 small=24） */
+  size: { type: String, default: 'default' }
 })
 
 // change：算出下一状态后抛出，交由父级写回

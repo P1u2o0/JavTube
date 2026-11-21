@@ -49,7 +49,9 @@
         <span class="a-name">{{ a.name }}</span>
         <span class="a-count">{{ a.count }} 部作品</span>
       </button>
-      <div v-if="!list.length && !loading" class="empty" :class="{ 'empty-err': loadError }"
+      <!-- 加载态（2026-11-21 P2）：此前 loading 期间整墙空白，没有「在加载」的反馈 -->
+      <div v-if="loading && !list.length" class="empty">加载中…</div>
+      <div v-else-if="!list.length" class="empty" :class="{ 'empty-err': loadError }"
            @click="loadError && load()">{{ loadError ? loadError + '（点此重试）' : '库内还没有女优数据' }}</div>
     </div>
 
@@ -88,7 +90,10 @@
           更多<AppIcon name="more" :size="14" />
         </button>
       </div>
-      <div v-if="!list.length && !loading" class="empty">库内还没有女优数据</div>
+      <!-- 标题/加载/错误态与头像墙保持同一套（2026-11-21 P2）：失败不再伪装成「还没有数据」 -->
+      <div v-if="loading && !list.length" class="empty">加载中…</div>
+      <div v-else-if="!list.length" class="empty" :class="{ 'empty-err': loadError }"
+           @click="loadError && load()">{{ loadError ? loadError + '（点此重试）' : '库内还没有女优数据' }}</div>
     </div>
   </div>
 </template>

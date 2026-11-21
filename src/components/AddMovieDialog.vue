@@ -9,9 +9,13 @@
 -->
 <template>
   <!-- 添加影片对话框主体 -->
-  <el-dialog v-model="show" title="添加影片" width="820px" @close="onClose" destroy-on-close>
+  <el-dialog v-model="show" title="添加影片" width="820px" destroy-on-close>
     <!-- 扫描目录表单：扫描本地文件夹批量导入 -->
     <ScanDirForm @selected="onScanned" />
+    <!-- 底部操作区（2026-11-21 P2）：与其它对话框统一，提供明确的关闭入口 -->
+    <template #footer>
+      <el-button @click="show = false">关闭</el-button>
+    </template>
   </el-dialog>
 </template>
 
@@ -41,11 +45,5 @@ const show = computed({
 function onScanned() {
   emit('created')
   show.value = false
-}
-
-// 对话框关闭回调：通知父组件关闭
-// 触发时机：用户关闭对话框时
-function onClose() {
-  emit('update:modelValue', false)
 }
 </script>

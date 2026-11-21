@@ -58,6 +58,7 @@
           @toggle="onCtlToggle"
           @seek="onCtlSeek"
           @volume="onCtlVolume"
+          @mute-toggle="onCtlMute"
           @rate="onCtlRate"
           @fullscreen="onCtlFullscreen"
           @external="playExternal"
@@ -65,7 +66,12 @@
 
         <!-- 外挂字幕（2026-11-19）：页面自绘，不用内核字幕 —— mpv 的 sub-pos/居中按整窗算，
              画面被缩进到小矩形后会偏右、字号偏大。这层贴在视频区域内，位置/字号随窗口自适应。 -->
-        <div v-if="subText" class="sub-overlay"><span class="sub-line">{{ subText }}</span></div>
+        <!-- 2026-11-21 审计：字幕层 Teleport 到内核根节点（.art-video-player）。
+             Chromium 的 DOM 全屏只渲染全屏元素及其后代 —— 原来放在它的兄弟节点上，
+             一按全屏字幕就整层消失（mpv 是窗口级全屏，不受影响）。 -->
+        <Teleport v-if="subMountEl" :to="subMountEl">
+          <div v-if="subText" class="sub-overlay"><span class="sub-line">{{ subText }}</span></div>
+        </Teleport>
 
         <!-- 播放质量提示（非阻塞，2026-10-07）：
              少数影片的容器时间戳不标准（码流用了 B 帧但 MP4 缺 ctts 盒），Chromium 的渲染器
@@ -117,7 +123,7 @@
         </div>
         <div class="row-actions">
           <span v-for="b in fileBadges" :key="b.kind" class="file-tag" :class="'ft-' + b.kind">{{ b.label }}</span>
-          <button type="button" class="pill-btn fav-btn" :class="{ on: m.cl === 'y' }" @click="toggleFav"
+          <button type="button" class="pill-btn fav-pill" :class="{ on: m.cl === 'y' }" @click="toggleFav"
                   :title="m.cl === 'y' ? '取消喜欢' : '喜欢'">
             <AppIcon :name="m.cl === 'y' ? 'heart-filled' : 'heart'" :size="16" />
             <span>{{ m.cl === 'y' ? '已喜欢' : '喜欢' }}</span>
@@ -187,6 +193,7 @@ const store = useMoviesStore()
 // ====== 状态 ======
 const boxRef = ref(null)
 const wrapRef = ref(null)      // 播放器外层：mpv 模式下控件条与长按徽标的定位参照
+const subMountEl = ref(null)   // 字幕层挂载点：Chromium 用内核根节点，mpv 用播放器外层
 const shieldRef = ref(null)    // mpv 模式的挖洞遮罩（teleport 到 body）
 const recColRef = ref(null)    // 右列容器：整条布局按列表可用高反算条目间距
 const recGap = ref('0px')      // 条目间距（fitRecRows 反算）→ :style 绑给 .rec-list
@@ -753,13 +760,36 @@ function onCtlSeek(frac) {
   setTimeout(() => syncHole(true), 160)
 }
 function onCtlVolume(v) { player.volume = v }
+
+// 静音开关（2026-11-21 审计）：之前按钮发的是 volume（0/原值），从不切 muted ——
+// ① 点两次回不来；② 按 M 置 muted 后，再点按钮只改 volume，静音取消不掉。
+let lastVol = 0.8
+function onCtlMute() {
+  if (player.muted || !(player.volume > 0)) {
+    player.muted = false
+    if (!(player.volume > 0)) player.volume = lastVol > 0 ? lastVol : 0.8
+  } else {
+    lastVol = player.volume
+    player.muted = true
+  }
+}
 function onCtlRate(r) { player.playbackRate = r }
 /** 全屏开关：两个内核都走契约的 `fullscreen`（Chromium = ArtPlayer 页面内全屏；
  *  mpv = 窗口级全屏 + 页面铺满，见 mpv-backend.js）。`fullscreenWeb` 只是契约占位。 */
 function onCtlFullscreen() { player.fullscreenWeb = false; player.fullscreen = !player.fullscreen }
 
 /** Chromium（ArtPlayer）进/出 DOM 全屏会改变视口尺寸 → 镂空矩形要重算（mpv 走 fullscreenchange 事件） */
-function onFullscreenChange() { syncHole() }
+function onFullscreenChange() {
+  // 全屏时给 html 挂类（2026-11-21）：字幕层现在挂在 .art-video-player 内部，
+  // 组件 scoped 样式选不到 :fullscreen，用该类驱动「全屏字号/底距」。
+  document.documentElement.classList.toggle('jt-page-fs', !!document.fullscreenElement)
+  syncHole()
+}
+
+/** 字幕层挂载点：Chromium 用内核根节点（同时就是 DOM 全屏元素），mpv 用播放器外层 */
+function refreshSubMount() {
+  subMountEl.value = player.rootEl || wrapRef.value || null
+}
 
 // ====== 播放器铺满（消除边角黑边）======
 // 视频层由 GPU 合成且像素对齐取整：只要「盒子宽高比 ≠ 视频宽高比」，object-fit:contain
@@ -1043,6 +1073,14 @@ function syncSubtitleText() {
   if (next !== subText.value) subText.value = next
 }
 
+/** 首次真正开始播放时才记一次观看（同一影片一次会话只记一次，2026-11-21） */
+function maybeRecordPlay() {
+  const id = playingId || m.value?.id
+  if (!id || recordedFor === id) return
+  recordedFor = id
+  try { window.api.recordPlay(id).catch(() => {}) } catch { /* 忽略 */ }
+}
+
 // ====== 数据加载 ======
 async function loadMovie(id) {
   // 请求序号（2026-11-09 审计）：快速连点右侧推荐时，两次 getMovie 可能"后发先至"，
@@ -1054,11 +1092,9 @@ async function loadMovie(id) {
   m.value = r.data
   resetMediaErr()
 
-  // 记一次播放（同一影片一次会话只记一次；进度写入不经过这里）
-  if (recordedFor !== id) {
-    recordedFor = id
-    window.api.recordPlay(id).catch(() => {})
-  }
+  // 观看记录改到「真的开始播放」后再记（2026-11-21 审计）：
+  // 原来一拿到记录就记，无 py / 打不开的影片也会进观看记录并抬高 play_count。
+  // 现在由 playing 事件的 maybeRecordPlay() 触发。
 
   await nextTick()
   initOrSwitchPlayer()
@@ -1112,6 +1148,7 @@ function initOrSwitchPlayer() {
   })
   playingId = m.value.id        // 首次构造：内核从此刻起播的就是当前影片
   switchSuppress = false
+  refreshSubMount()             // 内核就绪后再定字幕层挂载点（Chromium 用 .art-video-player）
 
   // 续播点跟着播放位置实时更新（只写内存，不做 IPC）；落库仍走 5 秒节流
   // ⚠️ 必须和 saveProgress 一样先看 switchSuppress：换片瞬间 playingId 已指向**新片**，
@@ -1134,6 +1171,7 @@ function initOrSwitchPlayer() {
   player.on('error', onMediaError)
   player.on('canplay', onMediaRecovered)
   player.on('playing', onMediaRecovered)
+  player.on('playing', maybeRecordPlay)      // 真正出画面后才记观看（2026-11-21）
   player.on('volumechange', () => { try { localStorage.setItem('jt-vol', String(player.volume)) } catch {} })
   player.on('loadedmetadata', resumeIfNeeded)
   player.on('loadedmetadata', fitVideoObject)
@@ -1218,6 +1256,8 @@ function goDetail() { if (m.value) router.push(`/detail/${m.value.id}`) }
 function goActor(name) { if (name) router.push(`/actor/${encodeURIComponent(name)}`) }
 async function playExternal() {
   if (!m.value?.py) return ElMessage.warning('该影片未设置视频文件路径')
+  // 2026-11-21 审计：外部播放器起来前先停掉内置播放，否则两份音频同时响
+  try { player.pause() } catch { /* 未挂载 */ }
   const r = await window.api.playVideo(m.value.py).catch(() => null)
   if (!r || !r.ok) return ElMessage.error(r?.error || '无法通过外部播放器打开该影片')
 }
@@ -1277,6 +1317,7 @@ onMounted(async () => {
   store.initIfNeeded().catch(() => {})
   installResumeGuard(router)   // 续播点的存活范围（只在播放页 ⇄ 详情/演员页之间）
   await loadPlayerSettings()
+  subMountEl.value = wrapRef.value || null   // 兜底：内核还没 mount 时先挂播放器外层
   window.addEventListener('keydown', onKeyDown, true)
   window.addEventListener('keyup', onKeyUp, true)
   // 丢焦点/切后台时收掉长按（见 loseHold 注释）
@@ -1303,6 +1344,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', syncHole)
   document.removeEventListener('scroll', onAnyScroll, true)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.documentElement.classList.remove('jt-page-fs')   // 清理全屏字幕类（2026-11-21）
   if (scrollSettleTimer) { clearTimeout(scrollSettleTimer); scrollSettleTimer = null }
   for (const t of settleTimers) clearTimeout(t)
   settleTimers = []
@@ -1517,14 +1559,12 @@ html.mpv-fs .mpv-shield { border-radius: 0; }
    mpv 的窗口级全屏 → html.mpv-fs；Chromium 的页面内全屏 → :fullscreen。
    全屏 1920 宽约 58px，窗口态 1400 宽保持 28px。 */
 html.mpv-fs .sub-line,
-.player-wrap:fullscreen .sub-line,
-.player-wrap:-webkit-full-screen .sub-line {
+html.jt-page-fs .sub-line {
   font-size: clamp(24px, 3vw, 64px);
 }
 /* 全屏时字幕整体上移一点，给更大的控制条让位 */
 html.mpv-fs .sub-overlay,
-.player-wrap:fullscreen .sub-overlay,
-.player-wrap:-webkit-full-screen .sub-overlay {
+html.jt-page-fs .sub-overlay {
   padding-bottom: 84px;
 }
 
@@ -1834,12 +1874,12 @@ html.mpv-fs .sub-overlay,
 .pill-btn:hover { background: var(--surface-2); color: var(--text); }
 .pill-btn:active { transform: scale(0.98); }
 /* 已喜欢：品牌红 */
-.fav-btn.on {
+.fav-pill.on {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.fav-btn.on .app-icon { color: var(--accent); }
+.fav-pill.on .app-icon { color: var(--accent); }
 
 /* ====== 右列：推荐 ====== */
 .rec-col {
@@ -1922,8 +1962,9 @@ html.mpv-fs .sub-overlay,
   right: 6px;
   bottom: 6px;
   padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.75);   /* 压在缩略图上，保持深底白字 */
+  /* 与其它图上角标统一（2026-11-21 P2）：pill 圆角 + 暖黑令牌（不再裸写 4px/纯黑） */
+  border-radius: var(--r-pill);
+  background: var(--overlay-badge);
   color: #fff;
   font-size: var(--fs-xs);
 }

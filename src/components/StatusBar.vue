@@ -16,6 +16,7 @@
       :random="store.sort.random"
       :options="sortOptions"
       :show-random="sortShowRandom"
+      size="small"
       @change="onSortChange"
     />
     <!-- 左侧：显示搜索结果总数 -->

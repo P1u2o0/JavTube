@@ -46,7 +46,9 @@
       :loading="store.loading"
       :selectMode="store.selectMode"
       :selectedIds="store.selectedIds"
+      :error="store.listError"
       @page="onPageChange"
+      @retry="onRefresh"
       @play="onPlay"
       @fav="onFav"
       @toggle="onToggle"
@@ -137,14 +139,24 @@ const pageTitle = computed(() => {
  * 清除标题条筛选（回到全部影片列表）
  */
 async function clearFilterTitle() {
-  router.push({ path: '/library' })
+  // 2026-11-21 审计：用 replace —— push 会多压一条历史，清除筛选后按返回又回到刚被清掉的结果页
+  router.replace({ path: '/library' })
 }
 
 /**
  * 刷新影片列表
  * 功能：重置页码为 1，重新加载影片数据
  */
-async function onRefresh() { store.page = 1; await store.loadMovies({ extraFilter: routeExtra() }) }
+async function onRefresh() {
+  // 2026-11-21 审计：标签/搜索被全部清空时同步清 URL ——
+  // 否则刷新页面（或按返回）又被 query 里的 ?tag=/?q= 装回去，且标题条仍显示旧筛选。
+  const noTags = (store.tagSelected || []).every(a => !a || !a.length)
+  if (!store.searchQ && noTags && Object.keys(route.query || {}).length) {
+    await router.replace({ path: '/library' })
+  }
+  store.page = 1
+  await store.loadMovies({ extraFilter: routeExtra() })
+}
 
 /**
  * 排序方式变更（StatusBar 排序下拉）：携带路由筛选重新加载

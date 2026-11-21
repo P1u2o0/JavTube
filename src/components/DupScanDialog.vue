@@ -248,8 +248,11 @@ function fmtDate(ms) {
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .df-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-.df-btn.danger { color: var(--danger); border-color: var(--danger); }
-.df-btn.danger:hover:not(:disabled) { background: var(--danger); color: #fff; border-color: var(--danger); }
+/* 危险操作统一（2026-11-21 P2）：默认中性，hover/focus 才软底红字 ——
+   与 Detail 的 act-del / StatusBar 的 batch-danger 同一口径；实心红只留给确认弹窗。 */
+.df-btn.danger { color: var(--text-2); border-color: var(--border); }
+.df-btn.danger:hover:not(:disabled),
+.df-btn.danger:focus-visible { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
 .df-btn:disabled { opacity: .45; cursor: not-allowed; }
 .dup-empty { padding: 30px 0; text-align: center; color: var(--muted); }
 .dup-foot { float: left; color: var(--muted); font-size: var(--fs-xs); line-height: 32px; }

@@ -23,8 +23,8 @@
       @batchAddTag="onBatchAddTag"
       @batchScrape="onBatchScrape"
     />
-    <!-- 空状态：无观看记录时显示提示 -->
-    <el-empty v-if="store.total === 0 && !store.loading" description="还没有观看记录" />
+    <!-- 空状态：无观看记录时显示提示（加载失败不走空态，2026-11-21） -->
+    <el-empty v-if="!store.listError && store.total === 0 && !store.loading" description="还没有观看记录" />
     <!-- 影片网格组件 -->
     <MovieGrid v-else
       :movies="store.movies"
@@ -36,6 +36,8 @@
       :selectMode="store.selectMode"
       :selectedIds="store.selectedIds"
       :showPlayCount="true"
+      :error="store.listError"
+      @retry="loadHistory"
       @page="onPageChange"
       @play="onPlay"
       @fav="onFav"

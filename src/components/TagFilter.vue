@@ -190,6 +190,9 @@ function onToggleUncategorized(tag) {
 // 触发时机：用户点击"全部"按钮
 function onClearAll() {
   store.tagSelected = Array.from({ length: TAG_CAT_COUNT }, () => [])
+  // 2026-11-21 审计：搜索词也一起清 —— 只清标签的话，带搜索进入时点「全部」毫无反应
+  // （列表仍被 searchQ 过滤），用户会以为按钮坏了。
+  if (store.searchQ) store.searchQ = ''
   emit('change')
 }
 </script>

@@ -48,8 +48,9 @@
         </div>
       </div>
 
-      <!-- 音量 -->
-      <button type="button" class="pc-btn" :title="state.muted ? '取消静音' : '静音'" @click="$emit('volume', state.muted ? state.vol : 0)">
+      <!-- 音量（2026-11-21 审计：改为 mute-toggle —— 原来发 volume 0/原值，从不切 muted，
+           点两次回不来、按 M 后也取消不了静音） -->
+      <button type="button" class="pc-btn" :title="state.muted ? '取消静音' : '静音'" @click="$emit('mute-toggle')">
         <AppIcon :name="state.muted || state.vol === 0 ? 'volume-mute' : 'volume'" :size="18" />
       </button>
       <input class="pc-vol" type="range" min="0" max="1" step="0.05"
@@ -221,6 +222,8 @@ function fmtRate(r) {
   color: #fff;
   cursor: pointer;
   opacity: 0.92;
+  /* 2026-11-21 P2：hover 变色补过渡（此前瞬时跳变，与全局 --dur-fast 规范不一致） */
+  transition: background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 }
 .pc-btn:hover { background: var(--overlay-glass); opacity: 1; }
 

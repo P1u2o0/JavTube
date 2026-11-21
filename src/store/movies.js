@@ -42,6 +42,8 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
                           //  initIfNeeded 加载设置后会被用户配置覆盖）
     colsPerRow: 5,        // 每行显示的影片卡片数
     loading: false,       // 加载中标志
+    listError: '',        // 最近一次列表加载失败原因（空=成功）—— 用于区分「真没数据」与「加载失败」
+                          // （2026-11-21 审计：失败时只弹一次 toast，页面仍显示「共找到 0 个结果」）
 
     // 筛选状态
     sort: { by: 'tjrq', order: 'DESC', random: false },  // 排序：字段、方向、随机模式
@@ -184,7 +186,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
      *    全部调用都传 false，分页走「翻页整页替换」而非无限滚动。）
      */
     async loadMovies({ onlyFavorite = false, extraFilter = {}, useTags = true, useSearch = true } = {}) {
-      if (!window.api) { this.movies = []; this.total = 0; return { ok: false, error: 'api 不可用' } }
+      if (!window.api) { this.movies = []; this.total = 0; this.listError = '数据接口不可用'; return { ok: false, error: 'api 不可用' } }
       // 加载序号：连续点翻页/快速切筛选时会有多个请求同时在飞，只让**最后一次**的结果生效。
       // 否则先发的慢请求后返回，会把新一页的数据覆盖回旧页（表现为「翻页跳来跳去」）。
       const seq = ++loadSeq
@@ -220,6 +222,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
           }
           this.movies = newMovies
           this.total = total
+          this.listError = ''
           return { ok: true, total }
         }
         // 走到这里有两种情况，必须分开对待（2026-09-30 性能审计补）：
@@ -231,6 +234,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
           return { ok: false, stale: true }
         }
         console.warn('[store] loadMovies 失败:', r.error)
+        this.listError = r.error || '加载影片列表失败'
         ElMessage.error(r.error || '加载影片列表失败')
         return { ok: false, error: r.error || '加载影片列表失败' }
       } catch (e) {
@@ -243,6 +247,7 @@ export const useMoviesStore = defineStore('movies', {  // ====== 状态定义 ==
         // 加载失败时用户完全无从感知，会误以为「当前筛选就是这些结果」。
         // 与上面 r.ok===false 分支互斥（reject 时 r 未被赋值，不会进那条分支），不会双弹。
         ElMessage.error('加载影片列表失败')
+        this.listError = '加载影片列表失败'
         return { ok: false, error: (e && e.message) || String(e) }
       } finally {
         // 只有「最后一次请求」才有权关掉 loading（2026-09-30 审计）：

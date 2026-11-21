@@ -94,10 +94,13 @@ async function chooseDir() {
 
 // 全选/取消全选处理函数
 // 参数 v: true=全选，false=取消全选
+// 2026-11-21 审计：toggleAllSelection 是「反选」，而扫描后默认已全选 ——
+// 这导致点「全选」反而全部取消（文案与行为相反）。改为幂等逐行选中。
 function selectAll(v) {
   if (!tb.value) return
-  if (v) tb.value.toggleAllSelection()
-  else {
+  if (v) {
+    for (const row of list.value) tb.value.toggleRowSelection(row, true)
+  } else {
     tb.value.clearSelection()
   }
 }

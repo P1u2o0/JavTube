@@ -187,7 +187,9 @@
       </div>
       <template #footer>
         <div class="edit-dialog-footer">
-          <el-button type="danger" plain @click="deleteActress" :disabled="saving" round>删除该女优</el-button>
+          <!-- 危险操作统一走 btn-danger-ghost（2026-11-21 P2）：默认中性，hover 才红；
+               原来的 type="danger" plain 是常亮软红底，与详情/状态栏两处不一致 -->
+          <el-button class="btn-danger-ghost" @click="deleteActress" :disabled="saving" round>删除该女优</el-button>
           <div class="edit-dialog-footer-right">
             <el-button @click="editVisible = false" :disabled="saving" round>取消</el-button>
             <el-button type="primary" @click="saveEdit" :disabled="saving" round>
@@ -201,7 +203,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, toRaw } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useMoviesStore } from '@/store/movies'
@@ -245,6 +247,23 @@ const selectedTags = ref([])
 const sort = ref({ by: 'fxrq', order: 'DESC', random: false })
 const page = ref(1)
 const pageSize = computed(() => store.pageSize || 20)
+
+// ── 筛选/排序/页码的跨导航记忆（2026-11-21 审计）──────────────────────────
+// 本页路由离开即销毁（App.vue 按 path 作 key），原来从详情返回后筛选、排序、页码全丢，
+// 与片库「筛选保存在 store」的行为不一致。模块级 Map 不随组件销毁，按演员名恢复。
+const PAGE_STATE = new Map()
+function savePageState() {
+  const k = name.value
+  if (!k) return
+  PAGE_STATE.set(k, { tags: [...selectedTags.value], sort: { ...sort.value }, page: page.value })
+}
+function restorePageState() {
+  const s = PAGE_STATE.get(name.value)
+  if (!s) return
+  selectedTags.value = Array.isArray(s.tags) ? [...s.tags] : []
+  sort.value = s.sort ? { ...s.sort } : { by: 'fxrq', order: 'DESC', random: false }
+  page.value = Number(s.page) || 1
+}
 
 /** 默认头像资源：用 BASE_URL 前缀（base='./'）拼相对路径。
  *  注意不能写 '/actor-female.svg' —— 这是运行时表达式，Vite 不会像静态 src 属性那样
@@ -660,6 +679,7 @@ async function deleteActress() {
 }
 
 onMounted(async () => {
+  restorePageState()   // 先恢复上次的筛选/排序/页码，再加载（2026-11-21）
   // 确保设置与全局标签已加载（每行数量 + 标签分类栏都依赖 store）
   // 注：这两行此前用 `safeCall(() => ...)` 传函数，实际从未执行 ——
   // 直接进本页（不先经过片库）时 store 未初始化、标签栏为空。现修正为直接 await。
@@ -667,6 +687,10 @@ onMounted(async () => {
   await store.ensureTagsLoaded()
   await load()
 })
+
+// 离开页面时记住当前筛选/排序/页码；数据变少导致页码越界时收敛（2026-11-21）
+onBeforeUnmount(savePageState)
+watch(pageCount, (n) => { if (page.value > n) page.value = Math.max(1, n) })
 </script>
 
 <style scoped>

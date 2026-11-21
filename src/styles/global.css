@@ -162,6 +162,13 @@
   --icon-btn-md: 32px;       /* 标准图标钮 */
   --icon-btn-lg: 40px;       /* 大图标钮 */
 
+  /* ====== 控件高度阶梯（2026-11-21 P2）======
+     同一行内混排只用同一档。38（顶栏搜索/导入）、34（播放页胶囊）、
+     28（查重行按钮）属各场景专用大件，保留但不再新增。 */
+  --ctrl-h-sm: 24px;         /* 紧凑行：状态栏批量按钮 */
+  --ctrl-h-md: 32px;         /* 标准控件：表单按钮 / 排序 */
+  --ctrl-h-lg: 40px;         /* 主操作：详情页 large */
+
   /* ====== 遮罩 / 叠层 alpha（暖黑派生，替代纯黑） ====== */
   --overlay-hover: rgba(29, 28, 26, 0.42);        /* 卡片悬停遮罩 */
   --overlay-badge: rgba(29, 28, 26, 0.62);        /* 角标底 */
@@ -430,6 +437,21 @@ html.mpv-fs .pc-bar { border-radius: 0; }
   --el-button-active-bg-color: #8a271a;
   --el-button-active-border-color: #8a271a;
 }
+/* 危险操作（非确认弹窗）统一口径（2026-11-21 P2）：
+   默认中性描边，hover/focus 才软底 + 红字/红边。
+   Detail 的 .act-del、StatusBar 的 .batch-danger 原本就是这个范式，这里是补齐通用类；
+   实心红只留给 ElMessageBox 确认弹窗里的确认按钮。 */
+.el-button.btn-danger-ghost {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+.el-button.btn-danger-ghost:hover,
+.el-button.btn-danger-ghost:focus-visible {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 /* 文字按钮 */
 .el-button.is-link { font-weight: 500; }
 
@@ -597,8 +619,8 @@ html.mpv-fs .pc-bar { border-radius: 0; }
    可能因背景与底色同色而"消失"。这里给他们补一条 outline 兜底 ——
    用 outline 而非 border，避免改变盒模型尺寸造成布局跳动。 */
 @media (forced-colors: active) {
-  .flow-nav, .search-btn, .copy-btn, .check, .fav-btn,
-  .view-toggle button, .add-btn, .dot, .bp-clear {
+  .flow-nav, .search-btn, .copy-btn, .check, .card-fav, .fav-pill,
+  .view-toggle button, .import-btn, .icon-add-btn, .dot, .bp-clear {
     outline: 1px solid ButtonText;
     outline-offset: -1px;
   }

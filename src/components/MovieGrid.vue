@@ -8,8 +8,14 @@
 <template>
   <!-- 网格容器 -->
   <div class="grid-wrap">
+    <!-- 加载失败：必须与「真没数据」区分开（2026-11-21 审计）——
+         原来失败时也显示「共找到 0 个结果」，toast 一过用户无法判断是空库还是加载挂了 -->
+    <div v-if="error && !movies.length && !loading" class="grid-error">
+      <p class="ge-text">{{ error }}</p>
+      <el-button size="small" @click="$emit('retry')">重试</el-button>
+    </div>
     <!-- 空状态：无影片且未加载时显示 -->
-    <el-empty v-if="!movies.length && !loading" description="共找到 0 个结果" />
+    <el-empty v-else-if="!movies.length && !loading" description="共找到 0 个结果" />
     <!-- 影片网格：动态设置列数 -->
     <div class="grid" v-else :class="{ 'no-anim': !animateIn }" :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }">
       <!-- 遍历影片列表渲染卡片，注入索引 + 本卡入场延迟（错峰由下方 staggerDelay 统一下发） -->
@@ -61,7 +67,8 @@ const props = defineProps({
   loading: Boolean,   // 是否正在加载
   selectMode: Boolean, // 是否处于多选模式
   selectedIds: Array,  // 已选中的影片 ID 列表
-  showPlayCount: Boolean // 是否显示播放次数角标（观看记录页）
+  showPlayCount: Boolean, // 是否显示播放次数角标（观看记录页）
+  error: String           // 列表加载失败原因（空=无错误，2026-11-21）
 })
 
 // 选中集合：原先模板里写 selectedIds.includes(m.id)，
@@ -114,7 +121,7 @@ onBeforeUnmount(() => { if (animateTimer) clearTimeout(animateTimer) })
 // - page: 分页切换事件，参数为目标页码
 // - click/play/edit/delete/fav/toggle: 透传 MovieCard 的对应事件
 // （detail 事件已移除：MovieCard 从不发出此事件，透传监听为死绑定）
-const emit = defineEmits(['page', 'click', 'play', 'fav', 'toggle'])
+const emit = defineEmits(['page', 'click', 'play', 'fav', 'toggle', 'retry'])
 
 // 分页器页码变化处理函数
 // 参数 p: 用户选择的目标页码
@@ -135,6 +142,9 @@ function onPageChange(p) {
 }
 /* 翻页/换筛选后不再重播入场动画：卡片即时呈现 */
 .grid.no-anim :deep(.movie-card) { animation: none; }
+/* 加载失败：与空态区分（文案 + 重试按钮） */
+.grid-error { text-align: center; padding: 48px 24px; }
+.grid-error .ge-text { color: var(--text-2); margin-bottom: 14px; }
 /* 加载中提示文字样式 */
 .loading-tip { text-align: center; color: var(--muted); padding: 20px; }
 /* 分页器容器：居中显示 */
