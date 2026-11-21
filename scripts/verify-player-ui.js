@@ -126,21 +126,21 @@ async function pageUI() {
     hasAcMore: !!q('.ac-more'),
     // 文件名属性标签（2026-10-04）：无码破解/中文字幕/4K
     fileTags: fileTags,
-    fileTagsInFavLeft: fileTagEls.length > 0 && !!q('.fav-btn') &&
+    fileTagsInFavLeft: fileTagEls.length > 0 && !!q('.fav-pill') &&
       fileTagEls.every(el => el.parentElement && el.parentElement.classList.contains('row-actions')) &&
-      fileTagEls[fileTagEls.length - 1].getBoundingClientRect().right <= q('.fav-btn').getBoundingClientRect().left + 1,
+      fileTagEls[fileTagEls.length - 1].getBoundingClientRect().right <= q('.fav-pill').getBoundingClientRect().left + 1,
     hasScore: !!q('.info-stats'),
     recScoreExists: !!q('.rec-score'),
     cats: cats, catBox: rect(q('.cat-tag')),
-    favBox: rect(q('.fav-btn')), favText: q('.fav-btn') ? q('.fav-btn').textContent.trim() : '',
-    favHasIcon: !!q('.fav-btn .app-icon'), favOn: !!(q('.fav-btn') && q('.fav-btn').classList.contains('on')),
+    favBox: rect(q('.fav-pill')), favText: q('.fav-pill') ? q('.fav-pill').textContent.trim() : '',
+    favHasIcon: !!q('.fav-pill .app-icon'), favOn: !!(q('.fav-pill') && q('.fav-pill').classList.contains('on')),
     favIsFirst: (() => {
-      const fav = q('.fav-btn'); if (!fav) return false
+      const fav = q('.fav-pill'); if (!fav) return false
       const kids = [...fav.parentElement.children]
       return kids[0] === fav && fav.parentElement.classList.contains('row-actions')
     })(),
     favInRow: (() => {
-      const fav = q('.fav-btn'); if (!fav) return false
+      const fav = q('.fav-pill'); if (!fav) return false
       return fav.parentElement.classList.contains('row-actions')
     })(),
     artRadiusVar: (() => { const ap = q('.art-video-player'); return ap ? getComputedStyle(ap).getPropertyValue('--art-border-radius').trim() : '' })(),
@@ -148,7 +148,7 @@ async function pageUI() {
     detailBox: rect(q('.detail-btn')), detailText: q('.detail-btn') ? q('.detail-btn').textContent.trim() : '',
     detailHasIcon: !!q('.detail-btn .app-icon'),
     detailSameStyle: (() => {
-      const a = q('.fav-btn'), b = q('.detail-btn'); if (!a || !b) return false
+      const a = q('.fav-pill'), b = q('.detail-btn'); if (!a || !b) return false
       const ca = getComputedStyle(a), cb = getComputedStyle(b)
       return ca.height === cb.height && ca.borderRadius === cb.borderRadius && ca.fontSize === cb.fontSize &&
         ca.paddingLeft === cb.paddingLeft && ca.backgroundImage === cb.backgroundImage
@@ -395,10 +395,10 @@ async function main() {
       `text="${s.detailText}" icon=${s.detailHasIcon} 同款=${s.detailSameStyle} x=${Math.round(s.detailBox && s.detailBox.l)}≥${Math.round(s.favBox && s.favBox.r)} right=${Math.round(s.detailBox && s.detailBox.r)}`)
 
     // U13c 点击切换（点两次回到原状态）
-    await raw('document.querySelector(".fav-btn").click()')
+    await raw('document.querySelector(".fav-pill").click()')
     let f1 = null
     for (let i = 0; i < 12; i++) { await sleep(200); f1 = await runFn(pageUI); if (f1.favOn) break }
-    await raw('document.querySelector(".fav-btn").click()')
+    await raw('document.querySelector(".fav-pill").click()')
     let f2 = null
     for (let i = 0; i < 12; i++) { await sleep(200); f2 = await runFn(pageUI); if (!f2.favOn) break }
     ok('U13c 点击喜欢按钮切换状态（喜欢 ↔ 已喜欢）',

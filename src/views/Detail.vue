@@ -121,7 +121,13 @@
         <div class="info-line tag-line" v-if="actressList.length">
           <span class="info-label">演员</span>
           <div class="info-value tag-list">
-            <TagChip v-for="a in actressList" :key="a" :label="a" @click="goActor(a)" />
+            <TagChip v-for="a in actressShown" :key="a" :label="a" @click="goActor(a)" />
+            <!-- 多人共演折叠（2026-11-21）：默认 10 位，其余展开 -->
+            <button v-if="actressMore > 0" type="button" class="tag-toggle"
+                    :title="actressExpanded ? '收起演员列表' : `展开其余 ${actressMore} 位演员`"
+                    @click="actressExpanded = !actressExpanded">
+              {{ actressExpanded ? '收起' : `+${actressMore}` }}
+            </button>
           </div>
         </div>
         </div>
@@ -404,6 +410,16 @@ const tags = computed(() => splitTags(m.value?.bq))
  * 计算属性：女优列表（按逗号分割 yid 字段）
  */
 const actressList = computed(() => splitTags(m.value?.yid))
+
+// ── 多人共演折叠（2026-11-21）──────────────────────────────────────────
+// MI2D-304 这类十几位演员的影片，chip 会铺满信息卡好几行，把下面的信息挤出可视区。
+// 默认显示前 10 位，其余点「+N」展开；展开后显示「收起」。
+const ACTRESS_LIMIT = 10
+const actressExpanded = ref(false)
+const actressShown = computed(() =>
+  actressExpanded.value ? actressList.value : actressList.value.slice(0, ACTRESS_LIMIT))
+const actressMore = computed(() => Math.max(0, actressList.value.length - ACTRESS_LIMIT))
+watch(() => m.value?.id, () => { actressExpanded.value = false })
 
 /** 跳转该女优的影片列表页（演员栏点击名字时） */
 function goActor(name) {
@@ -861,6 +877,21 @@ onMounted(async () => {
    导致该行与相邻行的视觉间距比其他行大 6px；这里用负 margin 抵消，
    使标签单行/多行时的行间距都与其他信息行严格相同。 */
 .tag-list { white-space: normal; display: flex; flex-wrap: wrap; align-items: center; margin: -3px 0; }
+/* 演员折叠按钮：与 TagChip 同尺度、虚线描边（2026-11-21） */
+.tag-toggle {
+  margin: 3px 6px 3px 0;
+  padding: 4px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-tag);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.tag-toggle:hover { background: var(--surface-2); color: var(--text); border-color: var(--muted); }
 .preview-strip {
   margin-top: 16px;
   display: flex; align-items: center; gap: 8px;

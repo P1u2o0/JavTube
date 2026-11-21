@@ -111,7 +111,7 @@
            原「★ 评分」显示已按用户要求移除（2026-10-04） -->
       <div class="meta-row swap-in" v-if="m" :key="'meta-' + m.id">
         <div class="actress-row">
-          <button v-for="(a, i) in actressesView" :key="a.name + '-' + i" type="button" class="actress"
+          <button v-for="(a, i) in actressesShown" :key="a.name + '-' + i" type="button" class="actress"
                   :title="`查看 ${a.name} 的全部影片`"
                   @click="goActor(a.name)">
             <span class="ac-avatar">
@@ -119,6 +119,12 @@
               <span v-else class="ac-fallback">{{ a.name.slice(0, 1) }}</span>
             </span>
             <span class="ac-name">{{ a.name }}</span>
+          </button>
+          <!-- 多人共演（如 MI2D-304）折叠：默认 8 位，其余展开（2026-11-21） -->
+          <button v-if="actressMore > 0" type="button" class="actress-toggle"
+                  :title="actressExpanded ? '收起演员列表' : `展开其余 ${actressMore} 位演员`"
+                  @click="actressExpanded = !actressExpanded">
+            {{ actressExpanded ? '收起' : `展开 +${actressMore}` }}
           </button>
         </div>
         <div class="row-actions">
@@ -360,6 +366,19 @@ const actressesView = computed(() => actresses.value.map(a => {
   }
   return { name: a.name, src }
 }))
+
+// ── 多人共演折叠（2026-11-21）──────────────────────────────────────────
+// 一部片有十几位演员时（如 MI2D-304），平铺会把播放器下方撑成好几排，
+// 挤掉标签行与推荐区的可用高度。默认只显示前 8 位，其余点「展开」查看。
+const ACTRESS_LIMIT = 8
+const actressExpanded = ref(false)
+const actressesShown = computed(() => {
+  const list = actressesView.value || []
+  return actressExpanded.value ? list : list.slice(0, ACTRESS_LIMIT)
+})
+const actressMore = computed(() => Math.max(0, (actressesView.value || []).length - ACTRESS_LIMIT))
+// 换片时回到折叠态，避免上一部的展开状态带过去
+watch(() => m.value?.id, () => { actressExpanded.value = false })
 
 // ====== 标签：全部展示，其中「体型 / 行为 / 玩法」三类排到最前 ======
 const CAT_WHITELIST = ['体型', '行为', '玩法']
@@ -1765,13 +1784,17 @@ html.jt-page-fs .sub-overlay {
   font-size: var(--fs-base);
   color: var(--muted);
 }
-.meta-row .actress-row { flex: 1 1 auto; min-width: 0; }
-/* 同一行里的女优列表：多位女优共演全部平铺（2026-10-04），空间不够才换行 */
+/* flex-basis 用 0 而不是 auto（2026-11-21）：演员区改成 grid 后，
+   auto 会按「8 列 × 136px」的固有宽度参与分配，把右侧按钮组挤到下一行；
+   基准 0 表示「只吃剩余空间」，grid 再在剩余宽度内自动分列。 */
+.meta-row .actress-row { flex: 1 1 0; min-width: 0; }
+/* 等宽网格（2026-11-21）：原来 flex-wrap 按名字长度排，换行后参差不齐；
+   改为自适应等宽列，每格「头像 + 名字」左对齐，名字过长省略。 */
 .actress-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 6px 8px;
+  align-content: start;
   font-size: var(--fs-base);
   color: var(--muted);
 }
@@ -1793,11 +1816,12 @@ html.jt-page-fs .sub-overlay {
 }
 /* 第二行：女优（头像 + 名字）。2026-10-04：多位女优共演全部平铺 → 允许换行 */
 .actress {
-  flex-shrink: 0;
-  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 14px 4px 4px;
+  padding: 4px 10px 4px 4px;
   border: none;
   border-radius: var(--r-pill);
   background: transparent;
@@ -1826,7 +1850,29 @@ html.jt-page-fs .sub-overlay {
 }
 .ac-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ac-fallback { font-size: 19px; font-weight: 600; color: var(--text-2); }   /* 同上：与 44px 头像配套的首字字号 */
-.ac-name { white-space: nowrap; }
+.ac-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 折叠按钮：与演员格同高（4+44+4）、虚线描边，视觉上不抢戏 */
+.actress-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  padding: 0 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.actress-toggle:hover {
+  background: var(--surface-2);
+  border-color: var(--muted);
+  color: var(--text);
+}
 
 /* 标签（展示影片全部 bq；三类排在前，纯展示不可点 → 不用 TagChip 的 pointer 语义） */
 .cat-tag {
